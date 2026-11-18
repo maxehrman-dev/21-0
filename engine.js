@@ -468,6 +468,45 @@ function userPool(kind, keep) {
   return kind === 'players' || kind === 'depth' ? players : [...picks, ...players];
 }
 function balanceTrade(partner, give, get) { return fillSide(partner, give, get, userPool('all', get)); }
+// ---------- trade talks ----------
+// You propose, their GM answers: a yes, a counter, or a laugh. Lowballs burn patience; run out and they stop taking calls until the next window.
+const TALK = {
+  yes: ['You have got a deal.', 'Done. Send the paperwork over.', 'We can live with that. Deal.', 'That works for us. Shake on it?', 'Yeah, we will do that.'],
+  counter: ['Not quite. Here is what gets it done.', 'Close. Meet us here.', 'We like where your head is at, but not at that price.', 'Cannot do that one. How about this instead?', 'Getting warmer. Do this and we are done.'],
+  eager: ['Deal! Before you change your mind.', 'Yes. Absolutely yes.', 'Wow. Okay. Deal.', 'We accept. Quickly.'],
+  close: ['We are close. Find a little more.', 'Not there yet, but we are listening.', 'Nudge it a bit and call us back.'],
+  laugh: ['Is this a joke?', 'Ha. No.', 'Our whole front office just laughed out loud. That is a no.', 'You are going to have to do a lot better than that.', 'We hung up after the first name.', 'Did you dial the wrong team?'],
+  fleece: ['Nice try. We are not giving that away.', 'Do you think we were born yesterday?', 'We know what that is worth. No.'],
+  done: ['We are done talking for now. Call us next window.', 'Lose our number until the next window.', 'That is enough for today.'],
+};
+const say = k => TALK[k][Math.floor(Math.random() * TALK[k].length)];
+const talkKey = () => `${G.season}-${G.phase}-${G.step || ''}`;
+function talkWith(partner) {
+  G.talks = G.talks || {};
+  let T = G.talks[partner];
+  if (!T || T.key !== talkKey()) T = G.talks[partner] = {key: talkKey(), patience: 3, log: []};
+  return T;
+}
+function proposeTrade(partner, give, get) {
+  const T = talkWith(partner);
+  T.log.push({me: true, give: give.slice(), get: get.slice()});
+  if (T.patience <= 0) { const r = {kind: 'done', line: say('done'), done: true}; T.log.push({me: false, ...r}); return r; }
+  const ev = evalTrade(partner, give, get);
+  let r;
+  const blocking = ev.issues.filter(i => !i.startsWith('Both'));
+  if (ev.ok) r = {kind: 'yes', line: say(ev.ratio > 1.6 ? 'eager' : 'yes'), give: give.slice(), get: get.slice()};
+  else if (ev.ratio >= 1 && blocking.length && !ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${blocking[0]}`};
+  else if (ev.fleece) { T.patience -= 1; r = {kind: 'laugh', line: say('fleece')}; }
+  else if (ev.ratio < .55) { T.patience -= 2; r = {kind: 'laugh', line: say('laugh')}; }
+  else {
+    const c = counterTrade(partner, give, get);
+    T.patience -= 1;
+    r = c ? {kind: 'counter', line: say('counter'), counters: c} : {kind: 'close', line: ev.ratio >= .85 ? say('close') : say('laugh')};
+  }
+  if (r.kind !== 'yes' && T.patience <= 0) { r.line += ' ' + say('done'); r.done = true; }
+  T.log.push({me: false, ...r});
+  return r;
+}
 // Packages you could send for one of their players
 function findPackages(pid) {
   const p = G.players[pid];
@@ -1599,7 +1638,7 @@ function refreshOffersC() { G.offers = genOffersC(5, 3); return G.offers; }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, proposeTrade, talkWith, shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

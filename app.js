@@ -767,6 +767,27 @@ function assetRow(id, side, P, tag) {
     ${face(p, 'sm')}<div class="an"><div><b>${esc(p.n)}</b> <span class="muted small">${p.pos} · ${Math.floor(p.age)}</span>${injTag(p)}${formTag(p)}</div><div class="small muted">${money(p.cap)} thru ${p.end}${tag ? ' · ' + tag : ''}</div></div>
     <span class="ovrb sm ${oc(p.ovr)}">${p.ovr}</span><span class="aval num" title="Value to the ${esc(tname(P))}">${Math.round(E.playerValue(p, P))}</span><button class="ibtn" data-act="player" data-id="${esc(p.id)}" aria-label="Card for ${esc(p.n)}">i</button></div>`;
 }
+// The phone call: you propose, their GM answers with a yes, a counter or a laugh.
+function talkSheet(P, typing) {
+  const T = E.talkWith(P), log = T.log.slice(-8), last = T.log[T.log.length - 1];
+  const nick = esc(tname(P));
+  const deal = (give, get) => `<div class="talkdeal"><div><div class="lbl">You send</div>${assetGroup(give)}</div><div><div class="lbl">You get</div>${assetGroup(get)}</div></div>`;
+  const bubble = (m, i) => {
+    if (m.me) return `<div class="bub me"><div class="bubt">Your offer</div>${deal(m.give, m.get)}</div>`;
+    if (typing && i === log.length - 1) return `<div class="bub them">${badge(P, 1)}<div class="typing" aria-label="${nick} are typing"><i></i><i></i><i></i></div></div>`;
+    const isLast = i === log.length - 1;
+    let extra = '';
+    if (isLast && m.kind === 'yes') extra = `<div class="row"><button class="btn go" data-act="talkDeal">Shake on it</button><button class="btn ghost" data-act="closeModal">Not yet</button></div>`;
+    if (isLast && m.kind === 'counter') { UI.counter = {partner: P, list: m.counters}; extra = m.counters.map((x, j) => `<div class="talkcounter"><div class="bubt">${esc(x.label)}</div>${deal(x.give, x.get)}<div class="row"><button class="btn go sm" data-act="counterAccept" data-i="${j}">Accept</button><button class="btn sm" data-act="counterEdit" data-i="${j}">Tweak it</button></div></div>`).join(''); }
+    return `<div class="bub them ${m.kind}">${badge(P, 1)}<div><div class="bubl">${esc(m.line)}</div>${extra}</div></div>`;
+  };
+  const pat = Math.max(0, T.patience);
+  modal(`<div class="sheeth"><div><div class="kicker">On the phone with the ${nick}</div><h3>${typing ? 'Waiting on their answer' : last && last.kind === 'yes' ? 'They said yes' : last && last.kind === 'counter' ? 'They countered' : last && last.done ? 'They hung up' : 'They passed'}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="talk">${log.map(bubble).join('')}</div>
+    <div class="row talkfoot"><span class="small muted">Patience <span class="pdots">${[0, 1, 2].map(k => `<i class="${k < pat ? 'on' : ''}"></i>`).join('')}</span></span><button class="btn" data-act="closeModal">${pat > 0 ? 'Back to the deal' : 'Done'}</button></div>`, true);
+  const t = $('.talk'); if (t) t.scrollTop = t.scrollHeight;
+  if (typing) setTimeout(() => { if ($('.talk .typing')) talkSheet(P, false); }, reducedMotion() ? 0 : 750);
+}
 function renderTrade() {
   if (G.mode === 'notrades') return `<section class="hero"><div><div class="kicker">Trade center</div><h2>No trades in this run</h2><p class="lead">You picked the No trades challenge. Build through free agency, the draft and your depth chart.</p></div></section>`;
   if (!tradeOpen()) return `<section class="hero"><div><div class="kicker">Trade center</div><h2>Trades are closed</h2><p class="lead">Trades open at the Week 9 deadline each season and through the whole 2027 offseason, draft included.</p></div></section>`;
@@ -808,7 +829,7 @@ function renderTrade() {
   <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(mood)}</span><span class="dp-go">Review</span></button>
   <div class="dealdock card deskonly-grid"><div class="dock-sides"><div><div class="lbl">You send</div>${UI.give.length ? assetGroup(UI.give) : '<span class="small muted">Nothing yet</span>'}</div><div><div class="lbl">You get</div>${UI.get.length ? assetGroup(UI.get) : '<span class="small muted">Nothing yet</span>'}</div></div>
     <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
-      <div class="row nowrap"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div></div></div>`;
+      <div class="row nowrap"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn" data-act="callTeam" ${ready ? '' : 'disabled'} title="Pitch it on the phone. They might accept, counter or laugh.">Call them</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div></div></div>`;
 }
 
 // ---------- league ----------
@@ -1563,7 +1584,7 @@ document.addEventListener('click', e => {
         <div class="offerb"><div><div class="lbl">You send</div>${UI.give.length ? assetGroup(UI.give) : '<span class="small muted">Nothing yet</span>'}</div><div><div class="lbl">You get</div>${UI.get.length ? assetGroup(UI.get) : '<span class="small muted">Nothing yet</span>'}</div></div>
         ${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>${fairTag(ev.fair)}` : ''}
         ${ev.issues.filter(i => !i.startsWith('Both')).map(i => `<div class="small bad">${esc(i)}</div>`).join('')}
-        <div class="row end"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div>`, true);
+        <div class="row end"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn" data-act="callTeam" ${ready ? '' : 'disabled'}>Call them</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div>`, true);
       return;
     }
     case 'draftCalls': { const L = E.draftOffers().filter(o => !(UI.declined || []).includes(o.id)); modal(`<div class="sheeth"><div><div class="kicker">Draft day</div><h3>Teams want your pick</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div><div class="offers">${L.map(o => offerCard(o, true)).join('') || '<p class="muted">No calls right now.</p>'}</div>`, true); return; }
@@ -1587,6 +1608,18 @@ document.addEventListener('click', e => {
         <p class="muted">Not that deal. But they would do one of these.</p>${c.map((x, i) => { const ev = E.evalTrade(UI.partner, x.give, x.get); return `<div class="offer slim"><div class="offerh"><div><b>${esc(x.label)}</b></div>${fairTag(ev.fair)}</div><div class="offerb"><div><div class="lbl">You get</div>${x.get.map(assetMini).join('')}</div><div><div class="lbl">You send</div>${x.give.map(assetMini).join('')}</div></div><div class="row end"><button class="btn sm" data-act="counterEdit" data-i="${i}">Edit</button><button class="btn sm go" data-act="counterAccept" data-i="${i}">Accept</button></div></div>`; }).join('')}`, true); return; }
       popup('Trade rejected', `The ${esc(tname(UI.partner))} said no`, `<p class="muted">${esc(r.issues[0] || (r.fleece ? 'They know that deal is too good for you.' : 'Not close enough to counter. They value what you offered well below what you asked for.'))}</p>`, 'loss');
       return;
+    }
+    case 'callTeam': { closeModal();
+      const P = UI.partner;
+      E.proposeTrade(P, UI.give.slice(), UI.get.slice());
+      talkSheet(P, true); return;
+    }
+    case 'talkDeal': {
+      const T = E.talkWith(UI.partner), last = T.log[T.log.length - 1];
+      if (!last || last.kind !== 'yes') return;
+      const r = E.doTrade(UI.partner, last.give, last.get); closeModal();
+      if (r.ok) { UI.give = []; UI.get = []; persist(); render(); tradePopup(UI.partner, last.give, last.get); return; }
+      toast(r.issues[0] || 'It fell apart at the last second.'); break;
     }
     case 'accept': { const o = (G.offers || []).find(x => x.id === id); const r = E.acceptOffer(id); if (r.ok && o) { persist(); render(); tradePopup(o.from, o.give, o.get, 'Offer accepted'); return; } toast(r.msg); break; }
     case 'decline': G.offers = (G.offers || []).filter(o => o.id !== id); break;

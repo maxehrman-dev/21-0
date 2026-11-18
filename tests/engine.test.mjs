@@ -123,3 +123,17 @@ test('the upgrade finder offers fits, budget options and splashes', () => {
   assert.equal(new Set(names).size, names.length, 'a player shows up in only one tier');
   for (const t of T.tr) for (const x of t.list) assert.ok(x.gain > 0);
 });
+
+test('a trade call answers with a yes, a counter or a laugh, and lowballs cost patience', () => {
+  E.newGame(DATA, 'NYJ', 10);
+  E.simTo(9); E.G.phase = 'deadline';
+  const tgt = E.roster('WAS').filter(p => p.pos === 'WR').sort((a, b) => b.ovr - a.ovr)[0];
+  const picks = E.G.picks.filter(k => k.owner === 'NYJ').sort((a, b) => a.yr - b.yr || a.rd - b.rd).map(k => k.id);
+  const low = E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
+  assert.ok(['laugh', 'close', 'counter'].includes(low.kind), low.kind);
+  assert.ok(E.talkWith('WAS').patience < 3, 'a lowball costs patience');
+  const big = E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]);
+  assert.equal(big.kind, 'yes', big.line);
+  while (E.talkWith('WAS').patience > 0) E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
+  assert.equal(E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]).kind, 'done', 'out of patience means no more calls');
+});
