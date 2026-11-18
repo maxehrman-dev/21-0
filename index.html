@@ -2,8 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>21-0</title>
+<meta name="description" content="Build the first pro football team to go 21-0. Real 2026 rosters, trades calibrated on 1,000 real deals, free agency, the draft and two seasons to get it done.">
+<meta name="theme-color" content="#16203d">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="21-0">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:title" content="21-0: build the perfect season">
+<meta property="og:description" content="Pick any team as of Week 1, 2026. Trade, sign, draft and try to go 21-0.">
+<meta property="og:image" content="og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="21-0: build the perfect season">
+<meta name="twitter:description" content="Pick any team as of Week 1, 2026. Trade, sign, draft and try to go 21-0.">
+<meta name="twitter:image" content="og.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -505,7 +525,32 @@ table.lineup tr.chg td:first-child { box-shadow: inset 3px 0 0 var(--gold); }
 .sharepreview { width: 100%; max-width: 420px; display: block; margin: 0 auto 10px; border-radius: 12px; border: 1px solid var(--line2); }
 a.btn { text-decoration: none; }
 
+/* ---------- details ---------- */
+.legal { margin: 34px 0 0; padding: 16px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.5; max-width: 80ch; }
+.legal a { color: var(--muted); }
+.splash { min-height: 70vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+.splash-logo { font-family: var(--display); font-weight: 900; font-size: 88px; line-height: 1; color: var(--gold); letter-spacing: .01em; }
+.splash-logo span { color: var(--chalk); }
+.splash p { color: var(--muted); margin: 0; font-size: 14px; }
+.splash-bar { width: 180px; height: 4px; border-radius: 99px; background: var(--panel2); overflow: hidden; }
+.splash-bar i { display: block; width: 40%; height: 100%; background: var(--gold); border-radius: 99px; animation: slide 1.1s ease-in-out infinite; }
+@keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
+.perfect { font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #1b1203; background: var(--gold); border-radius: 5px; padding: 1px 5px; margin-left: 6px; vertical-align: 2px; }
+.stat em { font-style: normal; font-weight: 800; }
+.stat em.good { color: var(--good); } .stat em.bad { color: var(--bad); }
+.awards { margin-top: 14px; }
+.award { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid rgba(33,48,73,.6); }
+.award:last-child { border-bottom: 0; }
+.award.mine { background: rgba(243,181,47,.06); border-radius: 10px; }
+.award .kicker { font-size: 10px; }
+.atrophy svg { width: 22px; height: 22px; fill: none; stroke: var(--gold); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: block; }
+.champbanner { margin: 4px 0 0; padding: 18px; border-radius: 16px; text-align: center; border: 1px solid rgba(243,181,47,.5); background: radial-gradient(120% 120% at 50% 0%, rgba(243,181,47,.22), var(--panel) 70%); display: grid; gap: 4px; }
+.champbanner b { font-family: var(--display); font-weight: 900; font-size: 34px; text-transform: uppercase; color: var(--gold); line-height: 1; }
+.confetti { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .splash-bar i { animation: none; width: 100%; } }
 /* ---------- phone ---------- */
+.needsbtn { display: none; }
+.inboxrow { display: none; }
 #abar { display: none; }
 .mobcap { display: none; }
 .dockpill { display: none; }
@@ -552,7 +597,7 @@ a.btn { text-decoration: none; }
   .farow .icell { order: 5; flex: 1 1 40%; width: auto; }
   .farow > .row.nowrap { order: 6; width: auto !important; margin-left: auto; flex: none; }
   .farow > .row.nowrap .btn { flex: none !important; height: 38px; padding: 0 14px; }
-  .hero .btn[data-act=toDraft], .hero .btn[data-act=faWave] { display: none; }
+  .hero .btn[data-act=faWave] { display: none; }
   .confseg { margin: 12px 0 0; } .confseg .seg { display: flex; } .confseg .seg button { flex: 1; }
   .show-AFC .div-NFC, .show-NFC .div-AFC { display: none; }
   .sheet { padding-top: 26px; position: relative; }
@@ -621,6 +666,77 @@ a.btn { text-decoration: none; }
   .final { padding: 22px 14px; } .gring { width: 112px; height: 112px; }
   .bracket { grid-template-columns: repeat(4, 220px); }
 }
+/* ---------- phone, v3: one bottom bar, less chrome, lists not tables ---------- */
+@media (max-width: 760px) {
+  #abar:not([hidden]) { display: none; }
+  body { padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
+  #bnav { align-items: flex-end; padding-top: 4px; }
+  #bnav > button:not(.bnext) { min-height: 54px; }
+  .bnext { flex: 1.15; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; color: var(--gold); font-size: 11px; font-weight: 800; padding: 0 0 4px; margin-top: -26px; }
+  .bnext-ring { width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(180deg, var(--gold2), var(--gold)); box-shadow: 0 0 0 5px var(--ink), 0 10px 24px -6px rgba(243,181,47,.6); }
+  .bnext-ring svg { width: 26px; height: 26px; fill: #1b1203; stroke: none; margin-left: 3px; }
+  .bnext:active .bnext-ring { transform: scale(.94); }
+  .bnext.off { flex: 1.15; }
+  .dockpill { bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
+  .toast { bottom: calc(100px + env(safe-area-inset-bottom, 0px)); }
+  .hero { padding: 12px 0 8px; gap: 10px; }
+  .hero h2 { font-size: 23px; }
+  .hero .kicker { font-size: 11px; }
+  .grid { gap: 10px; }
+  .card { padding: 12px; }
+  .card h3 { font-size: 17px; margin-bottom: 8px; }
+  .cardh { margin-bottom: 8px; }
+  .stepper { padding-top: 8px; gap: 2px; }
+  .stepper li:not(.on) { font-size: 0; padding-right: 2px; }
+  .stepper li:not(.on) span { font-size: 11px; }
+  .stepper li + li::before { width: 10px; }
+  .lgseg { width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .lgseg .seg { display: flex; width: max-content; min-width: 100%; }
+  .lgseg .seg button { flex: 1; white-space: nowrap; }
+  .deskonly-inline { display: none; }
+  .hero .btn[data-tab=trade] { display: none; }
+  /* home */
+  .inboxrow.mobonly { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(243,181,47,.4);
+    background: linear-gradient(180deg, rgba(243,181,47,.12), rgba(243,181,47,.04)); color: var(--chalk); }
+  .inboxrow .count { min-width: 30px; height: 30px; font-size: 15px; }
+  .inboxrow > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .inboxrow .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .outlook .kpis { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .outlook .kpis b { font-size: 22px; } .outlook .kpis span { font-size: 9.5px; } .outlook .kpis em { font-size: 9px; }
+  .outlook > p.small { display: none; }
+  .outlook .goal { padding: 8px 10px; margin-bottom: 10px; } .outlook .goal b { font-size: 18px; }
+  .homeneeds .need:nth-child(n+4) { display: none; }
+  /* trade */
+  .tradetop { margin-bottom: 8px; } .tradetop .dd, .tradetop .dd .ddbtn { width: 100%; }
+  .tmobseg { top: 52px; padding: 6px 0; }
+  .tradecols .cardh h3 { display: none; }
+  .tradecols .cardh { margin-bottom: 4px; justify-content: flex-end; }
+  .tradecols .seg { margin-bottom: 6px; } .tradecols .seg button { height: 32px; font-size: 13px; }
+  .tradecols .card { padding: 8px; }
+  /* free agency */
+  .fatool { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .fatool .fasearch { grid-column: 1; grid-row: 1; width: auto; } .fatool .fasearch input { width: 100%; height: 42px; }
+  .fatool .needsbtn { display: inline-flex; grid-column: 2; grid-row: 1; height: 42px; }
+  .fatool .seg { grid-column: 1; grid-row: 2; width: auto; } .fatool .seg button { height: 36px; font-size: 13px; padding: 0 8px; }
+  .fatool .dd { grid-column: 2; grid-row: 2; width: auto; } .fatool .dd .ddbtn { min-width: 0; width: 130px; min-height: 42px; padding: 4px 30px 4px 10px; }
+  .fatool .dd .ddlab small { display: none; }
+  .fatool .meta { grid-column: 1 / -1; font-size: 12px; }
+  /* re-sign */
+  .negbtn { display: none !important; }
+  .trow[data-act] { cursor: pointer; }
+  /* draft */
+  .mboard { padding: 4px 8px; }
+  .mbrow { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid rgba(33,48,73,.6); min-height: 58px; }
+  .mbrow:last-child { border-bottom: 0; }
+  .mbrow .pmain { cursor: pointer; }
+  .mbrow .projr { flex: none; font-size: 17px; }
+  /* stats: keep the player column, drop contract columns */
+  .rtable th:nth-child(5), .rtable td:nth-child(5), .rtable th:nth-child(6), .rtable td:nth-child(6), .rtable th:nth-child(7), .rtable td:nth-child(7) { display: none; }
+  .rtable td.pcell, .rtable th:nth-child(2) { position: sticky; left: 0; z-index: 1; background: var(--panel); min-width: 128px; max-width: 150px; }
+  .rtable td:first-child, .rtable th:first-child { display: none; }
+  .rtable td.pcell .pname { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+  .rtable td.pcell .tag { display: none; }
+}
 @media (max-width: 860px) { .fa-grid { grid-template-columns: 1fr; } .dealbar { position: static; } }
 @media (max-width: 640px) {
   .capbox { min-width: 100%; margin-left: 0; } h2 { font-size: 26px; } .hstats { gap: 12px; } .stat b { font-size: 22px; }
@@ -632,7 +748,7 @@ a.btn { text-decoration: none; }
 </head>
 <body>
 <header id="hdr"></header>
-<main class="wrap" id="app"><p class="muted" style="padding:40px 0">Loading rosters...</p></main>
+<main class="wrap" id="app"><div class="splash" role="status"><div class="splash-logo">21<span>-</span>0</div><p>Loading 1,970 players, 32 rosters and the 2027 draft class</p><div class="splash-bar"><i></i></div></div></main>
 <div id="abar" hidden></div>
 <nav id="bnav" aria-label="Sections"></nav>
 <div id="layer"></div>

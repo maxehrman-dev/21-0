@@ -1,39 +1,78 @@
-# 21-0
+<p align="center"><img src="icon-192.png" width="96" height="96" alt="21-0 logo"></p>
 
-An NFL front-office game. Pick any team as it stood at Week 1 of 2026 and try to build the first team to go 21-0: 17-0 in the regular season and 4-0 in the playoffs. You get the 2026 and 2027 seasons.
+<h1 align="center">21-0</h1>
 
-## How it plays
+<p align="center">A pro football front-office game. Take over any team as it stood at Week 1 of 2026 and build the first team to go 21-0: 17-0 in the regular season, then four playoff wins.</p>
 
-- **2026:** the first half plays out with the real roster. You get one stop at the Week 9 trade deadline, then the sim runs to the end. Playoffs use 8 teams per conference with no byes, so 21-0 is possible.
-- **2027 offseason:** progression and regression, re-signing with contract negotiation, three waves of free agency with meetings and rival bids, the real 2027 draft class with scouting ranges, and the cut to 53.
-- **2027:** one more deadline, one more season, then a rebuild report card and a shareable result.
+<p align="center"><img src="docs/desktop.png" width="640" alt="21-0 on desktop at the trade deadline"> <img src="docs/phone.png" width="200" alt="21-0 on a phone"></p>
 
-Trades run on a value model calibrated against the last 1,000 real NFL trades (2013 to 2026). It accounts for talent, positional value, position-specific aging, real production, hype, contract status and cost, plus each team's situation, needs, GM style and cap room.
+## How a run works
 
-## Run it
+| Phase | What you do |
+|---|---|
+| **2026, first half** | Plays out with the team's real roster. No moves. |
+| **Week 9 deadline** | Your one stop: take offers from your inbox or build your own trades. |
+| **Playoffs** | 8 teams per conference and no byes, so 21-0 is possible. Watch round by round or skip ahead. |
+| **2027 offseason** | Progression and regression, re-sign negotiations, three free-agency waves, the 2027 draft, and the cut to 53. |
+| **2027 season** | One more deadline and one more shot. |
+| **The end** | A rebuild report card, season awards, your GM résumé and a share card. |
 
-It is a static site with no build step.
+## What's inside
+
+- **Real starting point.** 2026 rosters, contracts and cap hits. Ratings come from 2023–26 production, playing time, contracts and draft pedigree, so one bad year doesn't erase a career.
+- **A trade market calibrated on real deals.** Values were fitted to the last 1,000 trades (2013–2026): the pick chart from 375 pick-for-pick swaps, future picks worth about 60% of the same slot, and star prices matching what Tyreek Hill, Davante Adams and Jalen Ramsey actually fetched. Each team also weighs its own situation, needs, GM style, scouting, cap room and division rivalries.
+- **Offers come to you.** At least three every trade window, plus draft-day calls to trade up into your pick. Teams counter instead of just saying no.
+- **Free agency with people in it.** Players care about money, winning, role and loyalty in different amounts. Meet them, pitch them, make offers, then see whether a rival outbids you and decide whether to match.
+- **The real 2027 draft class**, with scouting ranges that can be wrong. Every pick's true rating is revealed on the spot: steal, as projected, or bust.
+- **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.
+- **Challenge modes:** No trades, Cap hell, and Worst to first.
+- **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
+
+## Controls
+
+| Key | Action |
+|---|---|
+| `N` | Do the next step (sim, play the next round, end the wave...) |
+| `1`–`5` | Front office, Roster, Trade, League, Résumé |
+| `Esc` | Close a pop-up or menu |
+
+On a phone, the gold ▶ button in the middle of the tab bar always does the next step.
+
+## Run it locally
+
+It's a static site with no build step and no dependencies.
 
 ```bash
-python3 -m http.server 8000
+npm run dev
 ```
 
-Then open http://localhost:8000. Opening `index.html` directly from disk will not load the data files.
+Then open http://localhost:8000. Opening `index.html` straight from disk won't load the data files.
 
-## Files
+## Tests
 
-| File | What it is |
+```bash
+npm test
+```
+
+They play the engine end to end: a full 2026 season, trade-value sanity checks, AI offer fairness, the whole offseason, a 2027 season and the final report. GitHub Actions runs them on every push.
+
+## Project layout
+
+| Path | What it is |
 |---|---|
-| `index.html` | Page shell and all styles |
-| `engine.js` | Game engine: ratings, trade values, sim, offseason, draft, free agency |
+| `index.html` | Page shell and every style |
+| `engine.js` | Game engine: ratings, trade values, the sim, offseason, draft, free agency, awards |
 | `app.js` | Interface |
-| `data.json` | Rosters, contracts, ratings, potential, production, hype, schedule, 2027 prospects |
+| `data.json` | Rosters, contracts, ratings, potential, production, hype, schedule and 2027 prospects |
 | `heads.json`, `img/` | Player headshot sprite sheets, one per team |
-| `tools/` | Scripts that built the ratings, headshots and trade research |
+| `tests/` | Engine tests (`node --test`) |
+| `tools/` | Scripts that built the ratings, headshots and trade research, plus a local server |
 
-## Data sources
+## Data and credits
 
-- Rosters, stats, snap counts, draft history and trades: [nflverse](https://github.com/nflverse/nflverse-data)
-- Player headshots: NFL.com images, matched through nflverse player IDs
+- Rosters, stats, snap counts, draft history and trades: [nflverse](https://github.com/nflverse/nflverse-data), licensed CC BY 4.0.
+- Player headshots: NFL.com images, matched through nflverse player IDs.
 
-Player headshots and team names are the property of the NFL and its teams. This is an unofficial fan project and is not affiliated with or endorsed by the NFL.
+## Legal
+
+21-0 is an unofficial fan project. It is not affiliated with, endorsed by or licensed by the National Football League, the NFL Players Association or any team. Team names, player names and player photos are the property of their respective owners. Ratings, trade values and results are simulated estimates.

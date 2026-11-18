@@ -1422,6 +1422,45 @@ function goalMet(season) {
   return {met, goal: e.goal, wins: r.w, proj: e.wins};
 }
 
+// ---------- season awards ----------
+// Built from the simulated season's box scores, credited to the player's current team.
+function awards(season) {
+  const S = G.stats[season] || {};
+  const rows = Object.entries(S).map(([id, st]) => ({p: G.players[id], st})).filter(x => x.p && G.teams[x.p.tm]);
+  const wins = t => record(t, season).w;
+  const qbScore = st => (st.py || 0) / 25 + (st.ptd || 0) * 4 - (st.int || 0) * 2 + (st.ry || 0) / 10;
+  const offScore = st => ((st.ry || 0) + (st.recy || 0)) / 10 + ((st.rtd || 0) + (st.rectd || 0)) * 6;
+  const defScore = st => (st.sk || 0) * 4 + (st.dint || 0) * 5;
+  const any = x => x.p.pos === 'QB' ? qbScore(x.st) : ['EDGE', 'DT', 'LB', 'CB', 'S'].includes(x.p.pos) ? defScore(x.st) * 1.6 : offScore(x.st);
+  const line = x => {
+    const st = x.st, n = v => Math.round(v || 0).toLocaleString();
+    if (x.p.pos === 'QB') return `${n(st.py)} pass yds, ${n(st.ptd)} TD, ${n(st.int)} INT`;
+    if (['EDGE', 'DT', 'LB', 'CB', 'S'].includes(x.p.pos)) return `${n(st.sk)} sacks, ${n(st.dint)} INT`;
+    return `${n((st.ry || 0) + (st.recy || 0))} scrimmage yds, ${n((st.rtd || 0) + (st.rectd || 0))} TD`;
+  };
+  const best = (L, f) => L.slice().sort((a, b) => f(b) - f(a) || b.p.ovr - a.p.ovr)[0];
+  const pick = (award, x) => x ? {award, id: x.p.id, n: x.p.n, pos: x.p.pos, tm: x.p.tm, line: line(x)} : null;
+  // a 2026 rookie has no 2025 NFL season; a 2027 rookie came out of this game's draft
+  const isRookie = x => season === 2026 ? !x.p.st25 && x.p.age < 24.5 && !x.p.draft : x.p.draft != null;
+  return [
+    pick('MVP', best(rows.filter(x => x.p.pos === 'QB'), x => qbScore(x.st) + wins(x.p.tm) * 3)),
+    pick('Offensive Player of the Year', best(rows.filter(x => ['RB', 'WR', 'TE'].includes(x.p.pos)), x => offScore(x.st))),
+    pick('Defensive Player of the Year', best(rows.filter(x => ['EDGE', 'DT', 'LB', 'CB', 'S'].includes(x.p.pos)), x => defScore(x.st))),
+    pick('Rookie of the Year', best(rows.filter(isRookie), any)),
+    pick('Your team MVP', best(rows.filter(x => x.p.tm === G.user), any)),
+  ].filter(Boolean);
+}
+// Current run of wins or losses, playoffs included
+function streak(t, season) {
+  const L = (G.results[season] || []).filter(g => g.a === t || g.h === t);
+  if (!L.length) return null;
+  const won = g => (g.h === t) === (g.hs > g.as);
+  const last = won(L[L.length - 1]);
+  let n = 0;
+  for (let i = L.length - 1; i >= 0 && won(L[i]) === last; i--) n++;
+  return {win: last, n};
+}
+
 // ---------- rebuild report ----------
 const LETTERS = [[93, 'A+'], [88, 'A'], [84, 'A-'], [80, 'B+'], [75, 'B'], [70, 'B-'], [66, 'C+'], [60, 'C'], [55, 'C-'], [48, 'D'], [0, 'F']];
 const letter = s => LETTERS.find(([m]) => s >= m)[1];
@@ -1517,7 +1556,7 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = genOffersC(5, 3); return G.offers; }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
