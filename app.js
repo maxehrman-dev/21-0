@@ -5,6 +5,7 @@ let DATA = null, G = null, HEADS = null;
 const UI = {tab: 'home', partner: null, give: [], get: [], rview: 'lineup', rosterPos: 'ALL', statKey: null, league: 'standings',
   faFit: 'need', faPos: 'ALL', faYrs: {}, rYrs: {}, faApy: {}, ddOpen: null, cutSel: null, tq: '', found: null, share: ''};
 const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 const money = v => (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(1) + 'M';
 const pct = v => Math.round(v * 100) + '%';
@@ -17,7 +18,7 @@ const RANK_LETTER = r => r <= 4 ? 'A' : r <= 12 ? 'B' : r <= 20 ? 'C' : r <= 26 
 
 function persist() { try { localStorage.setItem(SAVE_KEY, E.save()); } catch (e) { /* storage unavailable */ } }
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
-function toast(m) { document.querySelectorAll('.toast').forEach(x => x.remove()); const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'status'); d.textContent = m; document.body.appendChild(d); setTimeout(() => d.remove(), 3400); }
+function toast(m) { document.querySelectorAll('.toast').forEach(x => x.remove()); const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'status'); d.textContent = m; document.body.appendChild(d); setTimeout(() => d.classList.add('out'), 3150); setTimeout(() => d.remove(), 3400); }
 
 function badge(t, sm) {
   const tm = (G || DATA).teams[t];
@@ -110,8 +111,86 @@ function fairTag(f) {
 function seg(id, opts, cur) {
   return `<div class="seg" role="group">${opts.map(([k, l]) => `<button class="${k === cur ? 'on' : ''}" data-act="seg" data-seg="${id}" data-k="${k}" aria-pressed="${k === cur}">${l}</button>`).join('')}</div>`;
 }
-function modal(html, wide) { $('#layer').innerHTML = `<div class="modal" data-act="closeModal"><div class="sheet${wide ? ' wide' : ''}" data-stop="1" role="dialog" aria-modal="true">${html}</div></div>`; }
-const closeModal = () => { $('#layer').innerHTML = ''; };
+function modal(html, wide) { clearTimeout(UI.closeT); const had = !!$('#layer .modal:not(.closing)'); $('#layer').innerHTML = `<div class="modal" data-act="closeModal"><div class="sheet${wide ? ' wide' : ''}" data-stop="1" role="dialog" aria-modal="true">${html}</div></div>`; if (had) { const m = $('#layer .modal'); if (m) m.classList.add('still'); } }
+const closeModal = () => {
+  const m = $('#layer .modal');
+  if (!m || reducedMotion()) { $('#layer').innerHTML = ''; return; }
+  m.classList.add('closing'); clearTimeout(UI.closeT);
+  UI.closeT = setTimeout(() => { const n = $('#layer .modal.closing'); if (n) $('#layer').innerHTML = ''; }, 170);
+};
+// ---------- motion ----------
+function reducedMotion() { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
+function countUp(el, from, to, dur, fmt) {
+  if (reducedMotion() || from === to) { el.textContent = fmt(to); return; }
+  const t0 = performance.now();
+  (function step(t) {
+    const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = fmt(Math.round(from + (to - from) * e));
+    if (k < 1) requestAnimationFrame(step);
+  })(t0);
+}
+// Cards rise in, bars fill and big numbers count up when you land on a new screen.
+function animateEnter() {
+  if (reducedMotion()) return;
+  const app = $('#app');
+  let i = 0;
+  for (const el of app.querySelectorAll('.card, .tcard, .hero, .inboxrow, .need')) {
+    if (el.parentElement.closest('.card, .tcard')) continue;
+    el.style.setProperty('--i', Math.min(i++, 12)); el.classList.add('rise');
+  }
+  for (const el of app.querySelectorAll('[class$="bar"] > i, .meter > i')) el.classList.add('grow');
+  for (const el of app.querySelectorAll('.kpis b')) {
+    const m = /^(\d{1,3})(%?)$/.exec(el.textContent.trim());
+    if (m && +m[1] > 0) countUp(el, 0, +m[1], 900, v => v + m[2]);
+  }
+  for (const el of app.querySelectorAll('.count')) el.classList.add('pulse');
+}
+// After a sim, your games flash by one at a time and the record ticks up. Tap to skip.
+function simReel(games, kicker, start, done) {
+  const u = G.user;
+  const mine = games.filter(g => g.h === u || g.a === u);
+  if (!mine.length || reducedMotion()) { done(); return; }
+  let w = start.w, l = start.l, i = 0, finished = false;
+  const el = document.createElement('div');
+  el.className = 'reel'; el.setAttribute('role', 'status');
+  el.innerHTML = `<div class="reel-in"><div class="reel-k">${esc(kicker)}</div><div class="reel-rec">${w}-${l}</div><div class="reel-sub">${esc(G.teams[u].name)}</div><div class="reel-grid"></div><div class="reel-skip">Tap to skip</div></div>`;
+  document.body.appendChild(el);
+  const recEl = el.querySelector('.reel-rec'), sub = el.querySelector('.reel-sub'), grid = el.querySelector('.reel-grid');
+  const stepMs = Math.max(110, Math.min(240, 1700 / mine.length));
+  const finish = () => {
+    if (finished) return; finished = true; clearInterval(tm);
+    el.classList.add('out'); setTimeout(() => { el.remove(); done(); }, 260);
+  };
+  const add = () => {
+    const g = mine[i++], home = g.h === u, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = home ? g.a : g.h;
+    const r = us > them ? 'w' : us < them ? 'l' : 't';
+    if (r === 'w') w++; else if (r === 'l') l++;
+    const c = document.createElement('div'); c.className = 'rchip ' + r;
+    c.innerHTML = `<b>${r.toUpperCase()}</b><span>${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}${g.wk && !g.po ? ` · Wk ${g.wk}` : ''}</em>`;
+    grid.appendChild(c);
+    recEl.textContent = `${w}-${l}`; recEl.classList.remove('bump'); void recEl.offsetWidth; recEl.classList.add('bump');
+    if (l === 0 && w > 0) sub.textContent = 'Still perfect'; else sub.textContent = r === 'w' ? `Beat the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}`;
+    if (i >= mine.length) { clearInterval(tm); setTimeout(finish, 900); }
+  };
+  const tm = setInterval(add, stepMs);
+  el.addEventListener('click', () => { while (i < mine.length) add(); finish(); });
+}
+// Runs a sim, then plays the reel, then reports injuries and celebrations.
+function simWithReel(kicker, sim) {
+  const s = G.season, n0 = (G.results[s] || []).length, mark = (G.injLog || []).length;
+  const r0 = E.record(G.user, s), start = {w: r0.w, l: r0.l};
+  const po = G.phase === 'playoffs';
+  if (po) { const pw = poWins(s); start.w = pw; start.l = 0; }
+  sim();
+  const games = (G.results[s] || []).slice(n0);
+  UI.reel = true; persist(); render();
+  simReel(games, kicker, start, () => {
+    UI.reel = false;
+    if (UI.celebrate) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 100); }
+    injuryPopup(mark);
+  });
+}
+function poWins(s) { return (G.results[s] || []).filter(g => g.po && ((g.h === G.user && g.hs > g.as) || (g.a === G.user && g.as > g.hs))).length; }
 
 // ---------- career / résumé storage ----------
 // Saved to the viewer's private area in the page's database when available, and always mirrored on this device.
@@ -515,6 +594,7 @@ function fillPopup(list, kicker) {
 }
 function revealPopup(sel, no) {
   const p = G.players[sel.id];
+  setTimeout(() => { const b = $('.sheet .reveal b'); if (b) countUp(b, sel.lo, sel.ovr, 950, v => v + ' OVR'); }, 60);
   popup(`Pick #${no}`, `${esc(sel.n)} is a ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p || {n: sel.n, id: sel.id}, 'xl')}<div><div class="kicker">${sel.pos} · ${esc(sel.sch)}</div>
     <div class="reveal"><span class="small muted">Scouts said ${sel.lo}–${sel.hi}</span><b class="${oc(sel.ovr)}">${sel.ovr} OVR</b></div>${verdictTag(sel.verdict)}
     <div class="small muted" style="margin-top:6px">${sel.verdict === 'Steal' ? 'Better than anyone projected.' : sel.verdict === 'Bust' ? 'Below what the scouts saw. Potential can still bring him along.' : 'Right where the scouts had him.'}</div></div></div>`, sel.verdict === 'Bust' ? 'loss' : 'win');
@@ -1310,7 +1390,16 @@ function render() {
     return;
   }
   renderCached();
-  if (UI.celebrate) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 150); }
+  const key = [UI.tab, G.phase, G.step, G.season, UI.league, UI.tview || '', UI.rview].join('|');
+  if (key !== UI.lastKey) {
+    const stage = [G.phase, G.step, G.season].join('|');
+    if (UI.lastStage && stage !== UI.lastStage) window.scrollTo(0, 0);
+    UI.lastKey = key; UI.lastStage = stage; animateEnter();
+  }
+  const hv = $$('#hdr .hstats .num').map(x => x.textContent);
+  if (UI.hdrVals && !reducedMotion()) $$('#hdr .hstats .num').forEach((x, i) => { if (UI.hdrVals[i] !== undefined && UI.hdrVals[i] !== hv[i]) x.classList.add('bump'); });
+  UI.hdrVals = hv;
+  if (UI.celebrate && !UI.reel) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 150); }
 }
 function go(tab) { UI.tab = tab; UI.found = null; render(); window.scrollTo(0, 0); }
 
@@ -1375,10 +1464,10 @@ document.addEventListener('click', e => {
       [L[i], L[j]] = [L[j], L[i]]; E.setDepth(pos, L); persist(); depthModal(pos); render(); return;
     }
     case 'depthReset': E.setDepth(el.dataset.pos, []); persist(); depthModal(el.dataset.pos); render(); return;
-    case 'toDeadline': { const mark = (G.injLog || []).length; UI.tview = null; E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; persist(); render(); injuryPopup(mark); return; }
-    case 'simRest': { const mark = (G.injLog || []).length; UI.give = []; UI.get = []; G.offers = []; finishRegular(); UI.tab = 'home'; persist(); render(); injuryPopup(mark); return; }
-    case 'poNext': { const mark = (G.injLog || []).length; E.simPlayoffRound(); endSeasonIfDone(); persist(); render(); injuryPopup(mark); return; }
-    case 'poSkip': { const mark = (G.injLog || []).length; while (E.simPlayoffRound()); endSeasonIfDone(); persist(); render(); injuryPopup(mark); return; }
+    case 'toDeadline': UI.tview = null; simWithReel(`${G.season} · Weeks 1-${E.DEADLINE_WEEK - 1}`, () => { E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; }); return;
+    case 'simRest': UI.give = []; UI.get = []; G.offers = []; simWithReel(`${G.season} · Weeks ${E.DEADLINE_WEEK}-18`, () => { finishRegular(); UI.tab = 'home'; }); return;
+    case 'poNext': simWithReel(`${G.season} playoffs`, () => { E.simPlayoffRound(); endSeasonIfDone(); }); return;
+    case 'poSkip': simWithReel(`${G.season} playoffs`, () => { while (E.simPlayoffRound()); endSeasonIfDone(); }); return;
     case 'offseason': UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; if (G.mode === 'caphell') G.dead[G.user] = Math.max(G.dead[G.user] || 0, 20); else G.dead[G.user] = 0; E.refreshOffers(); break;
     case 'final': G.phase = 'final'; recordRun(true); if ([2026, 2027].some(y => G.history[y] && G.history[y].finish && G.history[y].finish.perfect)) UI.celebrate = true; break;
     case 'toResign': G.step = 'resign'; E.refreshOffers(); break;
@@ -1402,7 +1491,7 @@ document.addEventListener('click', e => {
       const p = G.players[id]; if (!p) return;
       const yrs = E.yearsFor(p), price = E.faPrice(p, yrs), r = E.faOffer(id, price, yrs);
       if (r.signed) { persist(); render(); signPopup(id, price, yrs); return; } toast(r.msg);
-      if (r.ok && $('#layer').innerHTML) needModal(p.pos);
+      if (r.ok && $('#layer .modal:not(.closing)')) needModal(p.pos);
       break;
     }
     case 'faOpen': faModal(id); return;
@@ -1549,7 +1638,7 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable);
-  if (!typing && G && !$('#layer').innerHTML && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  if (!typing && G && !$('#layer .modal:not(.closing)') && !$('.reel') && !e.metaKey && !e.ctrlKey && !e.altKey) {
     if (e.key === 'n' || e.key === 'N') { const b = document.querySelector('#bnav .bnext'); if (b) { e.preventDefault(); b.click(); } return; }
     const tabs = {1: 'home', 2: 'roster', 3: 'trade', 4: 'league', 5: 'resume'};
     if (tabs[e.key]) { e.preventDefault(); go(tabs[e.key]); return; }
