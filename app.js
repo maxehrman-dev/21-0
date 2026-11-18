@@ -348,6 +348,20 @@ function confMeter() {
 }
 
 // ---------- needs ----------
+function injuryCard() {
+  const hurt = E.roster(G.user).filter(p => p.inj).sort((a, b) => b.ovr - a.ovr);
+  if (!hurt.length) return '';
+  const d = E.depth(G.user);
+  return `<div class="card injcard"><div class="cardh"><h3>Injury report</h3><span class="tag bad">${hurt.length} out</span></div>${hurt.slice(0, 6).map(p => { const sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">${p.injW === undefined || p.injW === 99 ? 'Out for the season' : `Back in about ${p.injW} week${p.injW > 1 ? 's' : ''}`}${p.injPre ? ' · hurt before Week 1' : ''}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) starts` : ''}</div></div></div>`; }).join('')}</div>`;
+}
+function injuryPopup(mark) {
+  if (G.phase === 'seasondone') return false;
+  const L = (G.injLog || []).slice(mark).filter(x => G.players[x.id] && G.players[x.id].tm === G.user && G.players[x.id].inj);
+  if (!L.length) return false;
+  const d = E.depth(G.user);
+  popup('Injury report', `${L.length} of your starters got hurt`, `<p class="small muted">The sim does not stop for injuries, so here is what happened. Backups moved up automatically. You can change the depth chart in the Roster tab.</p>${L.map(x => { const p = G.players[x.id], sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">Hurt in Week ${x.week} · ${x.wk === 99 ? 'out for the season' : `out about ${x.wk} week${x.wk > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) took over` : ''}</div></div><span class="tag ${x.wk === 99 ? 'bad' : 'warn'}">${x.wk === 99 ? 'Season' : x.wk + ' wk'}</span></div>`; }).join('')}`, 'loss');
+  return true;
+}
 function needsList(limit) {
   const N = E.teamNeeds();
   return `<div class="needs">${N.slice(0, limit || N.length).map(n => `
@@ -358,14 +372,16 @@ function needsList(limit) {
     </button>`).join('')}</div>`;
 }
 function needModal(pos) {
-  const T = E.upgradeTargets(pos, 6);
+  const T = E.upgradeTargets(pos);
   const L = E.depth(G.user)[pos];
-  const fa = T.fa.map(p => `<div class="trow">${pRow(p, `asks ${money(E.faPrice(p))}`)}<button class="btn sm go" data-act="faSign" data-id="${p.id}">Sign</button></div>`).join('');
-  const tr = tradeOpen() ? T.tr.map(p => `<div class="trow">${pRow(p, tname(p.tm))}<button class="btn sm" data-act="findFor" data-id="${p.id}">Price</button></div>`).join('') : '';
-  modal(`<div class="sheeth"><div><div class="kicker">${pos} · your depth</div><h3>Upgrade ${pos}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+  const tierBlock = (tiers, kind) => tiers.map(t => `<div class="tierh"><b>${t.tier}</b><span class="small muted">${t.note}</span></div>${t.list.map(x => kind === 'fa'
+    ? `<div class="trow">${pRow(x.p, `<span class="gold">+${x.gain}</span> · asks ${money(x.price)} · interest ${x.interest}${x.fits ? '' : ' · <span class="bad">over your cap</span>'}`)}<button class="btn sm go" data-act="faOpen" data-id="${x.p.id}" data-k="offer">Offer</button></div>`
+    : `<div class="trow">${pRow(x.p, `<span class="gold">+${x.gain}</span> · ${esc(x.why)} · costs about ${pickEquiv(x.cost)}${x.fits ? '' : ' · <span class="warn">send salary back</span>'}`)}<button class="btn sm" data-act="findFor" data-id="${x.p.id}">Price it</button></div>`).join('')}`).join('');
+  const fa = T.fa.length ? `<h4 class="sub">Free agents</h4>${tierBlock(T.fa, 'fa')}` : '';
+  const tr = tradeOpen() && T.tr.length ? `<h4 class="sub">Trade targets</h4>${tierBlock(T.tr, 'tr')}` : '';
+  modal(`<div class="sheeth"><div><div class="kicker">${pos} · your starter is ${T.worst} OVR</div><h3>Upgrade ${pos}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="depthmini">${L.map((p, i) => `<span class="${i < E.STARTERS[pos] ? 'st' : ''}">${face(p, 'xs')} ${esc(lastName(p.n))} <b class="${oc(p.ovr)}">${p.ovr}</b></span>`).join('')}</div>
-    ${fa ? `<h4 class="sub">Free agents</h4>${fa}` : ''}
-    ${tr ? `<h4 class="sub">Trade targets</h4>${tr}` : !fa ? '<p class="muted">Trades open at the deadline and in the offseason. Free agents sign in the 2027 offseason.</p>' : ''}
+    ${fa}${tr}${!fa && !tr ? `<p class="muted">${tradeOpen() ? 'Nobody available is a real upgrade here.' : 'Trades open at the deadline and in the offseason. Free agents sign in the 2027 offseason.'}</p>` : ''}
     <div class="row end"><button class="btn" data-act="closeModal">Done</button></div>`, true);
 }
 
@@ -406,7 +422,7 @@ function homePre() {
     <h2>${first ? 'You play the first half as is' : 'Your 2027 roster is set'}</h2>
     <p class="lead">${first ? `This is the real ${esc(G.teams[G.user].name)} roster from opening day. No moves until the Week 9 trade deadline. Study your needs so you know what to buy.` : 'The sim runs straight to the Week 9 deadline. That is your last chance to make a move this season.'}</p></div>
     <button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></section>
-  <div class="grid g2">${outlookCard(G.season)}<div class="card"><div class="cardh"><h3>Team needs</h3><button class="btn ghost sm" data-act="rview" data-k="lineup">See lineup</button></div>${needsList(6)}</div></div>`;
+  ${injuryCard()}<div class="grid g2">${outlookCard(G.season)}<div class="card"><div class="cardh"><h3>Team needs</h3><button class="btn ghost sm" data-act="rview" data-k="lineup">See lineup</button></div>${needsList(6)}</div></div>`;
 }
 function homeDeadline() {
   const r = E.record(G.user, G.season);
@@ -415,7 +431,7 @@ function homeDeadline() {
     <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}</h2>
     <p class="lead">Your only stop until the playoffs. Take an offer, build your own deal in the Trade tab, then sim the rest of the season.</p></div>
     <div class="row"><button class="btn" data-tab="trade">Open trade center</button><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
-  <div class="grid g2">${inboxTeaser()}${outlookCard(G.season, 'live')}
+  <div class="grid g2">${inboxTeaser()}${injuryCard()}${outlookCard(G.season, 'live')}
     <div class="card homeneeds"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(5)}</div>
     <div class="card deskonly"><h3>Your first ${last.length} games</h3><div class="scores">${last.map(g => scoreCard(g, 'Week ' + g.wk)).join('')}</div></div>
     <div class="deskonly">${seedList(G.teams[G.user].conf)}</div>
@@ -430,7 +446,7 @@ function homePlayoffs() {
     <h2>${alive ? `${f.w}-${f.l}. ${4 - P.round} wins from a title.` : esc(f.label) + '.'}</h2>
     <p class="lead">${alive ? 'No moves in the playoffs. Watch it one round at a time or jump to the end.' : 'Your season is over. Finish the bracket to see who wins it all.'}</p></div>
     <div class="row"><button class="btn" data-act="poSkip">Skip to the end</button><button class="btn go lg" data-act="poNext">Play the ${esc(E.ROUND_NAMES[P.round])}</button></div></section>
-  <div class="card">${bracket()}</div>`;
+  ${injuryCard()}<div class="card">${bracket()}</div>`;
 }
 function homeSeasonDone() {
   const f = E.userFinish(G.season), P = G.playoffs[G.season], gm = E.goalMet(G.season);
@@ -1359,10 +1375,10 @@ document.addEventListener('click', e => {
       [L[i], L[j]] = [L[j], L[i]]; E.setDepth(pos, L); persist(); depthModal(pos); render(); return;
     }
     case 'depthReset': E.setDepth(el.dataset.pos, []); persist(); depthModal(el.dataset.pos); render(); return;
-    case 'toDeadline': UI.tview = null; E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; break;
-    case 'simRest': UI.give = []; UI.get = []; G.offers = []; finishRegular(); UI.tab = 'home'; break;
-    case 'poNext': E.simPlayoffRound(); endSeasonIfDone(); break;
-    case 'poSkip': while (E.simPlayoffRound()); endSeasonIfDone(); break;
+    case 'toDeadline': { const mark = (G.injLog || []).length; UI.tview = null; E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; persist(); render(); injuryPopup(mark); return; }
+    case 'simRest': { const mark = (G.injLog || []).length; UI.give = []; UI.get = []; G.offers = []; finishRegular(); UI.tab = 'home'; persist(); render(); injuryPopup(mark); return; }
+    case 'poNext': { const mark = (G.injLog || []).length; E.simPlayoffRound(); endSeasonIfDone(); persist(); render(); injuryPopup(mark); return; }
+    case 'poSkip': { const mark = (G.injLog || []).length; while (E.simPlayoffRound()); endSeasonIfDone(); persist(); render(); injuryPopup(mark); return; }
     case 'offseason': UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; if (G.mode === 'caphell') G.dead[G.user] = Math.max(G.dead[G.user] || 0, 20); else G.dead[G.user] = 0; E.refreshOffers(); break;
     case 'final': G.phase = 'final'; recordRun(true); if ([2026, 2027].some(y => G.history[y] && G.history[y].finish && G.history[y].finish.perfect)) UI.celebrate = true; break;
     case 'toResign': G.step = 'resign'; E.refreshOffers(); break;

@@ -34,6 +34,8 @@ function newGame(DATA, userTeam, seed) {
   for (const a of DATA.players) {
     const [id, n, pos, tm, age, ovr, cap, end, st25, st26, inj, rook, prior, pot, potWhy, prod, hype] = a;
     players[id] = {id, n, pos, tm, age, ovr, cap, end, st25, st26, inj: !!inj, rook: !!rook, prior: prior || ovr, pot: pot || null, potWhy: potWhy || '', prod: prod == null ? -1 : prod, hype: hype == null ? 30 : hype, hist: [[2026, ovr, 'Week 1']]};
+    // hurt at kickoff: most come back during the season, about one in five is out for the year
+    if (inj) { const h = hashStr(id) % 100; players[id].injW = h < 30 ? 1 + h % 4 : h < 80 ? 5 + h % 6 : 99; players[id].injPre = true; }
   }
   const picks = [];
   for (const yr of [2027, 2028]) for (let rd = 1; rd <= 4; rd++) for (const t of Object.keys(DATA.teams)) picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
@@ -695,14 +697,21 @@ function simGame(a, h, opts = {}) {
   return {a, h, as, hs, ot, ba, bh, hurt};
 }
 // About one starter in a hundred gets hurt each game: most miss a few weeks, some the season.
+// Injuries: none while the 2026 first half plays out on autopilot, rare after that, rarer still for quarterbacks.
+// Every injury to your team goes in G.injLog so the game can tell you the moment you get control back.
 function injuries(t, tr) {
   const out = [];
+  if (G.season === 2026 && G.phase === 'preseason') return out;
   for (const pos of POS_ORDER) for (const p of tr.d[pos].slice(0, STARTERS[pos])) {
-    if (pos === 'K' || pos === 'P' || rand() > .009) continue;
-    const r = rand(), wk = r < .6 ? rint(1, 3) : r < .9 ? rint(4, 8) : 99;
+    if (pos === 'K' || pos === 'P') continue;
+    if (rand() > .0045 * (pos === 'QB' ? .5 : 1)) continue;
+    const r = rand(), wk = r < .65 ? rint(1, 3) : r < .94 ? rint(4, 7) : 99;
     p.inj = true; p.injW = wk;
     out.push(p.id);
-    if (t === G.user) G.news.unshift(`${p.n} (${p.pos}) is hurt: ${wk === 99 ? 'out for the season' : `out about ${wk} week${wk > 1 ? 's' : ''}`}.`);
+    if (t === G.user) {
+      (G.injLog = G.injLog || []).push({id: p.id, wk, season: G.season, week: G.week + 1});
+      G.news.unshift(`${p.n} (${p.pos}) is hurt: ${wk === 99 ? 'out for the season' : `out about ${wk} week${wk > 1 ? 's' : ''}`}.`);
+    }
   }
   return out;
 }
@@ -715,7 +724,7 @@ function simWeek(w) {
     G.results[G.season].push(g);
     out.push(g);
   }
-  for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; } }
+  for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
   G.week = w;
   return out;
 }
@@ -834,7 +843,7 @@ function beginOffseason() {
     p.prior = Math.round(prior * .6 + p.ovr * .4);
     if (p.pot < p.ovr) p.pot = p.ovr;
     p.age = Math.round((p.age + 1) * 10) / 10;
-    p.inj = false; delete p.injW; p.rook = false;
+    p.inj = false; delete p.injW; delete p.injPre; p.rook = false;
     (p.hist = p.hist || [[2026, old, 'Week 1']]).push([2027, p.ovr, why]);
     if (p.tm === G.user) prog.push({id: p.id, n: p.n, pos: p.pos, old, now: p.ovr, why});
     if (p.age >= 36 && p.ovr < 72 && rand() < .5) { p.retired = true; }
@@ -1347,12 +1356,45 @@ function teamNeeds(t) {
   }).sort((a, b) => ({High: 0, Medium: 1, Low: 2}[a.level] - {High: 0, Medium: 1, Low: 2}[b.level]) || b.weight - a.weight || b.rank - a.rank);
 }
 // Upgrade targets at a position: free agents in the offseason, trade targets otherwise
-function upgradeTargets(pos, limit) {
-  const L = depth(G.user)[pos], worst = L[STARTERS[pos] - 1] ? L[STARTERS[pos] - 1].ovr : 40;
-  const fa = G.phase === 'offseason' && G.step === 'fa' ? faPool().filter(p => p.pos === pos && p.ovr > worst).slice(0, limit || 5) : [];
-  const tr = Object.values(G.players).filter(p => p.pos === pos && G.teams[p.tm] && p.tm !== G.user && p.ovr > worst + 2 && !p.inj)
-    .sort((a, b) => b.ovr - a.ovr || a.cap - b.cap).slice(0, limit || 5);
-  return {fa, tr, worst};
+// Realistic upgrade options, not just the best players at the position.
+// Each candidate is scored on how much he helps, what he costs his team to give up, whether they would move him,
+// and whether his salary fits. Returned in tiers so you see best fits, budget moves and splash moves.
+function upgradeTargets(pos) {
+  const L = depth(G.user)[pos], n = STARTERS[pos];
+  const worst = L[n - 1] ? L[n - 1].ovr : 40;
+  const space = capSpace(G.user);
+  const out = {worst, fa: [], tr: []};
+  if (G.phase === 'offseason' && G.step === 'fa') {
+    const cands = faPool().filter(p => p.pos === pos && p.ovr > worst).map(p => {
+      const price = faPrice(p), it = interest(p, G.user).score;
+      const gain = p.ovr - worst, fits = price <= space;
+      const score = gain / (1 + price / 6) * (.6 + it / 100) * (fits ? 1 : .4) * (ageAdj(p) >= 32 ? .75 : 1);
+      return {p, gain, price, interest: it, fits, score};
+    });
+    out.fa = tierUp(cands, x => x.price);
+  }
+  const S = situations();
+  const cands = Object.values(G.players).filter(p => p.pos === pos && G.teams[p.tm] && p.tm !== G.user && p.ovr > worst + 1 && !p.inj).map(p => {
+    const gain = p.ovr - worst, cost = playerValue(p, p.tm);
+    const theirs = depth(p.tm)[pos], starter = theirs.indexOf(p) > -1 && theirs.indexOf(p) < n;
+    const st = S[p.tm].status;
+    const avail = !starter ? 1.35 : st === 'Seller' || st === 'Rebuilding' ? 1.25 : st === 'Bubble' ? .95 : .7;
+    const why = !starter ? `a backup for the ${G.teams[p.tm].nick}` : st === 'Seller' || st === 'Rebuilding' ? `${G.teams[p.tm].nick} are ${st === 'Seller' ? 'selling' : 'rebuilding'}` : st === 'Bubble' ? `${G.teams[p.tm].nick} are on the bubble` : `starter on a contender`;
+    const fits = p.cap <= space + 1;
+    const score = gain / Math.sqrt(1 + cost) * avail * (fits ? 1 : .6) * (ageAdj(p) >= 32 ? .8 : 1);
+    return {p, gain, cost, avail, why, fits, score};
+  });
+  out.tr = tierUp(cands, x => x.cost);
+  return out;
+}
+// Split candidates into Best fits (score), Budget (cheapest real upgrades) and Splash (biggest gains)
+function tierUp(cands, price) {
+  const used = new Set(), take = (L, k) => L.filter(x => !used.has(x.p.id)).slice(0, k).map(x => { used.add(x.p.id); return x; });
+  const best = take(cands.slice().sort((a, b) => b.score - a.score), 4);
+  const med = cands.length ? cands.map(price).sort((a, b) => a - b)[Math.floor(cands.length / 2)] : 0;
+  const budget = take(cands.filter(x => x.gain >= 2 && price(x) <= med).sort((a, b) => price(a) - price(b) || b.gain - a.gain), 3);
+  const splash = take(cands.slice().sort((a, b) => b.gain - a.gain || price(a) - price(b)), 2);
+  return [{tier: 'Best fits', note: 'Most upgrade for the price', list: best}, {tier: 'Budget', note: 'Cheap real upgrades', list: budget}, {tier: 'Splash', note: 'The biggest upgrade, at a price', list: splash}].filter(t => t.list.length);
 }
 
 // ---------- projections ----------

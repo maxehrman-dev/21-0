@@ -104,3 +104,22 @@ test('drafted rookies reveal a real rating and a verdict', () => {
   assert.ok(['Steal', 'As projected', 'Bust'].includes(slot.sel.verdict));
   assert.ok(slot.sel.lo < slot.sel.hi);
 });
+
+test('no new injuries before the first deadline, and Week 1 injuries heal', () => {
+  E.newGame(DATA, 'BUF', 8);
+  const hurt = Object.values(E.G.players).filter(p => p.inj);
+  assert.ok(hurt.every(p => p.injW >= 1), 'every kickoff injury has a return date');
+  E.simTo(9);
+  assert.equal((E.G.injLog || []).length, 0, 'the user got a new injury before taking control');
+  assert.ok(hurt.filter(p => !p.inj).length > hurt.length / 3, 'most short-term injuries are healed by the deadline');
+});
+
+test('the upgrade finder offers fits, budget options and splashes', () => {
+  E.newGame(DATA, 'NYJ', 9);
+  E.simTo(9); E.G.phase = 'deadline';
+  const T = E.upgradeTargets('QB');
+  assert.deepEqual(T.tr.map(t => t.tier), ['Best fits', 'Budget', 'Splash']);
+  const names = T.tr.flatMap(t => t.list.map(x => x.p.id));
+  assert.equal(new Set(names).size, names.length, 'a player shows up in only one tier');
+  for (const t of T.tr) for (const x of t.list) assert.ok(x.gain > 0);
+});
