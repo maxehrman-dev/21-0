@@ -47,7 +47,7 @@ function newGame(DATA, userTeam, seed) {
     if (inj) { const h = hashStr(id) % 100; players[id].injW = h < 30 ? 1 + h % 4 : h < 80 ? 5 + h % 6 : 99; players[id].injPre = true; }
   }
   const picks = [];
-  for (const yr of [2027, 2028]) for (let rd = 1; rd <= 4; rd++) for (const t of Object.keys(DATA.teams)) picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
+  for (const yr of [2027, 2028]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of Object.keys(DATA.teams)) picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   G = {
     v: 1, rng: 0, user: userTeam, season: 2026, phase: 'preseason', week: 0,
     cap: {2026: DATA.cap26, 2027: DATA.cap27},
@@ -426,7 +426,8 @@ function evalTrade(partner, give, get) {
   if (uRoster > rosterLimit()) issues.push(`Your roster would go over ${rosterLimit()}. Release someone first.`);
   if (!give.length || !get.length) issues.push('Both sides need at least one asset.');
   const rival = G.teams[partner].div === G.teams[G.user].div;
-  const need = vOut * (rival ? 1.15 : 1.05) + 1.5;
+  // teams want a little extra to say yes; the premium scales with the deal, so a late-pick swap is not priced like a blockbuster
+  const need = vOut * (rival ? 1.15 : 1.05) + Math.min(1.5, .1 + vOut * .12);
   const ratio = need > 0 ? vIn / need : 1;
   // what a neutral observer thinks: is this fair to you?
   const fair = get.reduce((s, id) => s + assetValue(id), 0) / Math.max(1, give.reduce((s, id) => s + assetValue(id), 0));
@@ -501,6 +502,13 @@ const TALK = {
   fitLose: ['We are set there.', 'We do not need that.', 'That is not a need for us.'],
   finalWin: ['Fine. You win. Deal.', 'Okay. We will take it.', 'Alright, alright. Deal.'],
   finalLose: ['Then we are done here.', 'Then it is a no.', 'Final? Then we pass.'],
+  middleWin: ['Fine. Middle it is. Deal.', 'Okay, we can meet you there.', 'Split the difference? Done.'],
+  middleTry: ['Here is our middle.', 'Meet us here and it is done.', 'Halfway looks like this.'],
+  walkWin: ['Wait. Okay, we will do it.', 'Hold on. Fine, deal.', 'Do not hang up. Deal.'],
+  walkLose: ['Then walk.', 'Door is that way.', 'Suit yourself.'],
+  alts: ['We would move one of these instead.', 'Not him. But we would talk about these guys.', 'He is off the table. Try one of these.'],
+  noalts: ['We are not moving anyone else there.', 'Nobody else at that spot is available.'],
+  workFrom: ['Okay. What are you thinking?', 'Go ahead.', 'We are listening.'],
   squeezeWin: ['Fine, throw it in. Deal.', 'Greedy. But okay.', 'Sure. Now we are done.'],
   squeezeLose: ['Do not push it. The deal stands as is.', 'No. Take it or leave it.', 'Nope. Original deal or nothing.'],
 };
@@ -551,7 +559,7 @@ function proposeTrade(partner, give, get) {
   return hungUp(T) || talkReply(partner, talkRespond(partner));
 }
 // Everything you can say once the call is going
-const TALK_MOVES = {ask: 'What would it take?', add: 'Sweeten it', more: 'Ask for more', bluff: 'Another team is interested', fit: 'He fills a need for you', final: 'That is my final offer', squeeze: 'Throw in a little more?'};
+const TALK_MOVES = {ask: 'What would it take?', add: 'Sweeten it', more: 'Ask for more', remove: 'Take something off', drop: 'Leave something out', middle: 'Meet me in the middle', alt: 'Who else would you move?', walk: 'I am walking away', work: 'Let us work from your number', swap: 'What about him instead?', bluff: 'Another team is interested', fit: 'He fills a need for you', final: 'That is my final offer', squeeze: 'Throw in a little more?'};
 function talkMove(partner, move, arg) {
   const T = talkWith(partner);
   if (!T.deal) return null;
@@ -563,9 +571,35 @@ function talkMove(partner, move, arg) {
     into.push(arg);
     me.line = `${move === 'add' ? 'I can add' : 'I would need'} ${assetName(arg)}.`;
   }
+  if (move === 'remove' || move === 'drop') {
+    const from = move === 'remove' ? d.give : d.get;
+    if (!arg || !from.includes(arg) || (move === 'drop' && from.length < 2) || (move === 'remove' && from.length < 2)) return null;
+    from.splice(from.indexOf(arg), 1);
+    me.line = move === 'remove' ? `Take ${assetName(arg)} off my side.` : `Leave ${assetName(arg)} out of it.`;
+  }
+  if (move === 'swap') {
+    if (!arg || !G.players[arg] || G.players[arg].tm !== partner) return null;
+    d.get = [arg];
+    me.line = `What about ${assetName(arg)} instead?`;
+  }
+  if (move === 'work') {
+    const c = (T.log.slice().reverse().find(m => !m.me && m.counters) || {}).counters;
+    const x = c && c[+arg || 0];
+    if (!x) return null;
+    d.give = x.give.slice(); d.get = x.get.slice();
+  }
   T.log.push(me);
   const h = hungUp(T); if (h) return h;
-  if (move === 'add' || move === 'more') return talkReply(partner, talkRespond(partner));
+  if (move === 'add' || move === 'more' || move === 'remove' || move === 'drop' || move === 'swap') return talkReply(partner, talkRespond(partner));
+  if (move === 'work') return talkReply(partner, {kind: 'close', line: say('workFrom')});
+  if (move === 'alt') {
+    // other players at the same spots that they would actually move
+    const want = d.get.map(id => G.players[id]).filter(Boolean), posSet = new Set(want.map(q => q.pos));
+    const top = want.length ? Math.max(...want.map(q => q.ovr)) : 99;
+    const st = new Set(POS_ORDER.flatMap(pos => depth(partner)[pos].slice(0, STARTERS[pos]).map(q => q.id)));
+    const alts = roster(partner).filter(q => posSet.has(q.pos) && !d.get.includes(q.id) && q.ovr >= 65 && (!st.has(q.id) || q.ovr < top)).sort((a, b) => b.ovr - a.ovr).slice(0, 3).map(q => q.id);
+    return talkReply(partner, alts.length ? {kind: 'alts', line: say('alts'), alts} : {kind: 'close', line: say('noalts')});
+  }
   if (move === 'ask') {
     const g = balanceTrade(partner, d.give, d.get);
     return talkReply(partner, g ? {kind: 'counter', line: say('ask'), counters: [{label: 'Their ask', give: g, get: d.get.slice()}]} : {kind: 'close', line: say('noask')});
@@ -586,6 +620,20 @@ function talkMove(partner, move, arg) {
     const {ratio} = talkEval(partner, d.give, d.get);
     if (ratio >= .9 && rand() < (ratio - .85) / .15) { T.boost = Math.max(T.boost, 1 / Math.max(.01, talkEval(partner, d.give, d.get).ev.ratio) - 1 + .001); return talkReply(partner, {kind: 'yes', line: say('finalWin')}); }
     T.patience -= 2; return talkReply(partner, {kind: 'close', line: say('finalLose'), final: true});
+  }
+  if (move === 'middle') {
+    const {ratio} = talkEval(partner, d.give, d.get);
+    if (ratio >= .88 && rand() < .55 + gm.risk * .2) { T.boost = Math.max(T.boost, 1 / Math.max(.01, talkEval(partner, d.give, d.get).ev.ratio) - 1 + .001); return talkReply(partner, {kind: 'yes', line: say('middleWin')}); }
+    // otherwise they name a middle: the smallest single piece from your side that gets it done
+    const pool = userPool('all', d.get).filter(id => !d.give.includes(id)).map(id => ({id, v: assetValue(id, partner)})).sort((a, b) => a.v - b.v);
+    const one = pool.find(x => talkEval(partner, [...d.give, x.id], d.get).ok);
+    if (one) return talkReply(partner, {kind: 'counter', line: say('middleTry'), counters: [{label: 'Their middle', give: [...d.give, one.id], get: d.get.slice()}]});
+    T.patience -= 1; return talkReply(partner, {kind: 'close', line: say('far')});
+  }
+  if (move === 'walk') {
+    const {ratio} = talkEval(partner, d.give, d.get);
+    if (ratio >= .92 && rand() < .5) { T.boost = Math.max(T.boost, 1 / Math.max(.01, talkEval(partner, d.give, d.get).ev.ratio) - 1 + .001); return talkReply(partner, {kind: 'yes', line: say('walkWin')}); }
+    T.patience -= 1; return talkReply(partner, {kind: 'close', line: say('walkLose')});
   }
   if (move === 'squeeze') {
     // Ask them to add their cheapest asset to a deal they already said yes to
@@ -726,7 +774,7 @@ function setBlockWant(want, pos) { const B = blockOf(); if (want) B.want = want;
 // Offers for one player the moment you put him on the block
 function blockOffersFor(pid) {
   const p = G.players[pid]; if (!p) return [];
-  return shopPlayer(pid, 'any').slice(0, 2).map(x => ({id: `b${G.season}${G.phase}${G.step || ''}${x.partner}${pid}`, from: x.partner, kind: 'block', give: [pid], get: x.get, msg: `For ${p.n}, off your trade block.`}));
+  return shopPlayer(pid, blockOf().want).slice(0, 3).map(x => ({id: `b${G.season}${G.phase}${G.step || ''}${x.partner}${pid}`, from: x.partner, kind: 'block', give: [pid], get: x.get, msg: `For ${p.n}, off your trade block.`}));
 }
 function blockOffers() {
   const B = blockOf(), out = [];
@@ -772,11 +820,19 @@ function acceptOffer(oid) {
 }
 // Teams that would trade for one of your players, best offer first
 function shopPlayer(pid, kind, pos) {
-  const out = [];
-  for (const t of teamList().filter(x => x !== G.user)) {
-    if (needBoost(t, G.players[pid]) < 1) continue;
-    const pkg = buildPackage(t, pid, false, kind, pos) || (kind === 'players' ? buildPackage(t, pid, true, kind, pos) : null);
+  const p = G.players[pid]; if (!p) return [];
+  const want = assetValue(pid), out = [];
+  // ask the teams that need him most first; a team with a mild need still picks up the phone
+  const teams = teamList().filter(x => x !== G.user).map(t => ({t, nb: needBoost(t, p)})).filter(x => x.nb >= .95).sort((a, b) => b.nb - a.nb);
+  for (const {t} of teams) {
+    let pkg = buildPackage(t, pid, false, kind, pos) || buildPackage(t, pid, true, kind, pos);
+    // role players move for a single pick, often a late one: the most common trade in the league
+    if (!pkg && kind !== 'players') {
+      const pk = G.picks.filter(k => k.owner === t).map(k => ({id: k.id, v: assetValue(k.id)})).filter(x => x.v >= want * .6 && x.v <= want * 1.5).sort((a, b) => a.v - b.v)[0];
+      if (pk) { const ev = evalTrade(t, [pid], [pk.id]); if (!ev.issues.length && ev.ratio >= .9) pkg = [pk.id]; }
+    }
     if (pkg) out.push({partner: t, give: [pid], get: pkg, ev: evalTrade(t, [pid], pkg)});
+    if (out.length >= 8) break;
   }
   return out.sort((a, b) => b.ev.fair - a.ev.fair).slice(0, 5);
 }
@@ -1020,7 +1076,7 @@ function beginOffseason() {
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
   // picks: every team always holds its picks for the next two drafts
-  for (const yr of [next, next + 1]) for (let rd = 1; rd <= 4; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
+  for (const yr of [next, next + 1]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   // contracts that step up after this season (extensions, back-loaded deals) now pay their real average
   for (const p of Object.values(G.players)) if (p.apy != null) { if (p.end >= next) p.cap = p.apy; delete p.apy; }
   // progression: age, hidden potential, how the season went, and the player's track record
@@ -1379,10 +1435,10 @@ function faDecide(id, match) {
   return {ok: true, msg};
 }
 
-// Draft: 4 rounds from the real 2027 big board.
+// Draft: 7 rounds. The real 2027 big board covers the first 150 picks; the late rounds come from a generated tail.
 function startDraft() {
   const order = [];
-  for (let rd = 1; rd <= 4; rd++) for (let i = 0; i < 32; i++) {
+  for (let rd = 1; rd <= ROUNDS; rd++) for (let i = 0; i < 32; i++) {
     const orig = G.draftOrder[i];
     const pk = G.picks.find(x => x.yr === G.season && x.rd === rd && x.orig === orig);
     order.push({no: (rd - 1) * 32 + i + 1, rd, orig, owner: pk ? pk.owner : orig, pickId: pk && pk.id, sel: null});
@@ -1391,22 +1447,29 @@ function startDraft() {
 }
 // Draft classes. 2027 is the real class. Later classes are generated: same size, the real mix of positions,
 // and invented names, since those players have not been ranked yet.
+const ROUNDS = 7, CLASS_SIZE = 260;
 const CLASS_MIX = [['QB', 9], ['RB', 10], ['WR', 21], ['TE', 9], ['OT', 13], ['IOL', 13], ['EDGE', 17], ['DT', 15], ['LB', 12], ['CB', 19], ['S', 11], ['K', 1]];
 const FIRST = ['Jaylen', 'Marcus', 'Tyler', 'Jordan', 'Caleb', 'Malik', 'Elijah', 'Isaiah', 'Cameron', 'Xavier', 'Darius', 'Trey', 'Mason', 'Logan', 'Bryce', 'Kendrick', 'Andre', 'Devin', 'Jalen', 'Micah', 'Owen', 'Carson', 'Quentin', 'Rashad', 'Tavion', 'Nolan', 'Gavin', 'Javon', 'Cole', 'Desmond', 'Keon', 'Landon', 'Dominic', 'Terrell', 'Brady', 'Amari', 'Zion', 'Corey', 'Myles', 'Jace'];
 const LAST = ['Washington', 'Carter', 'Brooks', 'Mitchell', 'Coleman', 'Hayes', 'Price', 'Bennett', 'Sanders', 'Jenkins', 'Porter', 'Ellis', 'Reed', 'Graham', 'Fields', 'Hunter', 'Dixon', 'Wallace', 'Burke', 'Holloway', 'Freeman', 'Stewart', 'Barnes', 'Fletcher', 'Lawson', 'Moss', 'Tate', 'Vaughn', 'Rhodes', 'McCoy', 'Shaw', 'Pruitt', 'Calloway', 'Whitfield', 'Booker', 'Ingram', 'Dawson', 'Kirkland', 'Lockett', 'Pryor'];
 const SCHOOLS = ['Alabama', 'Ohio State', 'Georgia', 'Texas', 'Michigan', 'LSU', 'Oregon', 'Penn State', 'Notre Dame', 'Clemson', 'USC', 'Florida', 'Miami', 'Oklahoma', 'Tennessee', 'Texas A&M', 'Auburn', 'Washington', 'Utah', 'Iowa', 'Wisconsin', 'Florida State', 'Ole Miss', 'Missouri', 'Kansas State', 'Arizona State', 'Boise State', 'Louisville', 'Colorado', 'TCU'];
-function genClass(yr) {
-  const rng = makeRng(hashStr('class' + yr + G.user)), pick = a => a[Math.floor(rng() * a.length)];
-  const bag = CLASS_MIX.flatMap(([pos, n]) => Array(n).fill(pos)), used = new Set(), out = [];
-  for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]]; }
-  bag.forEach((pos, i) => { let n; do { n = pick(FIRST) + ' ' + pick(LAST); } while (used.has(n)); used.add(n); out.push([i + 1, pos, n, pick(SCHOOLS)]); });
+function genClass(yr, from, count) {
+  from = from || 1; count = count || CLASS_SIZE;
+  const rng = makeRng(hashStr('class' + yr + from + G.user)), pick = a => a[Math.floor(rng() * a.length)];
+  const total = CLASS_MIX.reduce((a, [, n]) => a + n, 0), pos = () => { let r = rng() * total; for (const [p, n] of CLASS_MIX) { if ((r -= n) < 0) return p; } return 'WR'; };
+  const used = new Set(), out = [];
+  for (let i = 0; i < count; i++) { let n; do { n = pick(FIRST) + ' ' + pick(LAST); } while (used.has(n)); used.add(n); out.push([from + i, pos(), n, pick(SCHOOLS)]); }
   return out;
 }
-function classFor(yr) { if (yr === 2027) return G.prospects; G.classes = G.classes || {}; return (G.classes[yr] = G.classes[yr] || genClass(yr)); }
+function classFor(yr) {
+  G.classes = G.classes || {};
+  if (yr === 2027) return (G.classes[2027] = G.classes[2027] || [...G.prospects, ...genClass(2027, G.prospects.length + 1, CLASS_SIZE - G.prospects.length)]);
+  return (G.classes[yr] = G.classes[yr] || genClass(yr));
+}
 // A class is scouted once, the first time anyone looks, so the big board does not change between visits
 function scoutedClass(yr) {
   G.scouted = G.scouted || {};
-  if (!G.scouted[yr]) G.scouted[yr] = classFor(yr).map(([rank, pos, n, sch]) => scoutProspect({rank, pos, n, sch}));
+  const C = classFor(yr), have = G.scouted[yr] || [];
+  if (have.length < C.length) G.scouted[yr] = have.concat(C.slice(have.length).map(([rank, pos, n, sch]) => scoutProspect({rank, pos, n, sch})));
   return G.scouted[yr];
 }
 // Every prospect has a true rating, hidden until he is drafted, and a scouting range that can be wrong.
@@ -1469,7 +1532,7 @@ function finishDraft() {
   while (D.at < D.order.length) { if (D.order[D.at].owner === G.user) { makePick(D.pool[0]); } else aiPick(); }
   G.draftDone = true;
   G.picks = G.picks.filter(k => k.yr > G.season);   // used picks are spent
-  for (const yr of [G.season + 1, G.season + 2]) for (let rd = 1; rd <= 4; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
+  for (const yr of [G.season + 1, G.season + 2]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   addUndrafted();
   G.step = 'cutdown';
   aiCleanup();
@@ -1479,7 +1542,7 @@ function addUndrafted() {
   const rng = makeRng(hashStr('udfa' + G.season + G.user)), pick = a => a[Math.floor(rng() * a.length)];
   const left = (G.draft ? G.draft.pool : []).map(x => ({n: x.n, pos: x.pos, ovr: Math.max(48, (x.ovr || 60) - 2), sch: x.sch}));
   const POSN = CLASS_MIX.flatMap(([pos, n]) => Array(n).fill(pos));
-  for (let i = 0; i < 200; i++) left.push({n: pick(FIRST) + ' ' + pick(LAST), pos: pick(POSN), ovr: Math.round(50 + rng() * 11), sch: pick(SCHOOLS)});
+  for (let i = 0; i < 120; i++) left.push({n: pick(FIRST) + ' ' + pick(LAST), pos: pick(POSN), ovr: Math.round(50 + rng() * 11), sch: pick(SCHOOLS)});
   left.forEach((x, i) => {
     const id = `U${G.season}-${i}`;
     if (G.players[id]) return;
@@ -1804,7 +1867,7 @@ function streak(t, season) {
 const LETTERS = [[93, 'A+'], [88, 'A'], [84, 'A-'], [80, 'B+'], [75, 'B'], [70, 'B-'], [66, 'C+'], [60, 'C'], [55, 'C-'], [48, 'D'], [0, 'F']];
 const letter = s => LETTERS.find(([m]) => s >= m)[1];
 const STAGE_BONUS = {miss: 0, 0: 12, 1: 20, 2: 28, 3: 34, 4: 40};
-const PICK_W = {1: 3, 2: 2, 3: 1, 4: .5};
+const PICK_W = {1: 3, 2: 2, 3: 1, 4: .5, 5: .25, 6: .15, 7: .1};
 
 function seasonScore(season) {
   const f = G.history[season] && G.history[season].finish;

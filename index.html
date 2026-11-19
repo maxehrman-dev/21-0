@@ -163,6 +163,7 @@ nav.tabs button.on { color: var(--chalk); border-bottom-color: var(--gold); }
 .psub b { color: var(--chalk); font-weight: 600; }
 .plist { display: grid; gap: 4px; }
 .plist.scroll { max-height: 640px; overflow-y: auto; }
+@media (min-width: 761px) { .card > .plist, .card > .tw, .mboard { max-height: 620px; overflow-y: auto; } .card > .tw thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; } }
 .trow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; }
 .trow:hover { background: var(--panel2); }
 .trow.sel { background: rgba(243,181,47,.06); border-color: rgba(243,181,47,.25); }
@@ -771,6 +772,9 @@ a.btn { text-decoration: none; }
 .chip.talkchip:hover, .chip.talkchip.on { background: rgba(243,181,47,.16); border-color: var(--gold); color: var(--chalk); }
 .talkpick { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line2); }
 .talkpick .bubt { flex: 1 1 100%; }
+.saygroup { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.saygroup .bubt { flex: 1 1 100%; margin: 0; }
+.talkalts { margin-top: 8px; display: grid; gap: 6px; }
 .wantrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 10px; }
 .possel { height: 36px; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel2); color: var(--chalk); padding: 0 10px; font: inherit; font-size: 13.5px; }
 .nobite { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line2); background: var(--panel); }
@@ -802,6 +806,26 @@ nav.tabs .tabtools .ibtn2 { display: grid; place-items: center; line-height: 1; 
 .modeopt.on { border-color: var(--gold); background: rgba(243,181,47,.08); }
 .moremenu { position: relative; }
 .lgnav { display: flex; gap: 8px; align-items: center; }
+.dealhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+.dealhead .linkbtn { margin-left: auto; }
+.poschips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 8px 0; padding-bottom: 2px; }
+.poschips::-webkit-scrollbar { display: none; }
+.pchip { flex: none; height: 30px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--line2); background: transparent; color: var(--muted); font: 600 12.5px/1 var(--body, inherit); cursor: pointer; }
+.pchip.on { background: var(--chalk); color: var(--ink); border-color: var(--chalk); }
+.dockitem { display: flex; align-items: center; gap: 4px; }
+.dockitem .amini { flex: 1; min-width: 0; }
+.tradetop { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.teamgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin-top: 6px; }
+.tgtile { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--chalk); text-align: left; cursor: pointer; }
+.tgtile:hover { border-color: #4a5d82; }
+.tgmain { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.tgright { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.blockplayer { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.bphead { display: flex; align-items: center; gap: 10px; }
+.bphead .pmain { flex: 1; min-width: 0; }
+.bpoffer { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); }
+.bpget { flex: 1; min-width: 0; font-size: 13.5px; }
+@media (max-width: 760px) { .teamgrid { grid-template-columns: 1fr; } }
 .morepop.down { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; }
 .morepop { position: absolute; bottom: calc(100% + 8px); left: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel2); box-shadow: 0 16px 40px -12px rgba(0,0,0,.7); z-index: 5; min-width: 140px; }
 .blk { flex: none; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line2); background: transparent; color: var(--muted); font: 600 11.5px/1 var(--body, inherit); cursor: pointer; }

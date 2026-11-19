@@ -14,7 +14,7 @@ test('a new game has 32 teams, full rosters and draft picks', () => {
   E.newGame(DATA, 'KC', 1);
   assert.equal(E.teamList().length, 32);
   for (const t of E.teamList()) assert.ok(E.roster(t).length >= 45, `${t} roster is too small`);
-  assert.equal(E.G.picks.length, 32 * 4 * 2);
+  assert.equal(E.G.picks.length, 32 * 7 * 2);
   assert.ok(E.teamRating('KC').ovr > 50);
 });
 
@@ -222,7 +222,7 @@ test('the league keeps going past 2027: new cap, new draft class, full rosters, 
     assert.equal(G.season, yr);
     assert.ok(G.cap[yr] > G.cap[yr - 1], 'the cap grows');
     E.finishResign(); E.finishFA();
-    assert.equal(G.draft.pool.length, 150, `${yr} has a full draft class`);
+    assert.equal(G.draft.pool.length, 260, `${yr} has a full draft class`);
     E.finishDraft();
     for (const id of E.cutPlan()) E.cutPlayer(id);
     E.startSeason2();
