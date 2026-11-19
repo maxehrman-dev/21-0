@@ -169,3 +169,31 @@ test('leftover stars do not sign for the minimum', () => {
   assert.equal((G.autoFilled || []).filter(x => x.ovr >= 75).length, 0);
   for (const t of E.teamList()) assert.ok(Number.isFinite(E.capSpace(t)), `${t} cap space is not a number`);
 });
+
+test('a call can keep going: ask, sweeten, bluff, and a final offer that is too low ends it', () => {
+  E.newGame(DATA, 'NYJ', 11);
+  E.simTo(9); E.G.phase = 'deadline';
+  const star = byName('Josh Allen');
+  const picks = E.G.picks.filter(k => k.owner === 'NYJ').sort((a, b) => a.yr - b.yr || a.rd - b.rd).map(k => k.id);
+  E.proposeTrade(star.tm, [picks[picks.length - 1]], [star.id]);
+  const ask = E.talkMove(star.tm, 'ask');
+  assert.equal(ask.kind, 'counter');
+  assert.ok(ask.counters[0].give.length > 1, 'their ask is more than a late pick');
+  const before = E.talkWith(star.tm).deal.give.length;
+  E.talkMove(star.tm, 'add', E.talkAssets(star.tm, 'add')[0].id);
+  assert.equal(E.talkWith(star.tm).deal.give.length, before + 1);
+  const fin = E.talkMove(star.tm, 'final');
+  assert.notEqual(fin.kind, 'yes', 'a lowball final offer is not accepted');
+});
+
+test('the trade block brings offers for what you ask for, and says why when nobody bites', () => {
+  E.newGame(DATA, 'NYJ', 3);
+  E.simTo(9); E.G.phase = 'deadline';
+  const lb = byName('Jamien Sherwood');
+  E.toggleBlock(lb.id);
+  E.setBlockWant('players', 'CB');
+  const offers = E.blockOffers();
+  assert.ok(offers.length >= 1);
+  for (const o of offers) assert.ok(o.get.every(id => E.G.players[id] && E.G.players[id].pos === 'CB'), 'only corners come back');
+  assert.match(E.whyNoMarket(byName('Breece Hall').id, 'any'), /\w/);
+});

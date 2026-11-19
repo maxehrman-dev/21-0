@@ -477,43 +477,132 @@ function userPool(kind, keep) {
 }
 function balanceTrade(partner, give, get) { return fillSide(partner, give, get, userPool('all', get)); }
 // ---------- trade talks ----------
-// You propose, their GM answers: a yes, a counter, or a laugh. Lowballs burn patience; run out and they stop taking calls until the next window.
+// A phone call with their GM. You open with an offer, then keep talking: ask what it takes, sweeten it, ask for more,
+// bluff, pitch the fit, or call it your final offer. Every GM reacts a little differently. Pushing too hard costs
+// patience, and at zero they hang up until the next trade window.
 const TALK = {
   yes: ['You have got a deal.', 'Done. Send the paperwork over.', 'We can live with that. Deal.', 'That works for us. Shake on it?', 'Yeah, we will do that.'],
-  counter: ['Not quite. Here is what gets it done.', 'Close. Meet us here.', 'We like where your head is at, but not at that price.', 'Cannot do that one. How about this instead?', 'Getting warmer. Do this and we are done.'],
   eager: ['Deal! Before you change your mind.', 'Yes. Absolutely yes.', 'Wow. Okay. Deal.', 'We accept. Quickly.'],
-  close: ['We are close. Find a little more.', 'Not there yet, but we are listening.', 'Nudge it a bit and call us back.'],
-  laugh: ['Is this a joke?', 'Ha. No.', 'Our whole front office just laughed out loud. That is a no.', 'You are going to have to do a lot better than that.', 'We hung up after the first name.', 'Did you dial the wrong team?'],
-  fleece: ['Nice try. We are not giving that away.', 'Do you think we were born yesterday?', 'We know what that is worth. No.'],
+  counter: ['Not quite. Here is what gets it done.', 'Close. Meet us here.', 'We like where your head is at, but not at that price.', 'Cannot do that one. How about this instead?'],
+  close: ['We are close. Find a little more.', 'Not there yet, but we are listening.', 'Nudge it a bit and we can talk.'],
+  far: ['That is not close.', 'We are a long way apart.', 'You will need a lot more than that.'],
+  laugh: ['Is this a joke?', 'Ha. No.', 'Our whole front office just laughed out loud.', 'Did you dial the wrong team?'],
+  fleece: ['Nice try. We are not giving that away.', 'Do you think we were born yesterday?', 'We know what that is worth.'],
   done: ['We are done talking for now. Call us next window.', 'Lose our number until the next window.', 'That is enough for today.'],
+  ask: ['For that, we would want this.', 'Here is what it would take.', 'Put this together and we have a deal.'],
+  noask: ['Honestly, nothing you have gets that done.', 'We do not see a deal there.'],
+  bluffWin: ['Who? ...Fine. We would rather he come here.', 'Okay, you have our attention.', 'We do not want to lose him to them. Let us talk.'],
+  bluffLose: ['Then go call them.', 'Sure they are. Nice try.', 'Good luck with that.'],
+  fitWin: ['You are not wrong. We could use him.', 'Fair point. He fills a hole for us.', 'That does help us.'],
+  fitLose: ['We are set there.', 'We do not need that.', 'That is not a need for us.'],
+  finalWin: ['Fine. You win. Deal.', 'Okay. We will take it.', 'Alright, alright. Deal.'],
+  finalLose: ['Then we are done here.', 'Then it is a no.', 'Final? Then we pass.'],
+  squeezeWin: ['Fine, throw it in. Deal.', 'Greedy. But okay.', 'Sure. Now we are done.'],
+  squeezeLose: ['Do not push it. The deal stands as is.', 'No. Take it or leave it.', 'Nope. Original deal or nothing.'],
 };
 const say = k => TALK[k][Math.floor(Math.random() * TALK[k].length)];
+// A point that lands still has to be followed by where the deal stands
+const andYet = r => r.kind === 'laugh' ? 'But you are still way off.' : r.line;
 const talkKey = () => `${G.season}-${G.phase}-${G.step || ''}`;
 function talkWith(partner) {
   G.talks = G.talks || {};
   let T = G.talks[partner];
-  if (!T || T.key !== talkKey()) T = G.talks[partner] = {key: talkKey(), patience: 3, log: []};
+  if (!T || T.key !== talkKey()) T = G.talks[partner] = {key: talkKey(), patience: 3, log: [], deal: null, boost: 0, used: {}};
+  T.used = T.used || {}; T.boost = T.boost || 0;
   return T;
 }
-function proposeTrade(partner, give, get) {
-  const T = talkWith(partner);
-  T.log.push({me: true, give: give.slice(), get: get.slice()});
-  if (T.patience <= 0) { const r = {kind: 'done', line: say('done'), done: true}; T.log.push({me: false, ...r}); return r; }
-  const ev = evalTrade(partner, give, get);
-  let r;
+// How their GM sees the deal on the table right now, with what you have talked them into.
+function talkEval(partner, give, get) {
+  const T = talkWith(partner), ev = evalTrade(partner, give, get);
+  const ratio = ev.ratio * (1 + T.boost);
   const blocking = ev.issues.filter(i => !i.startsWith('Both'));
-  if (ev.ok) r = {kind: 'yes', line: say(ev.ratio > 1.6 ? 'eager' : 'yes'), give: give.slice(), get: get.slice()};
-  else if (ev.ratio >= 1 && blocking.length && !ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${blocking[0]}`};
-  else if (ev.fleece) { T.patience -= 1; r = {kind: 'laugh', line: say('fleece')}; }
-  else if (ev.ratio < .55) { T.patience -= 2; r = {kind: 'laugh', line: say('laugh')}; }
-  else {
-    const c = counterTrade(partner, give, get);
-    T.patience -= 1;
-    r = c ? {kind: 'counter', line: say('counter'), counters: c} : {kind: 'close', line: ev.ratio >= .85 ? say('close') : say('laugh')};
-  }
-  if (r.kind !== 'yes' && T.patience <= 0) { r.line += ' ' + say('done'); r.done = true; }
+  return {ev, ratio, blocking, ok: ratio >= 1 && !blocking.length && !ev.fleece};
+}
+// Their answer to the deal on the table. Only lowballs and greed cost patience.
+function talkRespond(partner, free) {
+  const T = talkWith(partner), {give, get} = T.deal, E2 = talkEval(partner, give, get);
+  const cost = n => { if (!free) T.patience -= n; };
+  let r;
+  if (E2.ok) r = {kind: 'yes', line: say(E2.ratio > 1.6 ? 'eager' : 'yes')};
+  else if (E2.ratio >= 1 && E2.blocking.length && !E2.ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${E2.blocking[0]}`};
+  else if (E2.ev.fleece) { cost(1); r = {kind: 'laugh', line: say('fleece')}; }
+  else if (E2.ratio < .55) { cost(1); r = {kind: 'laugh', line: say('laugh')}; }
+  else if (E2.ratio >= .85) { const c = counterTrade(partner, give, get); r = c ? {kind: 'counter', line: say('counter'), counters: c} : {kind: 'close', line: say('close')}; }
+  else r = {kind: 'close', line: say('far')};
+  return r;
+}
+function talkReply(partner, r) {
+  const T = talkWith(partner);
+  if (r.kind !== 'yes' && T.patience <= 0) { r.line += ' ' + say('done'); r.done = true; r.kind = r.kind === 'yes' ? 'yes' : 'done'; }
+  if (r.kind === 'yes') { r.give = T.deal.give.slice(); r.get = T.deal.get.slice(); }
   T.log.push({me: false, ...r});
   return r;
+}
+function hungUp(T) { if (T.patience > 0) return null; const r = {kind: 'done', line: say('done'), done: true}; T.log.push({me: false, ...r}); return r; }
+// Open the call with an offer
+function proposeTrade(partner, give, get) {
+  const T = talkWith(partner);
+  T.deal = {give: give.slice(), get: get.slice()}; T.boost = 0; T.used = {};
+  T.log.push({me: true, give: give.slice(), get: get.slice()});
+  return hungUp(T) || talkReply(partner, talkRespond(partner));
+}
+// Everything you can say once the call is going
+const TALK_MOVES = {ask: 'What would it take?', add: 'Sweeten it', more: 'Ask for more', bluff: 'Another team is interested', fit: 'He fills a need for you', final: 'That is my final offer', squeeze: 'Throw in a little more?'};
+function talkMove(partner, move, arg) {
+  const T = talkWith(partner);
+  if (!T.deal) return null;
+  const gm = gmOf(partner), d = T.deal;
+  const me = {me: true, move, line: TALK_MOVES[move]};
+  if (move === 'add' || move === 'more') {
+    const into = move === 'add' ? d.give : d.get;
+    if (!arg || into.includes(arg)) return null;
+    into.push(arg);
+    me.line = `${move === 'add' ? 'I can add' : 'I would need'} ${assetName(arg)}.`;
+  }
+  T.log.push(me);
+  const h = hungUp(T); if (h) return h;
+  if (move === 'add' || move === 'more') return talkReply(partner, talkRespond(partner));
+  if (move === 'ask') {
+    const g = balanceTrade(partner, d.give, d.get);
+    return talkReply(partner, g ? {kind: 'counter', line: say('ask'), counters: [{label: 'Their ask', give: g, get: d.get.slice()}]} : {kind: 'close', line: say('noask')});
+  }
+  T.used[move] = 1;
+  if (move === 'bluff') {
+    // Gamblers bite more often; careful GMs call your bluff
+    if (rand() < .3 + .35 * gm.risk) { T.boost += .07; const r = talkRespond(partner, true); r.line = say('bluffWin') + ' ' + andYet(r); return talkReply(partner, r); }
+    T.patience -= 1; const r = talkRespond(partner, true); r.line = say('bluffLose') + (r.kind === 'yes' ? ' But the deal still stands.' : ''); return talkReply(partner, r);
+  }
+  if (move === 'fit') {
+    const fills = d.give.some(id => G.players[id] && needBoost(partner, G.players[id]) > 1);
+    const r = talkRespond(partner, true);
+    if (fills) { T.boost += .05; const r2 = talkRespond(partner, true); r2.line = say('fitWin') + ' ' + andYet(r2); return talkReply(partner, r2); }
+    r.line = say('fitLose') + (r.kind === 'yes' ? ' The deal still stands, though.' : ''); return talkReply(partner, r);
+  }
+  if (move === 'final') {
+    const {ratio} = talkEval(partner, d.give, d.get);
+    if (ratio >= .9 && rand() < (ratio - .85) / .15) { T.boost = Math.max(T.boost, 1 / Math.max(.01, talkEval(partner, d.give, d.get).ev.ratio) - 1 + .001); return talkReply(partner, {kind: 'yes', line: say('finalWin')}); }
+    T.patience -= 2; return talkReply(partner, {kind: 'close', line: say('finalLose'), final: true});
+  }
+  if (move === 'squeeze') {
+    // Ask them to add their cheapest asset to a deal they already said yes to
+    const theirs = [...roster(partner).filter(p => p.pos !== 'K' && p.pos !== 'P').map(p => p.id), ...G.picks.filter(k => k.owner === partner).map(k => k.id)]
+      .filter(id => !d.get.includes(id)).map(id => ({id, v: assetValue(id, partner)})).sort((a, b) => a.v - b.v);
+    const x = theirs.find(o => o.v >= .5) || theirs[0];
+    if (x && talkEval(partner, d.give, [...d.get, x.id]).ok) { d.get.push(x.id); return talkReply(partner, {kind: 'yes', line: `${say('squeezeWin')} You get ${assetName(x.id)} too.`}); }
+    T.patience -= 1; return talkReply(partner, {kind: 'yes', line: say('squeezeLose')});
+  }
+  return null;
+}
+// What you could add to sweeten it, and what you could ask for: cheapest first for them to say yes
+function talkAssets(partner, side) {
+  const T = talkWith(partner), d = T.deal || {give: [], get: []};
+  if (side === 'add') {
+    // every pick you own, plus your 8 cheapest useful players, cheapest first
+    const L = userPool('all').filter(id => !d.give.includes(id)).map(id => ({id, v: assetValue(id, partner), pick: !G.players[id]})).filter(x => x.v >= 1).sort((a, b) => a.v - b.v);
+    return [...L.filter(x => x.pick), ...L.filter(x => !x.pick).slice(0, 8)].sort((a, b) => a.v - b.v);
+  }
+  return [...roster(partner).filter(p => p.pos !== 'K' && p.pos !== 'P' && p.ovr >= 60).map(p => p.id), ...G.picks.filter(k => k.owner === partner).map(k => k.id)]
+    .filter(id => !d.get.includes(id)).map(id => ({id, v: assetValue(id, partner)})).filter(x => x.v >= 1).sort((a, b) => a.v - b.v).slice(0, 8);
 }
 // Packages you could send for one of their players
 function findPackages(pid) {
@@ -531,12 +620,16 @@ function findPackages(pid) {
   return out;
 }
 // A team builds an offer for one of your players from its own assets
-function buildPackage(t, pid, loose) {
+// want: 'picks', 'players' or 'any'; pos narrows the players you will take
+function buildPackage(t, pid, loose, kind, pos) {
   const want = assetValue(pid);
   const d = depth(t);
   const starterIds = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
   const picks = G.picks.filter(k => k.owner === t).map(k => ({id: k.id, v: assetValue(k.id)})).sort((a, b) => b.v - a.v);
-  const players = roster(t).filter(p => p.ovr >= 62 && !starterIds.has(p.id) && p.pos !== 'K' && p.pos !== 'P').map(p => ({id: p.id, v: assetValue(p.id)})).sort((a, b) => b.v - a.v);
+  const forPlayers = kind === 'players';
+  const players = roster(t).filter(p => p.ovr >= (forPlayers ? 65 : 62) && p.pos !== 'K' && p.pos !== 'P' && !p.inj
+    && (forPlayers ? (!pos || pos === 'ANY' || p.pos === pos) && !(p.pos === 'QB' && starterIds.has(p.id)) : !starterIds.has(p.id)))
+    .map(p => ({id: p.id, v: assetValue(p.id)})).sort((a, b) => b.v - a.v);
   // Real teams pay mostly in picks: 95% of trades include picks, only 5% are player-for-player.
   const tryPool = pool => {
     const pkg = []; let sum = 0;
@@ -546,7 +639,10 @@ function buildPackage(t, pid, loose) {
     }
     return sum >= want * (loose ? .75 : .85) ? pkg : null;
   };
-  for (const pool of [picks, [...picks, ...players].sort((a, b) => b.v - a.v)]) {
+  // 'any' tries picks, then picks with backups, then players who start for them
+  const starters = kind === 'picks' || forPlayers ? [] : roster(t).filter(p => p.ovr >= 65 && starterIds.has(p.id) && p.pos !== 'QB' && p.pos !== 'K' && p.pos !== 'P' && !p.inj).map(p => ({id: p.id, v: assetValue(p.id)})).sort((a, b) => b.v - a.v);
+  const pools = kind === 'picks' ? [picks] : forPlayers ? [players] : [picks, [...picks, ...players].sort((a, b) => b.v - a.v), [...players, ...starters].sort((a, b) => b.v - a.v)];
+  for (const pool of pools) {
     const pkg = tryPool(pool);
     if (!pkg || !pkg.length) continue;
     const ev = evalTrade(t, [pid], pkg);
@@ -601,7 +697,35 @@ function genOffers(n, minimum) {
   }
   return offers;
 }
-function refreshOffers() { G.offers = genOffers(5, 3); return G.offers; }
+function refreshOffers() { G.offers = [...blockOffers(), ...genOffers(5, 3)]; return G.offers; }
+// ---------- your trade block ----------
+// Put players on the block, say what you want back, and teams send offers for them into your inbox.
+function blockOf() {
+  G.block = G.block || {ids: [], want: 'any', pos: 'ANY'};
+  G.block.ids = G.block.ids.filter(id => G.players[id] && G.players[id].tm === G.user);
+  return G.block;
+}
+// When nobody bites, say why in plain words
+function whyNoMarket(pid, kind, pos) {
+  const p = G.players[pid]; if (!p) return '';
+  const POS = {QB: 'quarterback', RB: 'running back', WR: 'receiver', TE: 'tight end', OT: 'tackle', IOL: 'guard or center', EDGE: 'pass rusher', DT: 'defensive tackle', LB: 'linebacker', CB: 'cornerback', S: 'safety', K: 'kicker', P: 'punter'};
+  if (!teamList().some(t => t !== G.user && needBoost(t, p) >= 1)) return `No team needs a ${POS[p.pos] || p.pos} right now.`;
+  if (p.end > G.season && p.cap > market(p) * 1.4) return `His contract scares teams off: ${p.cap.toFixed(1)}M a year through ${p.end}.`;
+  if (ageAdj(p) >= 31) return 'Teams think his best years are behind him.';
+  if (p.ovr < 70) return 'Teams see him as a backup.';
+  if (kind === 'picks') return 'Teams would have to send salary back. Try asking for players, or either.';
+  if (kind === 'players' && pos && pos !== 'ANY') return `Nobody has a ${POS[pos] || pos} they would move for him. Try any position.`;
+  return 'Nobody will pay what he is worth to you right now.';
+}
+function toggleBlock(id) { const B = blockOf(), i = B.ids.indexOf(id); if (i >= 0) B.ids.splice(i, 1); else if (G.players[id] && G.players[id].tm === G.user) B.ids.push(id); return B.ids.includes(id); }
+function setBlockWant(want, pos) { const B = blockOf(); if (want) B.want = want; if (pos) B.pos = pos; return B; }
+function blockOffers() {
+  const B = blockOf(), out = [];
+  for (const id of B.ids) for (const x of shopPlayer(id, B.want, B.pos).slice(0, 2)) {
+    out.push({id: `b${G.season}${G.phase}${G.step || ''}${x.partner}${id}`, from: x.partner, kind: 'block', give: [id], get: x.get, msg: `For ${G.players[id].n}, off your trade block.`});
+  }
+  return out;
+}
 // Which of your players a team wants most, by how far above the league baseline they value him
 function interestIn(t, limit) {
   return roster(G.user).filter(p => p.ovr >= 65 && p.pos !== 'K' && p.pos !== 'P').map(p => {
@@ -638,11 +762,11 @@ function acceptOffer(oid) {
   return r.ok ? {ok: true, msg: `Done. You got ${o.get.map(assetName).join(', ')}.`} : {ok: false, msg: r.issues[0] || 'It no longer works under the cap.'};
 }
 // Teams that would trade for one of your players, best offer first
-function shopPlayer(pid) {
+function shopPlayer(pid, kind, pos) {
   const out = [];
   for (const t of teamList().filter(x => x !== G.user)) {
     if (needBoost(t, G.players[pid]) < 1) continue;
-    const pkg = buildPackage(t, pid);
+    const pkg = buildPackage(t, pid, false, kind, pos) || (kind === 'players' ? buildPackage(t, pid, true, kind, pos) : null);
     if (pkg) out.push({partner: t, give: [pid], get: pkg, ev: evalTrade(t, [pid], pkg)});
   }
   return out.sort((a, b) => b.ev.fair - a.ev.fair).slice(0, 5);
@@ -1674,11 +1798,11 @@ function load(str) { const o = JSON.parse(str); G = o.G; R.set(o.rs); return G; 
 
 const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC = cached(marketBoard), valueRangeC = cached(valueRange), genOffersC = cached(genOffers), findPackagesC = cached(findPackages), shopPlayerC = cached(shopPlayer), draftOffersC = cached(draftOffers),
   cutPlanC = cached(cutPlan), teamNeedsC = cached(teamNeeds), projectC = cached(project), setExpectationsC = cached(setExpectations), balanceTradeC = cached(balanceTrade);
-function refreshOffersC() { G.offers = genOffersC(5, 3); return G.offers; }
+function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; return G.offers; }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, proposeTrade, talkWith, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
