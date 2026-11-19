@@ -64,6 +64,19 @@ function newGame(DATA, userTeam, seed) {
   G.start = snapshot(roster(userTeam), DATA.cap26);
   G.signings = [];
   for (const t of teamList()) G.dead[t] = 0;
+  // the other 31 teams trim their camp rosters to 53 before Week 1; the players they cut are the street free agents
+  // you can sign during the season. Starters are never cut, so the season plays the same.
+  for (const t of teamList()) {
+    if (t === userTeam) continue;
+    const d = depth(t), st = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
+    const cut = roster(t).filter(p => !st.has(p.id)).sort((a, b) => (a.ovr + (a.age <= 24 ? 3 : 0)) - (b.ovr + (b.age <= 24 ? 3 : 0)));
+    const counts = {}; for (const p of roster(t)) counts[p.pos] = (counts[p.pos] || 0) + 1;
+    for (const p of cut) {
+      if (roster(t).length <= ROSTER_MAX) break;
+      if (counts[p.pos] <= (MIN_DEPTH[p.pos] || 1)) continue;
+      counts[p.pos]--; p.fromTeam = t; p.tm = 'FA'; p.cap = 0; p.end = 2025; p.ask = askFor(p);
+    }
+  }
   return G;
 }
 
@@ -95,8 +108,21 @@ function updateConfidence(event) {
   }
   G.conf = clamp((G.conf == null ? 55 : G.conf) + d, 0, 100);
   (G.confLog = G.confLog || []).push({s, event, d, why, now: G.conf});
-  if (G.conf < 25) G.news.unshift('The owner is losing patience. You are on the hot seat.');
+  if (event === 'season') ownerVerdict(s);
+  else if (G.conf < 25) G.news.unshift('The owner is losing patience. You are on the hot seat.');
   return d;
+}
+// What the owner decides when a season ends: a mandate from the hot seat, firing if you miss it, an extension if he loves you
+function ownerVerdict(s) {
+  const f = userFinish(s), madePO = f.label !== 'Missed playoffs';
+  G.verdicts = G.verdicts || {};
+  if (G.mandate && G.mandate.season === s) {
+    if (madePO) { G.verdicts[s] = 'saved'; G.mandate = null; G.conf = Math.max(G.conf, 45); G.news.unshift('You met the owner\'s mandate. Your job is safe.'); }
+    else { G.verdicts[s] = 'fired'; G.fired = s; G.news.unshift(`Fired. The ${G.teams[G.user].nick} missed the playoffs again.`); }
+    return;
+  }
+  if (G.conf < 25) { G.verdicts[s] = 'hotseat'; G.mandate = {season: s + 1, goal: 'Make the playoffs'}; G.news.unshift(`Hot seat: make the playoffs in ${s + 1} or you are fired.`); }
+  else if (G.conf >= 80) { G.verdicts[s] = 'extended'; (G.extended = G.extended || []).push(s); G.news.unshift('The owner gave you a contract extension.'); }
 }
 const confLabel = c => c >= 75 ? 'Untouchable' : c >= 55 ? 'Secure' : c >= 35 ? 'Warm seat' : 'Hot seat';
 // Week 1 picture of a roster, kept so the final screen can show what you inherited
@@ -407,7 +433,7 @@ const STACK = [1, .75, .55, .4, .3, .25];
 const stacked = vals => vals.slice().sort((a, b) => b - a).reduce((s, v, i) => s + v * (STACK[i] || .2), 0);
 
 // ---------- trades ----------
-function tradeOpenNow() { return G.phase === 'deadline' || G.phase === 'offseason'; }
+function tradeOpenNow() { return G.phase === 'deadline' || G.phase === 'offseason' || ((G.phase === 'preseason' || G.phase === 'season') && G.week === 0); }
 function rosterLimit() { return G.phase === 'offseason' && G.step !== 'cutdown' ? 90 : 75; }
 function evalTrade(partner, give, get) {
   // give = assets the user sends, get = assets the user receives. Scored from the partner's side.
@@ -768,6 +794,17 @@ function whyNoMarket(pid, kind, pos) {
   if (kind === 'picks') return 'Teams would have to send salary back. Try asking for players, or either.';
   if (kind === 'players' && pos && pos !== 'ANY') return `Nobody has a ${POS[pos] || pos} they would move for him. Try any position.`;
   return 'Nobody will pay what he is worth to you right now.';
+}
+// During the season, unsigned players take short, cheap deals: the rest of this season at about half their offseason ask
+function midseasonPrice(p) { return Math.max(1.1, Math.round(askOf(p) * .5 * 10) / 10); }
+function signMidseason(id) {
+  const p = G.players[id];
+  if (!p || p.tm !== 'FA') return {ok: false, msg: 'He already signed somewhere.'};
+  const price = midseasonPrice(p);
+  if (price > capSpace(G.user) + .001) return {ok: false, msg: `Not enough cap space: he wants ${price.toFixed(1)}M and you have ${capSpace(G.user).toFixed(1)}M.`};
+  p.tm = G.user; p.cap = price; p.end = G.season; p.how = 'Free agent'; p.inj = false;
+  G.news.unshift(`Signed ${p.n} (${p.pos} ${p.ovr}) for the rest of the season.`);
+  return {ok: true, price};
 }
 function toggleBlock(id) { const B = blockOf(), i = B.ids.indexOf(id); if (i >= 0) B.ids.splice(i, 1); else if (G.players[id] && G.players[id].tm === G.user) B.ids.push(id); return B.ids.includes(id); }
 function setBlockWant(want, pos) { const B = blockOf(); if (want) B.want = want; if (pos) B.pos = pos; return B; }
@@ -1959,7 +1996,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

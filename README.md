@@ -21,7 +21,8 @@
 
 - **Real starting point.** 2026 rosters, contracts and cap hits. Ratings come from 2023–26 production, playing time, contracts and draft pedigree, so one bad year doesn't erase a career.
 - **A trade market calibrated on real deals.** Values were fitted to the last 1,000 trades (2013–2026): the pick chart from 375 pick-for-pick swaps, future picks worth about 60% of the same slot, and star prices matching what Tyreek Hill, Davante Adams and Jalen Ramsey actually fetched. Each team also weighs its own situation, needs, GM style, scouting, cap room and division rivalries.
-- **Offers come to you.** At least three every trade window, plus draft-day calls to trade up into your pick. Teams counter instead of just saying no.
+- **Trading like a front office.** Offers come to you every window. Put players on your trade block and teams bid. Build a trade from a grid of teams that shows who wants your players, filter by position, and see every deal's value in wins. Ask around on any player for what teams would give. Seven-round picks, so role players move for late picks.
+- **Trade calls.** Pitch a deal on the phone and keep talking: sweeten it, take something off, meet in the middle, ask who else they would move, bluff, or walk away. Every GM reacts differently.
 - **Free agency with people in it.** Players care about money, winning, role and loyalty in different amounts. Meet them, pitch them, make offers, then see whether a rival outbids you and decide whether to match.
 - **The real 2027 draft class**, with scouting ranges that can be wrong. Every pick's true rating is revealed on the spot: steal, as projected, or bust.
 - **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.

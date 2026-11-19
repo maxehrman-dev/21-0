@@ -243,13 +243,13 @@ function recordRun(final) {
   const id = 'run-' + G.startedAt;
   const prev = C.runs[id] || {};
   const seasons = Object.assign({}, prev.seasons || {});
-  for (const s of [2026, 2027]) {
+  for (const s of Object.keys(G.playoffs || {}).map(Number)) {
     const P = G.playoffs[s];
     if (!P || !P.champ) continue;
     const f = E.userFinish(s), gm = E.goalMet(s);
     seasons[s] = {w: f.w, l: f.l, rw: f.rw, rl: f.rl, label: f.label, champ: P.champ === G.user, perfect: !!f.perfect, po: f.label !== 'Missed playoffs', sb: P.champ === G.user || f.label === 'Lost in the Super Bowl', goal: gm ? gm.goal : '', met: gm ? !!gm.met : null};
   }
-  const run = Object.assign({}, prev, {team: G.user, startedAt: G.startedAt, updatedAt: Date.now(), startOvr: G.start ? G.start.ovr : G.startOvr, startRank: G.startRank || prev.startRank || null, seasons, trades: G.trades.length, mode: G.mode || 'standard'});
+  const run = Object.assign({}, prev, {team: G.user, startedAt: G.startedAt, updatedAt: Date.now(), startOvr: G.start ? G.start.ovr : G.startOvr, startRank: G.startRank || prev.startRank || null, seasons, trades: G.trades.length, mode: G.mode || 'standard', fired: G.fired || null, extended: (G.extended || []).length});
   if (final) {
     const R = E.rebuildReport();
     Object.assign(run, {done: true, score: R.score, grade: R.grade, style: R.style.name, endOvr: R.now.ovr});
@@ -293,19 +293,22 @@ function leaderboardCard() {
 const HELP = {
   run: ['How a run works', [
     ['Goal', 'Go 21-0: win all 17 regular-season games, then 4 playoff games.'],
-    ['1 · First half of 2026', 'Your real roster plays Weeks 1 to 8 on its own. Use the time to study your needs.'],
+    ['1 · Week 1 of 2026', 'Make trades before kickoff if you want, then Weeks 1 to 8 play out.'],
     ['2 · Week 9 trade deadline', 'Your one chance to trade in 2026. Take an offer from your inbox or build your own deal.'],
     ['3 · 2027 offseason', 'This is where you build the team: re-sign, free agency, the draft, then the final roster.'],
     ['4 · 2027 season', 'One more trade deadline, then one more shot at 21-0.'],
     ['The gold Next button', 'It always does the next step. On a computer, N does the same.']]],
   pre: ['Before the deadline', [
-    ['What happens now', 'Weeks 1 to 8 play out with the real roster. No moves until the deadline.'],
+    ['What happens now', 'Trades are open until kickoff. Then Weeks 1 to 8 play out, and the next window is the Week 9 deadline.'],
     ['Team needs', 'Letter grades rank each position against the league. F and D spots are what to buy at the deadline.'],
     ['Outlook', 'Projected wins and odds come from hundreds of simulated seasons with the current rosters.']]],
-  deadline: ['The trade deadline', [
-    ['Inbox', 'Teams send offers. Every offer in your inbox is one they would accept.'],
-    ['Make a trade', 'Pick a team, then what you want and what you send. The meter shows how they feel before you propose.'],
-    ['Call them', 'Optional. Pitch the deal on the phone: they accept, counter or laugh. Lowballs cost patience.'],
+  deadline: ['Trades', [
+    ['Offers', 'Teams send offers. Every offer here is one they would accept.'],
+    ['Trade block', 'Put your players up and teams make offers right there. You also see who other teams are shopping.'],
+    ['Build a trade', 'Pick a team from the grid (it shows who wants your players), then what you want and what you send. Filter by position. The meter shows how they feel.'],
+    ['Call them', 'Pitch the deal on the phone and keep talking: sweeten it, take something off, meet in the middle, ask who else they would move, bluff, or walk away. Lowballs cost patience.'],
+    ['Ask around', 'On any of your players\' cards: see what teams would give for him, in picks, players or either.'],
+    ['Picks', 'Seven rounds, like the real draft. Late picks are how role players change teams.'],
     ['Wins', 'Every trade shows what it is worth in wins a season for your team.']]],
   playoffs: ['Playoffs', [['How it works', 'Eight teams per conference, no byes. Win four in a row for the title. No moves during the playoffs.']]],
   progress: ['Progression', [['Ratings changed', 'Young players with upside grew, older players declined, and a big season can lift a rating more than one bad year can sink it.']]],
@@ -320,9 +323,10 @@ const HELP = {
     ['Waves', 'At the end of each wave rival teams bid. He picks the best mix of money, winning, role and loyalty. If a rival beats your offer, you can match.'],
     ['Prices', 'Asking prices drop about 12% each wave, but the best players go fast.']]],
   draft: ['The draft', [
-    ['Big board', 'The real 2027 class, 4 rounds. Scouts give a range, and the real rating shows the moment a player is drafted.'],
+    ['Big board', 'Seven rounds. 2027 is the real class at the top. Scouts give a range, and the real rating shows the moment a player is drafted.'],
     ['Trades', 'Teams call to trade up into your pick. You can also trade up yourself.'],
-    ['Auto', 'Auto-draft picks the best fit for your needs.']]],
+    ['Auto', 'Auto-draft picks the best fit for your needs, handy for the late rounds.'],
+    ['Next year', 'League › More shows the next class long before draft day.']]],
   cutdown: ['Final roster', [
     ['Goal', 'Get to 53 players and under the cap.'],
     ['Suggested cuts', 'Backups with the least value for their pay. Change the list, then release them in one go.'],
@@ -390,7 +394,8 @@ function phaseLabel() {
   if (p === 'final') return 'Final results';
   return '';
 }
-function tradeOpen() { return G && (G.phase === 'deadline' || G.phase === 'offseason'); }
+// Trades are open before Week 1, at the Week 9 deadline and all offseason
+function tradeOpen() { return G && (G.phase === 'deadline' || G.phase === 'offseason' || ((G.phase === 'preseason' || G.phase === 'season') && G.week === 0)); }
 const offerCount = () => tradeOpen() ? ((G.offers || []).length + (G.step === 'draft' ? E.draftOffers().length : 0)) : 0;
 
 const TAB_ICON = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', roster: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-6 6.5-6s5.9 2.4 6.5 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.8 14.2c2.8.1 5 2.2 5.7 5.8"/>',
@@ -401,6 +406,7 @@ function nextAction() {
   if (P === 'preseason' || P === 'season') return {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `${G.season} · Week 1`};
   if (P === 'deadline') { const n = offerCount(); return {label: 'Sim rest of season', act: 'simRest', sub: n ? `${n} trade offer${n > 1 ? 's' : ''} waiting` : 'Trade deadline'}; }
   if (P === 'playoffs') { const R = G.playoffs[G.season]; return {label: `Play the ${E.ROUND_NAMES[R.round]}`, act: 'poNext', sub: `${G.season} playoffs`, alt: {label: 'Skip', act: 'poSkip'}}; }
+  if (P === 'seasondone' && G.fired && !(G.season === 2027 && !G.reported)) return {label: 'Pick a new team', act: 'newgame', sub: 'You were fired'};
   if (P === 'seasondone') return G.season === 2027 && !G.reported ? {label: 'See final results', act: 'final', sub: '2027 is over'} : {label: `Start the ${G.season + 1} offseason`, act: 'offseason', sub: `${G.season} is over`};
   if (P === 'offseason') {
     if (S === 'progress') return {label: 'Next: re-sign players', act: 'toResign', sub: 'Offseason · step 1 of 5'};
@@ -523,14 +529,25 @@ function injuryCard() {
   const all = E.roster(G.user).filter(p => p.inj), wouldStart = p => { const L = d[p.pos], last = L[E.STARTERS[p.pos] - 1]; return !last || p.ovr > last.ovr; };
   const hurt = all.filter(wouldStart).sort((a, b) => b.ovr - a.ovr), backups = all.length - hurt.length;
   if (!hurt.length) return '';
-  return `<div class="card injcard"><div class="cardh"><h3>Injured starters</h3><span class="tag bad">${hurt.length} out</span></div>${hurt.slice(0, 4).map(p => { const sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">${p.injW === undefined || p.injW === 99 ? 'Out for the season' : `Back in about ${p.injW} week${p.injW > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) starts` : ''}</div></div></div>`; }).join('')}${backups ? `<div class="small muted injmore">Plus ${backups} backup${backups > 1 ? 's' : ''} out.</div>` : ''}</div>`;
+  return `<div class="card injcard"><div class="cardh"><h3>Injured starters</h3><span class="tag bad">${hurt.length} out</span></div>${hurt.slice(0, 4).map(p => { const sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">${p.injW === undefined || p.injW === 99 ? 'Out for the season' : `Back in about ${p.injW} week${p.injW > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) starts` : ''}</div></div>${midseasonOpen() ? `<button class="btn sm" data-act="faSheet" data-k="${p.pos}">Replace</button>` : ''}</div>`; }).join('')}${backups ? `<div class="small muted injmore">Plus ${backups} backup${backups > 1 ? 's' : ''} out.</div>` : ''}</div>`;
+}
+// Sign a free agent mid-season, usually to replace an injured starter
+const midseasonOpen = () => G && (G.phase === 'deadline' || G.phase === 'playoffs' || ((G.phase === 'preseason' || G.phase === 'season')));
+function faSheet(pos) {
+  UI.faSheetPos = pos || UI.faSheetPos || 'ALL';
+  const d = E.depth(G.user), space = E.capSpace(G.user);
+  const L = E.faPool().filter(p => inGroup(p.pos, UI.faSheetPos) || p.pos === UI.faSheetPos).slice(0, 30);
+  modal(`<div class="sheeth"><div><div class="kicker">Free agents · ${money(space)} cap space</div><h3>Sign a free agent</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <p class="small muted">Signed for the rest of the season at about half his offseason price.</p>
+    ${posChips('faSheetPos', UI.faSheetPos)}
+    <div class="plist">${L.map(p => { const st = d[p.pos][E.STARTERS[p.pos] - 1], up = st ? p.ovr - st.ovr : p.ovr, price = E.midseasonPrice(p); return `<div class="trow">${pRow(p, `<span class="${up > 0 ? 'gold' : ''}">${!st ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'depth'}</span>`)}<button class="btn sm go" data-act="midSign" data-id="${p.id}" ${price > space ? 'disabled title="Not enough cap space"' : ''}>Sign ${money(price)}</button></div>`; }).join('') || '<p class="muted">Nobody available at that position.</p>'}</div>`, true);
 }
 function injuryPopup(mark) {
   if (G.phase === 'seasondone') return false;
   const L = (G.injLog || []).slice(mark).filter(x => G.players[x.id] && G.players[x.id].tm === G.user && G.players[x.id].inj);
   if (!L.length) return false;
   const d = E.depth(G.user);
-  popup('Injury report', `${L.length} of your starters got hurt`, `<p class="small muted">The sim does not stop for injuries, so here is what happened. Backups moved up automatically. You can change the depth chart in the Roster tab.</p>${L.map(x => { const p = G.players[x.id], sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">Hurt in Week ${x.week} · ${x.wk === 99 ? 'out for the season' : `out about ${x.wk} week${x.wk > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) took over` : ''}</div></div><span class="tag ${x.wk === 99 ? 'bad' : 'warn'}">${x.wk === 99 ? 'Season' : x.wk + ' wk'}</span></div>`; }).join('')}`, 'loss');
+  popup('Injury report', `${L.length} of your starters got hurt`, `<p class="small muted">The sim does not stop for injuries, so here is what happened. Backups moved up automatically. You can change the depth chart in the Roster tab.</p>${L.map(x => { const p = G.players[x.id], sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">Hurt in Week ${x.week} · ${x.wk === 99 ? 'out for the season' : `out about ${x.wk} week${x.wk > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) took over` : ''}</div></div><span class="tag ${x.wk === 99 ? 'bad' : 'warn'}">${x.wk === 99 ? 'Season' : x.wk + ' wk'}</span></div>`; }).join('')}<div class="row" style="margin-top:10px"><button class="btn" data-act="faSheet" data-k="${G.players[L[0].id].pos}">Find a replacement</button></div>`, 'loss');
   return true;
 }
 function needsList(limit) {
@@ -590,9 +607,9 @@ function renderHome() {
 function homePre() {
   const first = G.season === 2026;
   return `<section class="hero"><div><div class="kicker">${G.season} season · Week 1 ${modeTag(G.mode)}</div>
-    <h2>${first ? 'You play the first half as is' : `Your ${G.season} roster is set`}${helpBtn('pre')}</h2>
-    <p class="lead">${first ? 'Real opening-day roster. Your first trades open at Week 9.' : 'Your last chance to make a move this season is the Week 9 deadline.'}</p></div>
-    <button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></section>
+    <h2>${first ? 'Week 1. Make a move?' : `Your ${G.season} roster is set`}${helpBtn('pre')}</h2>
+    <p class="lead">${first ? 'Trades are open until kickoff. The next window is the Week 9 deadline.' : 'Trades are open until kickoff, then again at the Week 9 deadline.'}</p></div>
+    <div class="row"><button class="btn" data-tab="trade">Trade center${(G.offers || []).length ? ` · ${G.offers.length}` : ''}</button><button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></div></section>
   ${injuryCard()}<div class="grid g2">${outlookCard(G.season)}<div class="card"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(3)}</div></div>`;
 }
 function homeDeadline() {
@@ -622,11 +639,18 @@ function homeSeasonDone() {
   const two = G.season === 2026;
   return `<section class="hero"><div><div class="kicker">${G.season} final</div>
     <h2>${f.w}-${f.l}. ${esc(f.label)}.</h2>
-    <p class="lead">${f.perfect ? 'You did it. 21-0.' : `${esc(G.teams[P.champ].nick)} won it all.`}${gm ? ` Goal <b class="${gm.met ? 'gold' : 'bad'}">${gm.met ? 'met' : 'missed'}</b>.` : ''}</p></div>
-    <button class="btn go lg" data-act="${G.season === 2027 && !G.reported ? 'final' : 'offseason'}">${G.season === 2027 && !G.reported ? 'See final results' : `Start the ${G.season + 1} offseason`}</button></section>
+    <p class="lead">${f.perfect ? 'You did it. 21-0.' : `${esc(G.teams[P.champ].nick)} won it all.`}${gm ? ` Goal <b class="${gm.met ? 'gold' : 'bad'}">${gm.met ? 'met' : 'missed'}</b>.` : ''}</p>${verdictLine(G.season)}</div>
+    <button class="btn go lg" data-act="${G.season === 2027 && !G.reported ? 'final' : G.fired ? 'newgame' : 'offseason'}">${G.season === 2027 && !G.reported ? 'See final results' : G.fired ? 'Pick a new team' : `Start the ${G.season + 1} offseason`}</button></section>
   ${P.champ === G.user ? `<div class="champbanner"><span class="kicker">Super Bowl champions</span><b>${esc(G.teams[G.user].name)}</b><span class="small muted">${f.perfect ? 'And nobody beat them. 21-0.' : `${f.w}-${f.l}, ${G.season}`}</span></div>` : ''}
   ${awardsCard(G.season)}
   <details class="fold card" style="margin-top:14px" data-fold="bracket" ${foldOpen('bracket')}><summary>Playoff bracket</summary>${bracket()}</details>`;
+}
+function verdictLine(s) {
+  const v = (G.verdicts || {})[s];
+  if (!v) return '';
+  const T = {hotseat: ['bad', `Hot seat: make the playoffs in ${s + 1} or you are fired.`], fired: ['bad', `You are fired. The owner wanted the playoffs in ${s}.`],
+    saved: ['good', 'Mandate met. Your job is safe.'], extended: ['good', 'The owner gave you a contract extension.']}[v];
+  return `<div class="verdict ${T[0]}">${esc(T[1])}</div>`;
 }
 function stepper(i) {
   const L = ['Progression', 'Re-sign', 'Free agency', 'Draft', 'Final roster'];
@@ -1101,8 +1125,9 @@ function renderResume() {
   <div class="card" style="margin-top:14px"><div class="cardh"><h3>Every team</h3><span class="small muted">${Object.keys(T.teams).length} of 32 run</span></div>
     <div class="allteams">${order.map(dv => `<div><div class="kicker muted">${dv}</div>${Object.keys(DATA.teams).filter(t => DATA.teams[t].div === dv).sort().map(t => { const c = T.teams[t]; return `<div class="tline ${c ? 'on' : ''}">${badge(t, 1)}<span>${esc(DATA.teams[t].nick)}</span><span class="small ${c ? '' : 'muted'}">${c ? `${c.w}-${c.l}${c.titles ? ' · <b class="gold">' + c.titles + '×</b>' : ''}${c.best ? ' · ' + c.best : ''}` : 'Not yet'}</span></div>`; }).join('')}</div>`).join('')}</div></div>
   ${leaderboardCard()}
-  <div class="card" style="margin-top:14px"><h3>Run history</h3>${T.runs.length ? `<div class="tw"><table class="tbl"><thead><tr><th>Team</th><th>2026</th><th>2027</th><th>OVR</th><th>Grade</th><th>Style</th></tr></thead><tbody>
-    ${T.runs.map(r => { const a = (r.seasons || {})[2026], b = (r.seasons || {})[2027]; const cell = s => s ? `<b class="num">${s.w}-${s.l}</b> <span class="small muted">${esc(s.label)}</span>${s.champ ? ' <span class="tag good">Champs</span>' : ''}` : '<span class="muted">In progress</span>'; return `<tr><td><div class="row nowrap">${badge(r.team, 1)} ${esc(DATA.teams[r.team].nick)} ${modeTag(r.mode)}</div></td><td>${cell(a)}</td><td>${cell(b)}</td><td class="num">${r.startOvr || ''}${r.endOvr ? ' → ' + r.endOvr : ''}</td><td>${r.grade ? `<span class="tag ${gclass(r.grade)}">${r.grade}</span>` : ''}</td><td class="small">${esc(r.style || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Finish a season and it shows up here.</p>'}</div>`;
+  <div class="card" style="margin-top:14px"><h3>Run history</h3>${T.runs.length ? `<div class="tw"><table class="tbl"><thead><tr><th>Team</th><th>2026</th><th>2027</th><th>Later</th><th>OVR</th><th>Grade</th><th>Style</th></tr></thead><tbody>
+    ${T.runs.map(r => { const a = (r.seasons || {})[2026], b = (r.seasons || {})[2027]; const cell = s => s ? `<b class="num">${s.w}-${s.l}</b> <span class="small muted">${esc(s.label)}</span>${s.champ ? ' <span class="tag good">Champs</span>' : ''}` : '<span class="muted">In progress</span>'; return `<tr><td><div class="row nowrap">${badge(r.team, 1)} ${esc(DATA.teams[r.team].nick)} ${modeTag(r.mode)}${r.fired ? ' <span class="tag bad">Fired</span>' : ''}${r.extended ? ' <span class="tag good">Extended</span>' : ''}</div></td><td>${cell(a)}</td><td>${cell(b)}</td><td class="small">${Object.entries(r.seasons || {}).filter(([y]) => +y > 2027).map(([y, x]) => `${y}: <b class="num">${x.w}-${x.l}</b>${x.champ ? ' <span class="tag good">Champs</span>' : ''}`).join('<br>') || '<span class="muted">–</span>'}</td><td class="num">${r.startOvr || ''}${r.endOvr ? ' → ' + r.endOvr : ''}</td><td>${r.grade ? `<span class="tag ${gclass(r.grade)}">${r.grade}</span>` : ''}</td><td class="small">${esc(r.style || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Finish a season and it shows up here.</p>'}</div>
+  ${G ? '<p style="margin-top:20px"><button class="btn danger" data-act="askReset">Start over with a new team</button></p>' : ''}`;
 }
 
 function scoreCard(g, label) {
@@ -1223,7 +1248,7 @@ function homeFinal() {
     </div>
     ${prev ? `<p class="small" style="margin:14px 0 0;color:${beat ? 'var(--good)' : 'var(--muted)'}">${beat ? `New personal best with the ${esc(team.nick)}. Your old best was ${prev.grade} (${prev.score}).` : `Your best with the ${esc(team.nick)} is still ${prev.grade} (${prev.score}), ${esc(prev.rec)} in 2027.`}</p>` : ''}
     <div class="dare">Can you do better? Run it back with the same Week 1 roster, or take over a worse team.</div>
-    <div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-act="share" data-k="final">Share my rebuild</button><button class="btn go" data-act="keepGoing">Keep playing: ${G.season + 1}</button><button class="btn" data-act="runback">Run it back</button><button class="btn ghost" data-act="newgame">New team</button></div>
+    <div class="row" style="justify-content:center;margin-top:12px"><button class="btn" data-act="share" data-k="final">Share my rebuild</button>${G.fired ? '<span class="tag bad">Fired</span>' : `<button class="btn go" data-act="keepGoing">Keep playing: ${G.season + 1}</button>`}<button class="btn" data-act="runback">Run it back</button><button class="btn ghost" data-act="newgame">New team</button></div>
   </div></section>
 
   ${[2026, 2027].map(s => E.goalMet(s)).some(Boolean) ? `<div class="grid g2" style="margin-bottom:14px">${[2026, 2027].map(s => { const g = E.goalMet(s); return g ? `<div class="card goalcard"><div class="kicker">${s} front office goal</div><b>${esc(g.goal)}</b><div class="row"><span class="tag ${g.met ? 'good' : 'bad'}">${g.met ? 'Met' : 'Missed'}</span><span class="small muted">${g.wins} wins vs ${g.proj} projected</span></div></div>` : ''; }).join('')}</div>` : ''}
@@ -1650,7 +1675,8 @@ function startGame(t) {
   const o = E.teamRating(t).ovr;
   G.startRank = E.teamList().filter(x => E.teamRating(x).ovr > o).length + 1;
   G.mode = UI.mode === 'worst' ? 'worst' : 'standard';
-  UI.give = []; UI.get = []; UI.cutSel = null; UI.found = null; UI.proj = null; UI.tab = 'home';
+  UI.give = []; UI.get = []; UI.cutSel = null; UI.found = null; UI.proj = null; UI.tab = 'home'; UI.tview = null;
+  E.refreshOffers();
 }
 function openFound(id, list) { UI.found = {id, list}; dealsSheet(id); }
 // Ask around (your player) or Find trades (theirs): the deals on one sheet, the best first
@@ -1686,7 +1712,9 @@ document.addEventListener('click', e => {
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
-    case 'posFilter': UI[el.dataset.k] = el.dataset.v; break;
+    case 'faSheet': faSheet(el.dataset.k); return;
+    case 'midSign': { const r = E.signMidseason(id); if (!r.ok) { toast(r.msg); return; } persist(); render(); toast(`${G.players[id].n} signed for the rest of the season: ${money(r.price)}.`); faSheet(); return; }
+    case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } break;
     case 'tPartner': UI.partner = el.dataset.t || null; UI.get = []; UI.tposGet = 'ALL'; window.scrollTo(0, 0); break;
     case 'blockAccept': case 'blockEdit': {
       const x = ((UI.blockDeals || {})[id] || [])[+el.dataset.i]; if (!x) return;
@@ -1826,7 +1854,7 @@ document.addEventListener('click', e => {
     }
     case 'cutAuto': UI.cutSel = E.cutPlan(); break;
     case 'cutApply': { const n = UI.cutSel.length; for (const cid of UI.cutSel) E.cutPlayer(cid); UI.cutSel = []; toast(`Released ${n} player${n === 1 ? '' : 's'}.`); break; }
-    case 'startS2': { E.startSeason2(); G.offers = []; UI.tab = 'home'; UI.proj = null; persist(); render(); if (G.autoFilled && G.autoFilled.length) fillPopup(G.autoFilled, 'Before kickoff'); return; }
+    case 'startS2': { E.startSeason2(); E.refreshOffers(); UI.tview = null; UI.tab = 'home'; UI.proj = null; persist(); render(); if (G.autoFilled && G.autoFilled.length) fillPopup(G.autoFilled, 'Before kickoff'); return; }
     case 'fillRoster': { const r = E.fillRoster(G.user); persist(); render(); if (r.length) fillPopup(r, 'Roster filled'); else toast('No affordable free agents left. Clear cap space first.'); return; }
     case 'toggle': { const L = UI[el.dataset.side]; const i = L.indexOf(id); i >= 0 ? L.splice(i, 1) : L.push(id); if (document.querySelector('#layer .dealsheet')) { render(); const ds = document.querySelector('[data-act=dealSheet]'); if (ds) ds.click(); return; }
       break; }
