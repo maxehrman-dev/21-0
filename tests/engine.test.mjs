@@ -137,3 +137,35 @@ test('a trade call answers with a yes, a counter or a laugh, and lowballs cost p
   while (E.talkWith('WAS').patience > 0) E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
   assert.equal(E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]).kind, 'done', 'out of patience means no more calls');
 });
+
+test('team quality drives wins about as much as in the real NFL, and a perfect season is possible but rare', () => {
+  const sd = a => { const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); };
+  const sds = [];
+  for (let s = 1; s <= 12; s++) { E.newGame(DATA, 'NYJ', 500 + s); E.simTo(18); sds.push(sd(E.teamList().map(t => E.record(t, 2026).w))); }
+  const avg = sds.reduce((a, x) => a + x, 0) / sds.length;
+  assert.ok(avg > 2.6 && avg < 3.5, `league win spread ${avg.toFixed(2)} should be near the NFL's 3.1`);
+  // a stacked team is a big favourite but never a lock
+  E.newGame(DATA, 'DET', 1);
+  for (const p of E.roster('DET')) p.ovr += 12;
+  const p = E.winProbR(E.teamRating('DET'), E.teamRating('BUF'), true);
+  assert.ok(p > .75 && p < .92, `a superteam beats a good team ${(p * 100).toFixed(0)}% of the time`);
+});
+
+test('an elite QB is worth several wins, a running back much less', () => {
+  E.newGame(DATA, 'NYJ', 3);
+  const qb = E.winsDelta('NYJ', [byName('Josh Allen').id], []), rb = E.winsDelta('NYJ', [byName('Bijan Robinson').id], []);
+  assert.ok(qb > 3 && qb < 7, `QB ${qb.toFixed(1)} wins`);
+  assert.ok(rb < 1, `RB ${rb.toFixed(1)} wins`);
+});
+
+test('leftover stars do not sign for the minimum', () => {
+  E.newGame(DATA, 'LAC', 6);
+  const G = E.G;
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  E.beginOffseason(); G.phase = 'offseason'; G.step = 'resign';
+  E.finishResign(); E.finishFA(); E.finishDraft();
+  for (const id of E.cutPlan()) E.cutPlayer(id);
+  E.startSeason2();
+  assert.equal((G.autoFilled || []).filter(x => x.ovr >= 75).length, 0);
+  for (const t of E.teamList()) assert.ok(Number.isFinite(E.capSpace(t)), `${t} cap space is not a number`);
+});

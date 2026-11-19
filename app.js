@@ -169,7 +169,7 @@ function simReel(games, kicker, start, done) {
     c.innerHTML = `<b>${r.toUpperCase()}</b><span>${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}${g.wk && !g.po ? ` · Wk ${g.wk}` : ''}</em>`;
     grid.appendChild(c);
     recEl.textContent = `${w}-${l}`; recEl.classList.remove('bump'); void recEl.offsetWidth; recEl.classList.add('bump');
-    if (l === 0 && w > 0) sub.textContent = 'Still perfect'; else sub.textContent = r === 'w' ? `Beat the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}`;
+    if (l === 0 && w > 0 && start.seasonL === 0) sub.textContent = 'Still perfect'; else sub.textContent = r === 'w' ? `Beat the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}`;
     if (i >= mine.length) { clearInterval(tm); setTimeout(finish, 900); }
   };
   const tm = setInterval(add, stepMs);
@@ -178,7 +178,7 @@ function simReel(games, kicker, start, done) {
 // Runs a sim, then plays the reel, then reports injuries and celebrations.
 function simWithReel(kicker, sim) {
   const s = G.season, n0 = (G.results[s] || []).length, mark = (G.injLog || []).length;
-  const r0 = E.record(G.user, s), start = {w: r0.w, l: r0.l};
+  const r0 = E.record(G.user, s), start = {w: r0.w, l: r0.l, seasonL: r0.l};
   const po = G.phase === 'playoffs';
   if (po) { const pw = poWins(s); start.w = pw; start.l = 0; }
   sim();
@@ -416,7 +416,7 @@ function outlookCard(season, mode) {
       <div><b class="num">${pct(shown.div)}</b><span>Division</span></div>
       <div><b class="num">${pct(shown.sb)}</b><span>Super Bowl</span></div>
     </div>
-    <p class="small muted">${pr ? `You are ${r.w}-${r.l}. ` : ''}Based on 500 simulated seasons with current rosters. 21-0 needs every game.</p></div>`;
+    <p class="small muted">${pr ? `You are ${r.w}-${r.l}. ` : ''}Based on hundreds of simulated seasons with current rosters. 21-0 needs every game.</p></div>`;
 }
 
 function confMeter() {
@@ -651,7 +651,7 @@ function homeCutdown() {
     <div><b class="num ${spaceAfter < 0 ? 'bad' : 'good'}">${money(spaceAfter)}</b><span>Cap space after</span></div>
     <div><b class="num">${money(dead)}</b><span>New dead money</span></div></div>
     <div class="row end">${ros.length < 53 ? `<button class="btn" data-act="fillRoster">Fill ${53 - ros.length} open spot${53 - ros.length > 1 ? 's' : ''} at the minimum</button>` : ''}<button class="btn ghost" data-act="cutAuto">Suggest again</button><button class="btn go" data-act="cutApply" ${sel.length ? '' : 'disabled'}>Release ${sel.length} player${sel.length === 1 ? '' : 's'}</button></div>
-    ${issues.length ? `<div class="small bad">${issues.map(esc).join(' ')}</div>` : '<div class="small good">Roster is legal. You can start the season.</div>'}</div>
+    ${issues.length ? `<div class="small bad">${issues.map(esc).join(' ')}</div>` : (E.roster(G.user).length < E.ROSTER_MAX ? `<div class="small warn">You have ${E.roster(G.user).length} players. Tap Fill open spots, or the other ${E.ROSTER_MAX - E.roster(G.user).length} spots fill with minimum-salary players when the season starts.</div>` : '<div class="small good">Roster is set at 53. You can start the season.</div>')}</div>
   <div class="grid g2"><div class="card"><h3>Release list</h3><div class="plist">${sel.map(p => row(p, true)).join('') || '<p class="muted">Nobody selected.</p>'}</div></div>
   <div class="card"><h3>Everyone else</h3><div class="plist scroll">${others.map(p => row(p, false)).join('')}</div></div></div>`;
 }
@@ -716,6 +716,13 @@ function renderRoster() {
 }
 
 // ---------- player card ----------
+const winsTxt = d => `${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)} win${Math.abs(d) >= .95 && Math.abs(d) < 1.05 ? '' : 's'}`;
+function winsBlock(p) {
+  if (!G.teams[G.user] || p.pos === 'P') return '';
+  const mine = p.tm === G.user, d = mine ? -E.winsDelta(G.user, [], [p.id]) : E.winsDelta(G.user, [p.id], []);
+  const label = Math.abs(d) < .05 ? (mine ? 'Not starting' : 'Would not start') : winsTxt(d);
+  return `<div class="rh"><span class="kicker" style="color:var(--muted)">${mine ? 'Worth to you' : 'For your team'}</span><b class="${d >= .05 ? 'good' : ''}">${label}</b><span class="small muted">A season, vs an average team</span></div>`;
+}
 function playerCard(id) {
   const p = G.players[id];
   if (!p) return '<p class="muted">This player is no longer in the league.</p>';
@@ -732,7 +739,7 @@ function playerCard(id) {
       <div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="ratingrow">
       ${(p.hist || []).map((h, i) => `<div class="rh"><span class="kicker" style="color:var(--muted)">${h[0]}${i === 0 ? ' start' : ''}</span><b class="${oc(h[1])}">${h[1]}</b><span class="small muted">${esc(i ? h[2] : 'Week 1')}</span></div>`).join('<span class="rarrow">→</span>')}
-      <div class="rh"><span class="kicker" style="color:var(--muted)">Track record</span><b class="${oc(p.prior || p.ovr)}">${p.prior || p.ovr}</b><span class="small muted">Last 4 seasons</span></div>
+      ${winsBlock(p)}<div class="rh"><span class="kicker" style="color:var(--muted)">Track record</span><b class="${oc(p.prior || p.ovr)}">${p.prior || p.ovr}</b><span class="small muted">Last 4 seasons</span></div>
       ${p.age <= 27 ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Potential</span><b class="${(p.pot || p.ovr) - p.ovr >= 8 ? 'good' : (p.pot || p.ovr) - p.ovr >= 4 ? 'gold' : ''}">${(p.pot || p.ovr) - p.ovr >= 8 ? 'High' : (p.pot || p.ovr) - p.ovr >= 4 ? 'Medium' : 'Low'}</b><span class="small muted">${esc(p.potWhy || "Scouts' read")}</span></div>` : ''}
       ${E.formLabel(p) ? `<div class="rh"><span class="kicker" style="color:var(--muted)">This season</span><b class="${E.formOf(p) > 0 ? 'good' : 'bad'}">${E.formLabel(p)}</b><span class="small muted">Shapes next year's rating</span></div>` : ''}
     </div>
@@ -828,7 +835,7 @@ function renderTrade() {
   </div>
   <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(mood)}</span><span class="dp-go">Review</span></button>
   <div class="dealdock card deskonly-grid"><div class="dock-sides"><div><div class="lbl">You send</div>${UI.give.length ? assetGroup(UI.give) : '<span class="small muted">Nothing yet</span>'}</div><div><div class="lbl">You get</div>${UI.get.length ? assetGroup(UI.get) : '<span class="small muted">Nothing yet</span>'}</div></div>
-    <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
+    <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<span class="small muted">For your team: <b class="${E.winsDelta(G.user, UI.get, UI.give) >= .05 ? 'good' : E.winsDelta(G.user, UI.get, UI.give) <= -.05 ? 'bad' : ''}">${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season</span>` : ''}${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
       <div class="row nowrap"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn" data-act="callTeam" ${ready ? '' : 'disabled'} title="Pitch it on the phone. They might accept, counter or laugh.">Call them</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div></div></div>`;
 }
 
@@ -1582,7 +1589,7 @@ document.addEventListener('click', e => {
       const P = UI.partner, ev = E.evalTrade(P, UI.give, UI.get), ready = UI.give.length && UI.get.length;
       modal(`<div class="sheeth"><div><div class="kicker">Trade with the ${esc(tname(P))}</div><h3>${ready ? (ev.ok ? 'They would take this' : ev.fleece ? 'Too good for you' : ev.ratio >= .85 ? 'Close' : 'Not close yet') : 'Build the deal'}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
         <div class="offerb"><div><div class="lbl">You send</div>${UI.give.length ? assetGroup(UI.give) : '<span class="small muted">Nothing yet</span>'}</div><div><div class="lbl">You get</div>${UI.get.length ? assetGroup(UI.get) : '<span class="small muted">Nothing yet</span>'}</div></div>
-        ${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>${fairTag(ev.fair)}` : ''}
+        ${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>${fairTag(ev.fair)} <span class="small muted">For your team: <b>${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season</span>` : ''}
         ${ev.issues.filter(i => !i.startsWith('Both')).map(i => `<div class="small bad">${esc(i)}</div>`).join('')}
         <div class="row end"><button class="btn ghost" data-act="clearTrade">Clear</button><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn" data-act="callTeam" ${ready ? '' : 'disabled'}>Call them</button><button class="btn go" data-act="propose" ${ready ? '' : 'disabled'}>Propose</button></div>`, true);
       return;

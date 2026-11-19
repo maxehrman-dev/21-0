@@ -5,8 +5,15 @@
 const POS_ORDER = ['QB','RB','WR','TE','OT','IOL','EDGE','DT','LB','CB','S','K','P'];
 const STARTERS = {QB:1,RB:1,WR:3,TE:1,OT:2,IOL:3,EDGE:2,DT:2,LB:2,CB:3,S:2,K:1,P:1};
 const MIN_DEPTH = {QB:2,RB:2,WR:4,TE:2,OT:3,IOL:4,EDGE:3,DT:3,LB:3,CB:4,S:3,K:1,P:1};
-const OFF_W = {QB:.40,RB:.06,WR:.18,TE:.07,OT:.13,IOL:.16};
-const DEF_W = {EDGE:.30,DT:.17,LB:.13,CB:.25,S:.15};
+// How much each position group moves the team. Set so that, across the league, the quarterback explains about 30% of the
+// difference between teams, pass rush and coverage about 17% each, receivers 15%, the line 10%, and backs and linebackers little.
+// QBs spread widest in talent, so one QB still outweighs any other single player by a lot. Offense counts a bit more than defense.
+const OFF_W = {QB:.23,RB:.05,WR:.31,TE:.08,OT:.16,IOL:.17};
+const DEF_W = {EDGE:.22,DT:.16,LB:.12,CB:.34,S:.16};
+// Game model, calibrated to the real 17-game NFL: team wins spread with a standard deviation near 3.1, the best record
+// usually 13 to 15 wins, and the final margin landing about 13.5 points either side of the expected one.
+// talent: points per rating point of edge. cap: the most a matchup can tilt (any given Sunday). rep: an empty starting spot plays like a street free agent.
+const SIM = {talent: 2.6, cap: 14, hfa: 1.6, teamNoise: 7.2, sharedNoise: 4, rep: 50};
 const POS_MULT = {QB:2.4,EDGE:1.25,OT:1.15,CB:1.1,WR:1.1,DT:1.0,IOL:.85,LB:.8,S:.85,TE:.85,RB:.7,K:.3,P:.25};
 const MARKET_TOP = {QB:60,EDGE:40,WR:38,OT:30,DT:32,CB:28,LB:20,S:20,TE:18,IOL:22,RB:14,K:6,P:4};
 const ROSTER_MAX = 53;
@@ -152,15 +159,16 @@ function ratingOf(list, dd) {
   const d = dd || depthOf(list);
   const avg = (pos) => {
     const n = STARTERS[pos], L = d[pos];
-    let s = 0; for (let i = 0; i < n; i++) s += L[i] ? L[i].ovr : 40;
+    let s = 0; for (let i = 0; i < n; i++) s += L[i] ? L[i].ovr : SIM.rep;
     return s / n;
   };
   let off = 0, def = 0;
   for (const k in OFF_W) off += OFF_W[k] * avg(k);
   for (const k in DEF_W) def += DEF_W[k] * avg(k);
   const k = avg('K');
-  const ovr = Math.round(off * .54 + def * .43 + k * .03);
-  return {off: Math.round(off), def: Math.round(def), k, ovr, d};
+  const raw = off * .57 + def * .41 + k * .02;
+  // whole numbers for display; the sim reads the unrounded values so every upgrade counts
+  return {off: Math.round(off), def: Math.round(def), k, ovr: Math.round(raw), d, x: {off, def, ovr: raw}};
 }
 
 // ---------- contracts / value ----------
@@ -721,11 +729,13 @@ function genBox(t, opp, pts, tr, otr) {
 }
 function simGame(a, h, opts = {}) {
   const ta = teamRating(a), th = teamRating(h);
-  const hfa = opts.neutral ? 0 : 1.6;
-  const ea = 22.5 + (ta.off - th.def) * .62 - hfa / 2 + (ta.ovr - th.ovr) * .12;
-  const eh = 22.5 + (th.off - ta.def) * .62 + hfa / 2 + (th.ovr - ta.ovr) * .12;
-  const noise = randn() * 4;
-  let as = Math.round(ea + randn() * 8.5 - noise), hs = Math.round(eh + randn() * 8.5 + noise);
+  const hfa = opts.neutral ? 0 : SIM.hfa, T = SIM.talent, A = ta.x || ta, H = th.x || th;
+  const ra = ((A.off - H.def) * .62 + (A.ovr - H.ovr) * .12) * T, rh = ((H.off - A.def) * .62 + (H.ovr - A.ovr) * .12) * T;
+  // Any given Sunday: the edge from talent flattens out, so even a juggernaut loses now and then.
+  const edge = softCap(rh - ra), mid = (ra + rh) / 2;
+  const ea = 22.5 + mid - edge / 2 - hfa / 2, eh = 22.5 + mid + edge / 2 + hfa / 2;
+  const noise = randn() * SIM.sharedNoise;
+  let as = Math.round(ea + randn() * SIM.teamNoise - noise), hs = Math.round(eh + randn() * SIM.teamNoise + noise);
   as = clamp(as, 0, 62); hs = clamp(hs, 0, 62);
   const snap = x => { const ok = [0, 3, 6, 7, 9, 10, 13, 14, 16, 17, 20, 21, 23, 24, 26, 27, 28, 30, 31, 33, 34, 35, 37, 38, 41, 42, 44, 45, 48, 49, 51, 52, 55, 56, 59]; let b = ok[0]; for (const v of ok) if (Math.abs(v - x) < Math.abs(b - x)) b = v; return b; };
   as = snap(as); hs = snap(hs);
@@ -910,6 +920,8 @@ function lenFactor(p, yrs) {
   return 1 + .035 * Math.abs(dl);
 }
 function resignPrice(p, yrs) { return Math.round(askFor(p) * lenFactor(p, yrs || yearsFor(p)) * .97 * interest(p, G.user).mult * 10) / 10; }
+// A free agent's current asking price; players cut late in the offseason get one on the spot.
+function askOf(p) { if (!(p.ask > 0)) p.ask = askFor(p); return p.ask; }
 function askFor(p) { const m = market(p); return Math.round(m * (1 + (p.ovr >= 80 ? .08 : 0)) * 10) / 10; }
 function yearsFor(p) { const a = ageAdj(p); return a <= 28 ? 4 : a <= 31 ? 3 : a <= 33 ? 2 : 1; }
 function resignPlayer(id, yes, yrs) {
@@ -1087,7 +1099,7 @@ function aiFAWave() {
       if (n >= signs) break;
       if (p.tm !== 'FA') continue;
       const space = capSpace(t);
-      const price = Math.round(p.ask * (.92 + rand() * .2) * 10) / 10;
+      const price = Math.round(askOf(p) * (.92 + rand() * .2) * 10) / 10;
       if (price > space - 4) continue;
       if (needBoost(t, p) < 1 && G.fa.wave < 3) continue;
       if (rand() < .55) continue;
@@ -1098,7 +1110,7 @@ function aiFAWave() {
     }
   }
   G.fa.wave++;
-  for (const p of faPool()) p.ask = Math.max(1.1, Math.round(p.ask * .88 * 10) / 10);
+  for (const p of faPool()) p.ask = Math.max(1.1, Math.round(askOf(p) * .88 * 10) / 10);
 }
 function finishFA() {
   for (const d of (G.fa.decisions || []).slice()) faDecide(d.id, false);
@@ -1165,7 +1177,7 @@ function faEndWave() {
     for (const t of teamList()) {
       if (t === G.user || (signedBy[t] || 0) >= (F.wave === 3 ? 4 : 2)) continue;
       if (needBoost(t, p) <= 1 && F.wave < 3) continue;
-      const apy = Math.round(p.ask * (.94 + rand() * .16) * 10) / 10;
+      const apy = Math.round(askOf(p) * (.94 + rand() * .16) * 10) / 10;
       if (capSpace(t) < apy + 3 || rand() < .5) continue;
       bids.push({t, apy, yrs: yearsFor(p), u: 0});
     }
@@ -1195,7 +1207,7 @@ function faEndWave() {
 function faNextWave() {
   const F = G.fa;
   F.wave++; F.met = {}; F.meetings = 0; F.offers = {};
-  for (const p of faPool()) p.ask = Math.max(1.1, Math.round(p.ask * .88 * 10) / 10);
+  for (const p of faPool()) p.ask = Math.max(1.1, Math.round(askOf(p) * .88 * 10) / 10);
 }
 // Match the rival offer (at the price that wins him) or let him go
 function faDecide(id, match) {
@@ -1290,7 +1302,7 @@ function aiCleanup() {
     for (const pos of POS_ORDER) {
       while ((d[pos] = depth(t)[pos]).length < MIN_DEPTH[pos]) {
         const fa = faPool().find(p => p.pos === pos);
-        if (fa) { fa.tm = t; fa.cap = Math.max(1.1, Math.round(fa.ask * .7 * 10) / 10); fa.end = 2027; }
+        if (fa) { fa.tm = t; fa.cap = Math.max(1.1, Math.round(askOf(fa) * .7 * 10) / 10); fa.end = 2027; }
         else { const id = 'G-' + t + pos + rint(1, 1e6); G.players[id] = {id, n: 'Depth ' + pos, pos, tm: t, age: 25, ovr: 52, cap: 1.1, end: 2027, st25: '', st26: '', inj: false, rook: false}; }
       }
     }
@@ -1316,7 +1328,9 @@ function userReady() {
 function fillRoster(t, target) {
   t = t || G.user; target = target || ROSTER_MAX;
   const signed = [], MIN = 1.1;
-  const pick = pos => faPool().filter(p => !pos || p.pos === pos).sort((a, b) => b.ovr - a.ovr)[0];
+  // Only players who would really take the minimum: a starter-quality free agent wants a real contract.
+  const cheap = p => askOf(p) <= 2 || p.ovr < 70;
+  const pick = pos => faPool().filter(p => (!pos || p.pos === pos) && cheap(p)).sort((a, b) => b.ovr - a.ovr)[0];
   const sign = p => { p.tm = t; p.cap = MIN; p.end = G.season; p.how = t === G.user ? 'Free agent' : p.how; signed.push({id: p.id, n: p.n, pos: p.pos, ovr: p.ovr}); };
   for (const pos of POS_ORDER) {
     while (roster(t).filter(p => p.pos === pos && !p.inj).length < MIN_DEPTH[pos] && roster(t).length < target && capSpace(t) >= MIN) { const p = pick(pos); if (!p) break; sign(p); }
@@ -1327,7 +1341,19 @@ function fillRoster(t, target) {
   if (signed.length && t === G.user) G.news.unshift(`Filled ${signed.length} roster spot${signed.length > 1 ? 's' : ''} with minimum-salary free agents.`);
   return signed;
 }
+// After the draft, the other 31 teams sign the good free agents still out there at their asking price, then fill to 53.
+function lateMarket() {
+  const ts = teamList().filter(t => t !== G.user);
+  for (const p of faPool().filter(q => q.ovr >= 68).sort((a, b) => b.ovr - a.ovr)) {
+    const price = Math.max(1.1, Math.round(askOf(p) * 10) / 10);
+    const t = ts.filter(x => capSpace(x) >= price + 1 && roster(x).length < ROSTER_MAX + 2).sort((a, b) => needBoost(b, p) - needBoost(a, p) || capSpace(b) - capSpace(a))[0];
+    if (!t) continue;
+    p.tm = t; p.cap = price; p.end = 2027 + Math.max(0, yearsFor(p) - 1);
+  }
+  for (const t of ts) fillRoster(t);
+}
 function startSeason2() {
+  lateMarket();
   G.autoFilled = fillRoster(G.user);
   // user fills any empty depth with replacement-level players automatically
   for (const pos of POS_ORDER) {
@@ -1439,10 +1465,24 @@ function tierUp(cands, price) {
 // ---------- projections ----------
 function erf(x) { const s = Math.sign(x); x = Math.abs(x); const t = 1 / (1 + .3275911 * x); return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - .284496736) * t + .254829592) * t * Math.exp(-x * x)); }
 const Phi = x => .5 * (1 + erf(x / Math.SQRT2));
+// What a set of moves is worth in regular-season wins: 17 games against an average team on a neutral field, same model the sim uses.
+function leagueAvgRating() {
+  const L = teamList().map(t => teamRating(t).x), n = L.length;
+  return {off: L.reduce((a, r) => a + r.off, 0) / n, def: L.reduce((a, r) => a + r.def, 0) / n, ovr: L.reduce((a, r) => a + r.ovr, 0) / n};
+}
+function winsDelta(t, add, remove) {
+  add = (add || []).filter(id => G.players[id]); remove = remove || [];
+  const base = activeRoster(t);
+  const list = base.filter(p => !remove.includes(p.id)).concat(add.map(id => G.players[id]).filter(p => !p.inj && !base.includes(p)));
+  const avg = leagueAvgRating(), w = r => 17 * winProbR(r, avg, true);
+  return w(ratingOf(list)) - w(ratingOf(base));
+}
+function softCap(m) { return SIM.cap * Math.tanh(m / SIM.cap); }
 function winProbR(ta, th, neutral) {
-  const hfa = neutral ? 0 : 1.6;
-  const m = (ta.off - th.def) * .62 - (th.off - ta.def) * .62 - hfa + (ta.ovr - th.ovr) * .24;
-  return Phi(m / 14.4);
+  const hfa = neutral ? 0 : SIM.hfa;
+  const A = ta.x || ta, H = th.x || th;
+  const m = softCap(((A.off - H.def) * .62 - (H.off - A.def) * .62 + (A.ovr - H.ovr) * .24) * SIM.talent) - hfa;
+  return Phi(m / Math.sqrt(2 * SIM.teamNoise ** 2 + 4 * SIM.sharedNoise ** 2));
 }
 // Monte Carlo the rest of a season. Uses its own random stream so it never changes your sim.
 function project(season, sims) {
@@ -1638,7 +1678,7 @@ function refreshOffersC() { G.offers = genOffersC(5, 3); return G.offers; }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, proposeTrade, talkWith, shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, proposeTrade, talkWith, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

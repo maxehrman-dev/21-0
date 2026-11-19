@@ -25,6 +25,8 @@
 - **Free agency with people in it.** Players care about money, winning, role and loyalty in different amounts. Meet them, pitch them, make offers, then see whether a rival outbids you and decide whether to match.
 - **The real 2027 draft class**, with scouting ranges that can be wrong. Every pick's true rating is revealed on the spot: steal, as projected, or bust.
 - **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.
+- **A game model tuned to the real league.** Team wins spread like they do in the NFL (best record usually 13 to 15 wins). Position value follows real analytics: the quarterback explains about 30% of the gap between teams, so an elite QB is worth about +5 wins and a star running back well under one. Every player card and trade shows what a move is worth in wins.
+- **21-0 is a moonshot, not a lottery.** A team as it stands has about a 1 in 20,000 shot. A well-built team has about 1%, and a true superteam about 3%. Any given Sunday still applies.
 - **Challenge modes:** No trades, Cap hell, and Worst to first.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
