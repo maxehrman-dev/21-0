@@ -436,9 +436,9 @@ function perfectNow() {
 }
 function renderHeader() {
   renderBottomNav();
-  try { document.title = G ? `${rec(G.user)} ${G.teams[G.user].nick} · 21-0` : '21-0'; } catch (e) { /* title is cosmetic */ }
+  try { document.title = G ? `${rec(G.user)} ${G.teams[G.user].nick} · 21-0` : '21-0: Run the Front Office'; } catch (e) { /* title is cosmetic */ }
   if (!G) {
-    $('#hdr').innerHTML = `<div class="hbar"><button class="logo" data-tab="home" aria-label="21-0 home">21<span>-</span>0</button><div class="hmeta">Two seasons. One perfect run.</div>
+    $('#hdr').innerHTML = `<div class="hbar"><button class="logo" data-tab="home" aria-label="21-0 home">21<span>-</span>0</button><div class="hmeta">Run the Front Office</div>
       <div class="hright"><button class="btn ghost sm" data-tab="${UI.tab === 'resume' ? 'home' : 'resume'}">${UI.tab === 'resume' ? 'Pick a team' : 'Your résumé'}</button></div></div>`;
     return;
   }
@@ -474,7 +474,7 @@ function renderPicker() {
   const goal = rank => [[4, 'Win it all'], [10, 'Deep run'], [18, 'Playoffs'], [25, 'Winning record'], [32, 'Show progress']].find(g => rank <= g[0])[1];
   $('#app').innerHTML = `
   <section class="hero picker-hero"><div>
-    <div class="kicker">NFL front office game</div>
+    <div class="kicker">Pro football front office game</div>
     <h1 class="display">Go 21-0.</h1>
     <p class="lead">17-0 in the regular season, then 4 playoff wins. Nobody has done it. You get the 2026 and 2027 seasons to build the team that does. Real rosters, contracts and stats as of Week 1, 2026.</p>
   </div>${hasSave() ? `<button class="btn go lg" data-act="resume">Resume saved game</button>` : ''}</section>

@@ -1,6 +1,6 @@
 <p align="center"><img src="icon-192.png" width="96" height="96" alt="21-0 logo"></p>
 
-<h1 align="center">21-0</h1>
+<h1 align="center">21-0: Run the Front Office</h1>
 
 <p align="center">A pro football front-office game. Take over any team as it stood at Week 1 of 2026 and build the first team to go 21-0: 17-0 in the regular season, then four playoff wins.</p>
 
