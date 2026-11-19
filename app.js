@@ -337,7 +337,8 @@ function helpSheet(k) {
   const [title, rows] = HELP[k];
   modal(`<div class="sheeth"><div><div class="kicker">How it works</div><h3>${title}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="helplist">${rows.map(([h, t]) => `<div class="helprow"><b>${h}</b><span>${t}</span></div>`).join('')}</div>
-    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : ''}<button class="btn ghost" data-act="sound">${SND.on ? 'Sound on' : 'Sound off'}</button><button class="btn go" data-act="closeModal">Got it</button></div>`, true);
+    <p class="small muted soundline">Sound effects are ${SND.on ? 'on' : 'off'}. <button class="linkbtn" data-act="sound">Turn ${SND.on ? 'off' : 'on'}</button></p>
+    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : ''}<button class="btn go" data-act="closeModal">Got it</button></div>`, true);
 }
 const helpBtn = k => `<button class="qhelp" data-act="help" data-k="${k}" aria-label="How this works">?</button>`;
 
@@ -458,7 +459,7 @@ function renderHeader() {
       <div class="capbar ${pay > cap ? 'over' : ''}"><i style="width:${Math.min(100, pay / cap * 100)}%"></i></div></div>
   </div>
   <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}">${l}${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}
-    <span class="tabtools">${(() => { const a = nextAction(); return a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''; })()}<button class="ibtn2" data-act="sound" aria-label="${SND.on ? 'Turn sound off' : 'Turn sound on'}" title="Sound">${SND.on ? '🔊' : '🔈'}</button><button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
+    <span class="tabtools">${(() => { const a = nextAction(); return a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''; })()}<button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
 }
 
 // ---------- team picker ----------
@@ -1597,7 +1598,7 @@ document.addEventListener('click', e => {
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
     case 'help': helpSheet(el.dataset.k || helpKey()); return;
-    case 'sound': SND.on = !SND.on; try { localStorage.setItem('21-0-sound', SND.on ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } if (SND.on) sfx('tap'); if ($('.helpfoot')) helpSheet(helpKey()); renderHeader(); return;
+    case 'sound': SND.on = !SND.on; try { localStorage.setItem('21-0-sound', SND.on ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } if (SND.on) sfx('tap'); if ($('.helpfoot')) helpSheet(helpKey()); return;
     case 'seg': UI[el.dataset.seg] = el.dataset.k; render(); return;
     case 'rview': UI.rview = el.dataset.k; go('roster'); return;
     case 'rpos': UI.rosterPos = el.dataset.k; render(); return;
