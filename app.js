@@ -63,6 +63,7 @@ function awardsCard(season) {
 }
 // Celebration: a short burst of confetti in team colors (skipped for reduced motion)
 function confetti() {
+  sfx('champ');
   try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* fine */ }
   const cv = document.createElement('canvas'); cv.className = 'confetti'; cv.setAttribute('aria-hidden', 'true');
   const W = cv.width = innerWidth, H = cv.height = innerHeight; document.body.appendChild(cv);
@@ -78,7 +79,7 @@ function confetti() {
 }
 const buzz = pattern => { try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* not supported */ } };
 function popup(kicker, title, body, cls) {
-  if (cls === 'win') buzz(30);
+  if (cls === 'win') { buzz(30); sfx('deal'); } else if (cls === 'loss') sfx('bad');
   modal(`<div class="sheeth"><div><div class="kicker">${kicker}</div><h3>${title}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${body}<div class="row end"><button class="btn go" data-act="closeModal">Got it</button></div>`, true);
   const sh = document.querySelector('.sheet'); if (sh && cls) sh.classList.add(cls);
 }
@@ -165,6 +166,7 @@ function simReel(games, kicker, start, done) {
     const g = mine[i++], home = g.h === u, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = home ? g.a : g.h;
     const r = us > them ? 'w' : us < them ? 'l' : 't';
     if (r === 'w') w++; else if (r === 'l') l++;
+    sfx(r === 'w' ? 'win' : 'loss');
     const c = document.createElement('div'); c.className = 'rchip ' + r;
     c.innerHTML = `<b>${r.toUpperCase()}</b><span>${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}${g.wk && !g.po ? ` · Wk ${g.wk}` : ''}</em>`;
     grid.appendChild(c);
@@ -281,6 +283,96 @@ function leaderboardCard() {
     <p class="small muted">Your GM name and best runs show here to anyone you share this game with.</p></div>`;
 }
 
+// ---------- help ----------
+// Every screen says one line. The rest lives behind the ? button, so the depth is there when you want it.
+const HELP = {
+  run: ['How a run works', [
+    ['Goal', 'Go 21-0: win all 17 regular-season games, then 4 playoff games.'],
+    ['1 · First half of 2026', 'Your real roster plays Weeks 1 to 8 on its own. Use the time to study your needs.'],
+    ['2 · Week 9 trade deadline', 'Your one chance to trade in 2026. Take an offer from your inbox or build your own deal.'],
+    ['3 · 2027 offseason', 'This is where you build the team: re-sign, free agency, the draft, then the final roster.'],
+    ['4 · 2027 season', 'One more trade deadline, then one more shot at 21-0.'],
+    ['The gold Next button', 'It always does the next step. On a computer, N does the same.']]],
+  pre: ['Before the deadline', [
+    ['What happens now', 'Weeks 1 to 8 play out with the real roster. No moves until the deadline.'],
+    ['Team needs', 'Letter grades rank each position against the league. F and D spots are what to buy at the deadline.'],
+    ['Outlook', 'Projected wins and odds come from hundreds of simulated seasons with the current rosters.']]],
+  deadline: ['The trade deadline', [
+    ['Inbox', 'Teams send offers. Every offer in your inbox is one they would accept.'],
+    ['Make a trade', 'Pick a team, then what you want and what you send. The meter shows how they feel before you propose.'],
+    ['Call them', 'Optional. Pitch the deal on the phone: they accept, counter or laugh. Lowballs cost patience.'],
+    ['Wins', 'Every trade shows what it is worth in wins a season for your team.']]],
+  playoffs: ['Playoffs', [['How it works', 'Eight teams per conference, no byes. Win four in a row for the title. No moves during the playoffs.']]],
+  progress: ['Progression', [['Ratings changed', 'Young players with upside grew, older players declined, and a big season can lift a rating more than one bad year can sink it.']]],
+  resign: ['Re-signing', [
+    ['Pay', 'Pay the asking price and he stays.'],
+    ['Negotiate', 'Offer less. He can counter or walk, and his patience runs out after a few tries.'],
+    ['Do nothing', 'Anyone you do not re-sign leaves for free agency when you move on. Starters are marked.'],
+    ['Keep my starters', 'Re-signs every starter you can afford in one tap.']]],
+  fa: ['Free agency', [
+    ['Sign now', 'Pay his asking price and he signs on the spot.'],
+    ['Tap a player', 'Meet him to raise his interest (3 meetings a wave), or offer less and wait for the wave to end.'],
+    ['Waves', 'At the end of each wave rival teams bid. He picks the best mix of money, winning, role and loyalty. If a rival beats your offer, you can match.'],
+    ['Prices', 'Asking prices drop about 12% each wave, but the best players go fast.']]],
+  draft: ['The draft', [
+    ['Big board', 'The real 2027 class, 4 rounds. Scouts give a range, and the real rating shows the moment a player is drafted.'],
+    ['Trades', 'Teams call to trade up into your pick. You can also trade up yourself.'],
+    ['Auto', 'Auto-draft picks the best fit for your needs.']]],
+  cutdown: ['Final roster', [
+    ['Goal', 'Get to 53 players and under the cap.'],
+    ['Suggested cuts', 'Backups with the least value for their pay. Change the list, then release them in one go.'],
+    ['Open spots', 'Fill them with minimum-salary free agents, or they fill on their own when the season starts.']]],
+};
+function helpKey() {
+  if (!G) return 'run';
+  if (UI.tab === 'trade') return 'deadline';
+  if (G.phase === 'offseason') return G.step;
+  if (G.phase === 'deadline') return 'deadline';
+  if (G.phase === 'playoffs') return 'playoffs';
+  if (G.phase === 'preseason' || G.phase === 'season') return 'pre';
+  return 'run';
+}
+function helpSheet(k) {
+  k = HELP[k] ? k : 'run';
+  const [title, rows] = HELP[k];
+  modal(`<div class="sheeth"><div><div class="kicker">How it works</div><h3>${title}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="helplist">${rows.map(([h, t]) => `<div class="helprow"><b>${h}</b><span>${t}</span></div>`).join('')}</div>
+    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : ''}<button class="btn ghost" data-act="sound">${SND.on ? 'Sound on' : 'Sound off'}</button><button class="btn go" data-act="closeModal">Got it</button></div>`, true);
+}
+const helpBtn = k => `<button class="qhelp" data-act="help" data-k="${k}" aria-label="How this works">?</button>`;
+
+// ---------- sound ----------
+// Small synthesized sounds, no files. Off with one tap; the choice is remembered on this device.
+const SND = {on: true, ctx: null};
+try { SND.on = localStorage.getItem('21-0-sound') !== 'off'; } catch (e) { /* storage unavailable */ }
+function audio() {
+  if (!SND.ctx) { const A = window.AudioContext || window.webkitAudioContext; if (!A) return null; try { SND.ctx = new A(); } catch (e) { return null; } }
+  if (SND.ctx.state === 'suspended') SND.ctx.resume();
+  return SND.ctx;
+}
+function tone(c, f, dur, o = {}) {
+  const t = c.currentTime + (o.at || 0), osc = c.createOscillator(), g = c.createGain();
+  osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(f, t);
+  if (o.slide) osc.frequency.linearRampToValueAtTime(f + o.slide, t + dur);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(o.vol || .05, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  osc.connect(g); g.connect(c.destination); osc.start(t); osc.stop(t + dur + .02);
+}
+function sfx(name) {
+  if (!SND.on) return;
+  const c = audio(); if (!c) return;
+  const play = {
+    tap: () => tone(c, 520, .06, {type: 'triangle', vol: .025}),
+    win: () => { tone(c, 660, .09, {type: 'triangle', vol: .04}); tone(c, 880, .12, {type: 'triangle', vol: .04, at: .06}); },
+    loss: () => tone(c, 200, .22, {type: 'sawtooth', vol: .025, slide: -70}),
+    deal: () => [523, 659, 784, 1047].forEach((f, i) => tone(c, f, .18, {type: 'triangle', vol: .045, at: i * .07})),
+    bad: () => { tone(c, 233, .16, {type: 'square', vol: .02}); tone(c, 175, .24, {type: 'square', vol: .02, at: .13}); },
+    stamp: () => { tone(c, 110, .14, {type: 'square', vol: .05}); tone(c, 880, .08, {type: 'triangle', vol: .03, at: .02}); },
+    tick: () => tone(c, 1400, .025, {type: 'triangle', vol: .012}),
+    champ: () => { [523, 659, 784].forEach((f, i) => tone(c, f, .22, {type: 'triangle', vol: .05, at: i * .14})); [1047, 1319, 1568].forEach(f => tone(c, f, .9, {type: 'triangle', vol: .035, at: .45})); },
+  }[name];
+  if (play) try { play(); } catch (e) { /* audio is optional */ }
+}
+
 // ---------- header ----------
 function phaseLabel() {
   const p = G.phase;
@@ -365,7 +457,8 @@ function renderHeader() {
     <div class="capbox"><div class="caprow"><span>${G.season} cap</span><span class="num"><b>${money(cap - pay)}</b> free</span></div>
       <div class="capbar ${pay > cap ? 'over' : ''}"><i style="width:${Math.min(100, pay / cap * 100)}%"></i></div></div>
   </div>
-  <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}">${l}${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}</nav>`;
+  <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}">${l}${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}
+    <span class="tabtools">${(() => { const a = nextAction(); return a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''; })()}<button class="ibtn2" data-act="sound" aria-label="${SND.on ? 'Turn sound off' : 'Turn sound on'}" title="Sound">${SND.on ? '🔊' : '🔈'}</button><button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
 }
 
 // ---------- team picker ----------
@@ -428,10 +521,11 @@ function confMeter() {
 
 // ---------- needs ----------
 function injuryCard() {
-  const hurt = E.roster(G.user).filter(p => p.inj).sort((a, b) => b.ovr - a.ovr);
-  if (!hurt.length) return '';
   const d = E.depth(G.user);
-  return `<div class="card injcard"><div class="cardh"><h3>Injury report</h3><span class="tag bad">${hurt.length} out</span></div>${hurt.slice(0, 6).map(p => { const sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">${p.injW === undefined || p.injW === 99 ? 'Out for the season' : `Back in about ${p.injW} week${p.injW > 1 ? 's' : ''}`}${p.injPre ? ' · hurt before Week 1' : ''}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) starts` : ''}</div></div></div>`; }).join('')}</div>`;
+  const all = E.roster(G.user).filter(p => p.inj), wouldStart = p => { const L = d[p.pos], last = L[E.STARTERS[p.pos] - 1]; return !last || p.ovr > last.ovr; };
+  const hurt = all.filter(wouldStart).sort((a, b) => b.ovr - a.ovr), backups = all.length - hurt.length;
+  if (!hurt.length) return '';
+  return `<div class="card injcard"><div class="cardh"><h3>Injured starters</h3><span class="tag bad">${hurt.length} out</span></div>${hurt.slice(0, 4).map(p => { const sub = d[p.pos][0]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="muted small">${p.pos} ${p.ovr}</span></div><div class="psub">${p.injW === undefined || p.injW === 99 ? 'Out for the season' : `Back in about ${p.injW} week${p.injW > 1 ? 's' : ''}`}${sub ? ` · ${esc(sub.n)} (${sub.ovr}) starts` : ''}</div></div></div>`; }).join('')}${backups ? `<div class="small muted injmore">Plus ${backups} backup${backups > 1 ? 's' : ''} out.</div>` : ''}</div>`;
 }
 function injuryPopup(mark) {
   if (G.phase === 'seasondone') return false;
@@ -498,8 +592,8 @@ function renderHome() {
 function homePre() {
   const first = G.season === 2026;
   return `<section class="hero"><div><div class="kicker">${G.season} season · Week 1 ${modeTag(G.mode)}</div>
-    <h2>${first ? 'You play the first half as is' : 'Your 2027 roster is set'}</h2>
-    <p class="lead">${first ? `This is the real ${esc(G.teams[G.user].name)} roster from opening day. No moves until the Week 9 trade deadline. Study your needs so you know what to buy.` : 'The sim runs straight to the Week 9 deadline. That is your last chance to make a move this season.'}</p></div>
+    <h2>${first ? 'You play the first half as is' : 'Your 2027 roster is set'}${helpBtn('pre')}</h2>
+    <p class="lead">${first ? 'Real opening-day roster. Your first trades open at Week 9.' : 'Your last chance to make a move this season is the Week 9 deadline.'}</p></div>
     <button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></section>
   ${injuryCard()}<div class="grid g2">${outlookCard(G.season)}<div class="card"><div class="cardh"><h3>Team needs</h3><button class="btn ghost sm" data-act="rview" data-k="lineup">See lineup</button></div>${needsList(6)}</div></div>`;
 }
@@ -507,8 +601,8 @@ function homeDeadline() {
   const r = E.record(G.user, G.season);
   const last = userGames(G.season).slice(-9);
   return `<section class="hero"><div><div class="kicker">${G.season} trade deadline · after Week ${G.week}</div>
-    <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}</h2>
-    <p class="lead">Your only stop until the playoffs. Take an offer, build your own deal in the Trade tab, then sim the rest of the season.</p></div>
+    <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2>
+    <p class="lead">Your one trade window this season.</p></div>
     <div class="row"><button class="btn" data-tab="trade">Open trade center</button><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
   <div class="grid g2">${inboxTeaser()}${injuryCard()}${outlookCard(G.season, 'live')}
     <div class="card homeneeds"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(5)}</div>
@@ -522,8 +616,8 @@ function homePlayoffs() {
   const conf = G.teams[G.user].conf, seed = P.seeds[conf].indexOf(G.user) + 1;
   const f = E.userFinish(G.season);
   return `<section class="hero"><div><div class="kicker">${G.season} playoffs · ${conf} #${seed} seed</div>
-    <h2>${alive ? `${f.w}-${f.l}. ${4 - P.round} wins from a title.` : esc(f.label) + '.'}</h2>
-    <p class="lead">${alive ? 'No moves in the playoffs. Watch it one round at a time or jump to the end.' : 'Your season is over. Finish the bracket to see who wins it all.'}</p></div>
+    <h2>${alive ? `${f.w}-${f.l}. ${4 - P.round} wins from a title.` : esc(f.label) + '.'}${helpBtn('playoffs')}</h2>
+    <p class="lead">${alive ? 'Play it one round at a time.' : 'Your season is over. Finish the bracket to see who wins it.'}</p></div>
     <div class="row"><button class="btn" data-act="poSkip">Skip to the end</button><button class="btn go lg" data-act="poNext">Play the ${esc(E.ROUND_NAMES[P.round])}</button></div></section>
   ${injuryCard()}<div class="card">${bracket()}</div>`;
 }
@@ -544,8 +638,8 @@ function stepper(i) {
 }
 function homeProgress() {
   const up = G.prog.filter(x => !x.ret), ret = G.prog.filter(x => x.ret);
-  return `${stepper(0)}<section class="hero"><div><h2>A year older</h2>
-    <p class="lead">Young players developed and veterans declined. The draft order is set from the 2026 results. Teams have already called with offers.</p></div>
+  return `${stepper(0)}<section class="hero"><div><h2>A year older${helpBtn('progress')}</h2>
+    <p class="lead">Ratings changed. Next, decide who to keep.</p></div>
     <button class="btn go lg" data-act="toResign">Next: re-sign your players</button></section>
   <div class="grid g2"><div class="card"><h3>Your roster changes</h3><div class="plist">
   ${up.slice(0, 24).map(x => { const p = G.players[x.id]; return `<div class="prow">${face(p || {n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${p ? pname(p) : esc(x.n)}</div><div class="psub">${x.pos} · ${x.old} → ${x.now} · ${esc(x.why || '')}</div></div><span class="tag ${x.now > x.old ? 'good' : x.now < x.old ? 'bad' : ''}">${x.now > x.old ? '+' : ''}${x.now - x.old}</span></div>`; }).join('')}
@@ -558,11 +652,11 @@ function homeResign() {
   const pending = list.filter(x => !x.r.done);
   const d = E.depth(G.user);
   const starter = p => d[p.pos].indexOf(p) > -1 && d[p.pos].indexOf(p) < E.STARTERS[p.pos];
-  return `${stepper(1)}<section class="hero"><div><h2>Expiring contracts</h2>
-    <p class="lead">Pay the asking price or let them walk to free agency. The 2027 cap is ${money(G.cap[2027])}. You have ${money(E.capSpace(G.user))} free.</p></div>
+  return `${stepper(1)}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
+    <p class="lead">Keep who you want. Anyone left goes to free agency. You have ${money(E.capSpace(G.user))} free.</p></div>
     <div class="row">${pending.length ? `<button class="btn" data-act="resignStarters">Keep my starters</button>` : ''}<button class="btn go lg" data-act="toFA">Next: free agency</button></div></section>
   <div class="card"><div class="plist">${list.map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
-    ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><button class="btn sm ghost" data-act="letgo" data-id="${p.id}">Let go</button><button class="btn sm negbtn" data-act="negOpen" data-id="${p.id}">Negotiate</button><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
+    ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><button class="btn sm ghost negbtn" data-act="negOpen" data-id="${p.id}">Negotiate</button><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
 }
 const verdictTag = v => v ? `<span class="tag ${v === 'Steal' ? 'good' : v === 'Bust' ? 'bad' : ''}">${v}</span>` : '';
 const myClass = () => (G.draft ? G.draft.order : []).filter(o => o.sel && o.owner === G.user);
@@ -594,7 +688,8 @@ function fillPopup(list, kicker) {
 }
 function revealPopup(sel, no) {
   const p = G.players[sel.id];
-  setTimeout(() => { const b = $('.sheet .reveal b'); if (b) countUp(b, sel.lo, sel.ovr, 950, v => v + ' OVR'); }, 60);
+  setTimeout(() => { const b = $('.sheet .reveal b'); if (b) countUp(b, sel.lo, sel.ovr, 950, v => { sfx('tick'); return v + ' OVR'; }); }, 60);
+  setTimeout(() => sfx('stamp'), 1050);
   popup(`Pick #${no}`, `${esc(sel.n)} is a ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p || {n: sel.n, id: sel.id}, 'xl')}<div><div class="kicker">${sel.pos} · ${esc(sel.sch)}</div>
     <div class="reveal"><span class="small muted">Scouts said ${sel.lo}–${sel.hi}</span><b class="${oc(sel.ovr)}">${sel.ovr} OVR</b></div>${verdictTag(sel.verdict)}
     <div class="small muted" style="margin-top:6px">${sel.verdict === 'Steal' ? 'Better than anyone projected.' : sel.verdict === 'Bust' ? 'Below what the scouts saw. Potential can still bring him along.' : 'Right where the scouts had him.'}</div></div></div>`, sel.verdict === 'Bust' ? 'loss' : 'win');
@@ -615,8 +710,8 @@ function homeDraft() {
   const tr = E.teamRating(G.user);
   const offers = onClock && tradeOpen() ? E.draftOffers() : [];
   const ahead = tradeOpen() ? D.order.slice(D.at, D.at + 8).filter(o => o.owner !== G.user && o.pickId) : [];
-  return `${stepper(3)}<section class="hero"><div><h2>${slot ? `Pick ${slot.no}: ${onClock ? 'you are on the clock' : esc(tname(slot.owner)) + ' are up'}` : 'Draft complete'}</h2>
-    <p class="lead">The real 2027 big board, 4 rounds. Rookies start around 52 to 82 OVR. Your picks: ${mine.map(o => '#' + o.no).join(', ') || 'none left'}. You can trade up, trade down, or deal picks for players.</p></div>
+  return `${stepper(3)}<section class="hero"><div><h2>${slot ? `Pick ${slot.no}: ${onClock ? 'you are on the clock' : esc(tname(slot.owner)) + ' are up'}` : 'Draft complete'}${helpBtn('draft')}</h2>
+    <p class="lead">Your picks: ${mine.map(o => '#' + o.no).join(', ') || 'none left'}.</p></div>
     <div class="row">${slot && !onClock ? `<button class="btn" data-act="toMyPick">Sim to my pick</button>` : ''}<button class="btn ${slot ? '' : 'go lg'}" data-act="finishDraft">${slot ? 'Auto-draft the rest' : 'Next: final roster'}</button></div></section>
   ${offers.length ? `<button class="mobonly inboxrow" data-act="draftCalls"><span class="count">${offers.length}</span><span><b>Teams want your pick</b><span class="small muted">${offers.map(o => esc(G.teams[o.from].nick)).join(', ')}</span></span><span class="chev" aria-hidden="true">›</span></button>` : ''}
   <div class="mobonly card mboard">${D.pool.slice(0, 40).map(p => `<div class="mbrow"><span class="num pickno">${p.rank}</span><div class="pmain" data-act="prospect" data-rank="${p.rank}"><div class="pn">${esc(p.n)}</div><div class="psub">${p.pos} · ${esc(p.sch)} · <span class="${p.potGrade === 'High' ? 'good' : p.potGrade === 'Medium' ? 'gold' : ''}">${p.potGrade} potential</span></div></div><span class="projr">${p.lo}–${p.hi}</span>${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`).join('')}</div>
@@ -642,8 +737,8 @@ function homeCutdown() {
   const starters = new Set(E.POS_ORDER.flatMap(pos => d[pos].slice(0, E.STARTERS[pos]).map(p => p.id)));
   const others = ros.filter(p => !UI.cutSel.includes(p.id)).sort((a, b) => (starters.has(a.id) - starters.has(b.id)) || E.playerValue(a) - E.playerValue(b));
   const row = (p, on) => { const c = E.cutCost(p); return `<label class="trow cut ${on ? 'sel' : ''}"><input type="checkbox" data-cut="${p.id}" ${on ? 'checked' : ''}>${pRow(p, `${starters.has(p.id) ? '<b>Starter</b> · ' : ''}saves ${money(c.save)}${c.dead ? ` · ${money(c.dead)} dead` : ''}`)}</label>`; };
-  return `${stepper(4)}<section class="hero"><div><h2>Final roster</h2>
-    <p class="lead">Get to ${E.ROSTER_MAX} players and under the cap. We picked the cheapest cuts for you: backups with the least value for their pay. Change the list, then release them in one go.</p></div>
+  return `${stepper(4)}<section class="hero"><div><h2>Final roster${helpBtn('cutdown')}</h2>
+    <p class="lead">Get to ${E.ROSTER_MAX} players and under the cap. Suggested cuts are ready.</p></div>
     <button class="btn go lg" data-act="startS2" ${issues.length ? 'disabled' : ''}>Start the 2027 season</button></section>
   <div class="cutbar card"><div class="kpis">
     <div><b class="num ${ros.length > 53 ? 'bad' : ''}">${ros.length}</b><span>On roster now</span></div>
@@ -793,6 +888,7 @@ function talkSheet(P, typing) {
     <div class="talk">${log.map(bubble).join('')}</div>
     <div class="row talkfoot"><span class="small muted">Patience <span class="pdots">${[0, 1, 2].map(k => `<i class="${k < pat ? 'on' : ''}"></i>`).join('')}</span></span><button class="btn" data-act="closeModal">${pat > 0 ? 'Back to the deal' : 'Done'}</button></div>`, true);
   const t = $('.talk'); if (t) t.scrollTop = t.scrollHeight;
+  if (!typing && last && !last.me) sfx(last.kind === 'yes' ? 'deal' : last.kind === 'counter' ? 'tap' : 'bad');
   if (typing) setTimeout(() => { if ($('.talk .typing')) talkSheet(P, false); }, reducedMotion() ? 0 : 750);
 }
 function renderTrade() {
@@ -1323,7 +1419,7 @@ function ddPick(id, v) {
 // ---------- free agency: meetings, offers, waves ----------
 function interestBar(it) {
   const c = it.score >= 65 ? 'var(--good)' : it.score >= 40 ? 'var(--warn)' : 'var(--bad)';
-  return `<div class="ibar" title="How much he wants to play for you"><i style="width:${it.score}%;background:${c}"></i></div><b class="num" style="color:${c}">${it.score}</b>`;
+  return `<span class="ilab">Interest</span><div class="ibar" title="How much he wants to play for you"><i style="width:${it.score}%;background:${c}"></i></div><b class="num" style="color:${c}">${it.score}</b>`;
 }
 function homeFA() {
   G.fa.met = G.fa.met || {}; G.fa.offers = G.fa.offers || {}; G.fa.decisions = G.fa.decisions || []; G.fa.meetings = G.fa.meetings || 0;
@@ -1342,8 +1438,8 @@ function homeFA() {
       <div class="small">The ${esc(G.teams[dc.t].name)} offered <b>${money(dc.apy)} × ${dc.yrs} yr</b>. Yours: ${money(dc.mine.apy)} × ${dc.mine.yrs} yr.</div>
       <div class="small muted">Match at ${money(dc.match)} per year and he is yours.</div></div>
       <div class="row nowrap"><button class="btn sm ghost" data-act="faPass" data-id="${p.id}">Let him go</button><button class="btn sm go" data-act="faMatch" data-id="${p.id}" ${dc.match > space ? 'disabled title="Not enough cap space"' : ''}>Match ${money(dc.match)}</button></div></div>`; }).join('');
-  return `${stepper(2)}<section class="hero"><div><h2>Free agency · wave ${Math.min(F.wave, 3)} of 3</h2>
-    <p class="lead">Pay a player's asking price and he signs on the spot. Offer less and he waits until the wave ends, when rival teams bid and he picks the best mix of money, winning, role and loyalty. Meetings raise his interest, which lowers his price. Prices drop about 12% each wave.</p></div>
+  return `${stepper(2)}<section class="hero"><div><h2>Free agency · wave ${Math.min(F.wave, 3)} of 3${helpBtn('fa')}</h2>
+    <p class="lead">Sign at the asking price, or tap a player to meet him or offer less.</p></div>
     <div class="row">${F.wave <= 3 && !F.decisions.length ? `<button class="btn go lg" data-act="faWave">End wave ${F.wave}</button>` : ''}<button class="btn" data-act="toDraft">${F.wave > 3 ? 'Next: the draft' : 'Skip to the draft'}</button></div></section>
   ${decisions ? `<div class="card decisions"><div class="cardh"><h3>Decision time</h3><span class="small muted">Rivals made better offers. Match or walk away before the next wave.</span></div>${decisions}</div>` : ''}
   <div class="toolbar fatool"><button class="btn needsbtn" data-act="needsSheet">Needs</button><label class="search fasearch"><span class="sr">Search free agents</span><input id="faQ" type="search" placeholder="Search by name or old team" value="${esc(UI.faQ || '')}" autocomplete="off"></label>${seg('faFit', [['need', 'Fits my needs'], ['all', 'Everyone']], UI.faFit)}${dd('faPos', posOpts, UI.faPos)}
@@ -1354,7 +1450,7 @@ function homeFA() {
     return `<div class="farow" data-act="faOpen" data-id="${p.id}" data-k="offer">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)} <span class="tag">${esc(it.persona)}</span>${mine ? ` <span class="tag gold">Offer in · ${money(mine.apy)}</span>` : ''}${met ? ` <span class="tag ${met.boost > 0 ? 'good' : 'bad'}">Met ${met.boost > 0 ? '+' : ''}${met.boost}</span>` : ''}</div>
       <div class="psub">${p.pos} · ${Math.floor(p.age)} · <span class="${up > 0 ? 'gold' : ''}">${!st ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'depth'}</span> · asks ${money(E.faPrice(p))} × ${E.yearsFor(p)} yr${s ? ` · ${s} rival${s > 1 ? 's' : ''}` : ''}</div></div>
       <span class="ovrb ${oc(p.ovr)}">${p.ovr}</span><div class="icell">${interestBar(it)}</div>
-      <div class="row nowrap"><button class="btn sm" data-act="faOpen" data-id="${p.id}" data-k="meet" ${met || F.meetings >= 3 ? 'disabled' : ''}>Meet</button><button class="btn sm" data-act="faOpen" data-id="${p.id}" data-k="offer">${mine ? 'Edit offer' : 'Offer'}</button><button class="btn sm go" data-act="faSign" data-id="${p.id}" ${E.faPrice(p) > space ? 'disabled title="Not enough cap space"' : ''}>Sign ${money(E.faPrice(p))}</button></div></div>`; }).join('') || (q ? `<p class="muted">No free agent matches "${esc(UI.faQ)}". He may have signed already.</p>` : '<p class="muted">Nobody left who upgrades a need. Switch to Everyone to see the whole pool.</p>')}</div></div>
+      <div class="row nowrap"><span class="chev deskonly-inline" aria-hidden="true">›</span><button class="btn sm go" data-act="faSign" data-id="${p.id}" ${E.faPrice(p) > space ? 'disabled title="Not enough cap space"' : ''}>Sign ${money(E.faPrice(p))}</button></div></div>`; }).join('') || (q ? `<p class="muted">No free agent matches "${esc(UI.faQ)}". He may have signed already.</p>` : '<p class="muted">Nobody left who upgrades a need. Switch to Everyone to see the whole pool.</p>')}</div></div>
   <div class="grid"><div class="deskonly">${teamPanel('faNeedPos', UI.faPos)}</div><div class="card"><h3>Your offers</h3>${open.length ? open.map(([pid, o]) => { const p = G.players[pid]; return `<div class="trow">${pRow(p, `${money(o.apy)} × ${o.yrs} yr`)}<button class="xs" data-act="faCancel" data-id="${pid}" aria-label="Withdraw offer">×</button></div>`; }).join('') : '<p class="muted small">No open offers. Players decide when the wave ends.</p>'}</div>
   <div class="card"><h3>The wire</h3><ul class="news">${F.log.slice(0, 40).map(n => `<li>${esc(n)}</li>`).join('') || '<li class="muted">Nobody has signed yet.</li>'}</ul></div></div></div>`;
 }
@@ -1400,7 +1496,7 @@ function negModal(id, msg) {
     ${n.walked ? '' : stepperRow(id, apy, 1)}
     ${n.log.length ? `<div class="neglog">${n.log.map(l => `<div><span class="muted">You</span> ${money(l.you)} <span class="muted">→ He</span> ${typeof l.him === 'number' ? money(l.him) : esc(l.him)}</div>`).join('')}</div>` : ''}
     ${msg ? `<div class="agent">${esc(msg)}</div>` : ''}
-    <div class="row end"><button class="btn" data-act="closeModal">${n.walked ? 'Done' : 'Close'}</button>${n.walked ? '' : `<button class="btn" data-act="negAsk" data-id="${id}">Pay ${money(n.ask)}</button><button class="btn go" data-act="negSubmit" data-id="${id}">Make offer</button>`}</div>`, true);
+    <div class="row end"><button class="btn ghost" data-act="${n.walked ? 'closeModal' : 'letgo'}" data-id="${id}">${n.walked ? 'Done' : 'Let him go'}</button>${n.walked ? '' : `<button class="btn" data-act="negAsk" data-id="${id}">Pay ${money(n.ask)}</button><button class="btn go" data-act="negSubmit" data-id="${id}">Make offer</button>`}</div>`, true);
 }
 
 // ---------- render ----------
@@ -1470,16 +1566,19 @@ document.addEventListener('click', e => {
   if (el.dataset.act === 'closeModal' && e.target.closest('[data-stop]') && !e.target.closest('button')) return;
   if (el.disabled) return;
   const a = el.dataset.act, id = el.dataset.id;
+  if (el.classList.contains('go')) sfx('tap');
   switch (a) {
     case 'pick': {
       const t = el.dataset.t;
       modal(`<div class="sheeth"><div><div class="kicker">Take the job</div><h3>Run the ${esc(DATA.teams[t].name)}?</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">You will play the first half of 2026 with this exact roster, then the sim stops at the trade deadline.</p><div class="row end"><button class="btn" data-act="closeModal">Back</button><button class="btn go" data-act="confirmPick" data-t="${t}">Take the job</button></div>`);
       return;
     }
-    case 'confirmPick': startGame(el.dataset.t); closeModal(); break;
+    case 'confirmPick': { startGame(el.dataset.t); closeModal(); window.scrollTo(0, 0); let seen = false; try { seen = localStorage.getItem('21-0-guide') === '1'; localStorage.setItem('21-0-guide', '1'); } catch (e) { /* storage unavailable */ } persist(); render(); if (!seen) setTimeout(() => helpSheet('run'), 250); return; }
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
+    case 'help': helpSheet(el.dataset.k || helpKey()); return;
+    case 'sound': SND.on = !SND.on; try { localStorage.setItem('21-0-sound', SND.on ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } if (SND.on) sfx('tap'); if ($('.helpfoot')) helpSheet(helpKey()); renderHeader(); return;
     case 'seg': UI[el.dataset.seg] = el.dataset.k; render(); return;
     case 'rview': UI.rview = el.dataset.k; go('roster'); return;
     case 'rpos': UI.rosterPos = el.dataset.k; render(); return;
@@ -1513,7 +1612,7 @@ document.addEventListener('click', e => {
       }
       toast(`Re-signed ${n} starter${n === 1 ? '' : 's'}${skipped ? `. ${skipped} did not fit under the cap` : ''}.`); break;
     }
-    case 'letgo': E.resignPlayer(id, false); break;
+    case 'letgo': E.resignPlayer(id, false); closeModal(); break;
     case 'toFA': E.finishResign(); E.refreshOffers(); break;
     case 'faSign': {
       const p = G.players[id]; if (!p) return;
