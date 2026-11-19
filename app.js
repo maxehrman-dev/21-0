@@ -398,7 +398,7 @@ function nextAction() {
   if (P === 'seasondone') return G.season === 2026 ? {label: 'Start the 2027 offseason', act: 'offseason', sub: '2026 is over'} : {label: 'See final results', act: 'final', sub: '2027 is over'};
   if (P === 'offseason') {
     if (S === 'progress') return {label: 'Next: re-sign players', act: 'toResign', sub: 'Offseason · step 1 of 5'};
-    if (S === 'resign') return {label: 'Next: free agency', act: 'toFA', sub: 'Offseason · step 2 of 5'};
+    if (S === 'resign') { const n = pendingResign().starters.length; return {label: 'Next: free agency', act: 'toFA', sub: n ? `${n} starter${n > 1 ? 's' : ''} unsigned` : 'Offseason · step 2 of 5'}; }
     if (S === 'fa') {
       if ((G.fa.decisions || []).length) return {label: 'Match or let go', act: 'tabHome', sub: `${G.fa.decisions.length} decision${G.fa.decisions.length > 1 ? 's' : ''} waiting`};
       return G.fa.wave <= 3 ? {label: `End wave ${G.fa.wave}`, act: 'faWave', sub: `Free agency · ${3 - (G.fa.meetings || 0)} meetings left`, alt: {label: 'Draft', act: 'toDraft'}} : {label: 'Next: the draft', act: 'toDraft', sub: 'Free agency is over'};
@@ -646,6 +646,25 @@ function homeProgress() {
   ${ret.map(x => `<div class="prow">${face({n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${esc(x.n)}</div><div class="psub">${x.pos}</div></div><span class="tag bad">Retired</span></div>`).join('')}</div></div>
   ${offersBlock()}</div>`;
 }
+// Unsigned players from the re-sign list: the starters among them, what they would cost, and what losing them costs in wins.
+function pendingResign() {
+  const d = E.depth(G.user);
+  const isStarter = p => { const i = d[p.pos].indexOf(p); return i > -1 && i < E.STARTERS[p.pos]; };
+  const list = Object.keys(G.resign || {}).filter(id => G.players[id] && !G.resign[id].done).map(id => G.players[id]);
+  const starters = list.filter(isStarter).sort((a, b) => b.ovr - a.ovr);
+  const cost = starters.reduce((a, p) => a + E.resignPrice(p, E.yearsFor(p)), 0);
+  const wins = starters.length ? -E.winsDelta(G.user, [], starters.map(p => p.id)) : 0;
+  let room = E.capSpace(G.user); const fits = starters.filter(p => { const c = E.resignPrice(p, E.yearsFor(p)); if (c <= room) { room -= c; return true; } return false; });
+  return {all: list, starters, cost, wins, fits, fitCost: fits.reduce((a, p) => a + E.resignPrice(p, E.yearsFor(p)), 0)};
+}
+function leaveResignSheet() {
+  const R = pendingResign();
+  modal(`<div class="sheeth"><div><div class="kicker">Before free agency</div><h3>${R.starters.length} starter${R.starters.length > 1 ? 's' : ''} will leave</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <p>Their contracts are up. If you move on now, they become free agents and other teams can sign them. That costs you about <b class="bad">${R.wins.toFixed(1)} wins</b> next season.</p>
+    <div class="plist">${R.starters.map(p => `<div class="trow">${pRow(p, `Starter · asks ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)} yr`)}</div>`).join('')}</div>
+    ${R.fits.length < R.starters.length ? `<p class="small warn">${R.fits.length ? `You can afford ${R.fits.length} of them at their asking price.` : 'None of them fit under your cap at their asking price.'} Negotiate for less, or clear cap space.</p>` : ''}
+    <div class="row end">${R.fits.length ? `<button class="btn ghost" data-act="toFA" data-force="1">Let them go</button><button class="btn" data-act="closeModal">Decide one by one</button><button class="btn go" data-act="resignStarters" data-then="toFA">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : `<button class="btn" data-act="closeModal">Negotiate</button><button class="btn go" data-act="toFA" data-force="1">Let them go</button>`}</div>`, true);
+}
 function homeResign() {
   const ids = Object.keys(G.resign).filter(id => G.players[id]);
   const list = ids.map(id => ({p: G.players[id], r: G.resign[id]})).sort((a, b) => b.p.ovr - a.p.ovr);
@@ -654,7 +673,8 @@ function homeResign() {
   const starter = p => d[p.pos].indexOf(p) > -1 && d[p.pos].indexOf(p) < E.STARTERS[p.pos];
   return `${stepper(1)}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
     <p class="lead">Keep who you want. Anyone left goes to free agency. You have ${money(E.capSpace(G.user))} free.</p></div>
-    <div class="row">${pending.length ? `<button class="btn" data-act="resignStarters">Keep my starters</button>` : ''}<button class="btn go lg" data-act="toFA">Next: free agency</button></div></section>
+    <div class="row"><button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
+  ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} of your starters ${R.starters.length > 1 ? 'are' : 'is'} unsigned.</b><span class="small muted">Anyone you do not re-sign leaves when you move on. Losing them costs about ${R.wins.toFixed(1)} wins.</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices. Tap a player to negotiate.</span>'}</div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
   <div class="card"><div class="plist">${list.map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
     ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><button class="btn sm ghost negbtn" data-act="negOpen" data-id="${p.id}">Negotiate</button><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
 }
@@ -1610,10 +1630,12 @@ document.addEventListener('click', e => {
         if (!p || r.done || d[p.pos].indexOf(p) < 0 || d[p.pos].indexOf(p) >= E.STARTERS[p.pos]) continue;
         if (r.ask <= E.capSpace(G.user)) { E.resignPlayer(rid, true); n++; } else skipped++;
       }
-      toast(`Re-signed ${n} starter${n === 1 ? '' : 's'}${skipped ? `. ${skipped} did not fit under the cap` : ''}.`); break;
+      toast(`Re-signed ${n} starter${n === 1 ? '' : 's'}${skipped ? `. ${skipped} did not fit under the cap` : ''}.`);
+      if (el.dataset.then === 'toFA') { closeModal(); if (!skipped) { E.finishResign(); E.refreshOffers(); } else toast(`Kept ${n}. ${skipped} starter${skipped > 1 ? 's are' : ' is'} still unsigned: negotiate or let ${skipped > 1 ? 'them' : 'him'} go.`); }
+      break;
     }
     case 'letgo': E.resignPlayer(id, false); closeModal(); break;
-    case 'toFA': E.finishResign(); E.refreshOffers(); break;
+    case 'toFA': if (!el.dataset.force && pendingResign().starters.length) { leaveResignSheet(); return; } closeModal(); E.finishResign(); E.refreshOffers(); break;
     case 'faSign': {
       const p = G.players[id]; if (!p) return;
       const yrs = E.yearsFor(p), price = E.faPrice(p, yrs), r = E.faOffer(id, price, yrs);
@@ -1658,7 +1680,16 @@ document.addEventListener('click', e => {
     }
     case 'ddToggle': UI.ddOpen = UI.ddOpen === el.dataset.dd ? null : el.dataset.dd; render(); return;
     case 'ddPick': ddPick(el.dataset.dd, el.dataset.v); UI.ddOpen = null; render(); return;
-    case 'toDraft': E.finishFA(); E.refreshOffers(); break;
+    case 'toDraft': {
+      const d = E.depth(G.user), empty = E.POS_ORDER.filter(pos => d[pos].length < E.STARTERS[pos]);
+      if (!el.dataset.force && G.fa && G.fa.wave <= 3 && empty.length) {
+        modal(`<div class="sheeth"><div><div class="kicker">Before the draft</div><h3>You have empty starting spots</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+          <p>No starter at <b>${empty.join(', ')}</b>. Free agency is the surest way to fill them; rookies are a gamble. Skip now and the leftovers sign elsewhere.</p>
+          <div class="row end"><button class="btn ghost" data-act="toDraft" data-force="1">Skip anyway</button><button class="btn go" data-act="closeModal">Stay in free agency</button></div>`, true);
+        return;
+      }
+      closeModal(); E.finishFA(); E.refreshOffers(); break;
+    }
     case 'toMyPick': E.simDraftToUser(); break;
     case 'draftP': {
       const p = G.draft.pool.find(x => x.rank === +el.dataset.rank); if (!p) return;

@@ -786,6 +786,9 @@ nav.tabs .tabtools .ibtn2:hover { color: var(--chalk); border-color: #4a5d82; }
 .helpfoot { justify-content: flex-end; flex-wrap: wrap; margin-top: 6px; }
 .chev { color: var(--muted); font-size: 22px; line-height: 1; padding: 0 4px; }
 .injmore { margin-top: 8px; }
+.resignwarn { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; border-color: rgba(243,181,47,.45); background: linear-gradient(180deg, rgba(243,181,47,.08), var(--panel)); }
+.resignwarn > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.resignwarn.ok { border-color: rgba(63,192,127,.4); background: var(--panel); }
 .ilab { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 6px; }
 .farow { cursor: pointer; }
 @media (max-width: 760px) { .helprow { grid-template-columns: 1fr; gap: 2px; } }
