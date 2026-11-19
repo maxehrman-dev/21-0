@@ -212,3 +212,30 @@ test('expiring contracts do not count against the cap while you decide, and cutt
   E.cutPlayer(cut.id);
   assert.ok(E.capSpace('BUF') > before, 'cutting a player under contract frees cap room');
 });
+
+test('the league keeps going past 2027: new cap, new draft class, full rosters, valid contracts', () => {
+  E.newGame(DATA, 'PHI', 13);
+  const G = E.G;
+  for (let yr = 2027; yr <= 2028; yr++) {
+    E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+    E.beginOffseason(); G.phase = 'offseason'; G.step = 'resign';
+    assert.equal(G.season, yr);
+    assert.ok(G.cap[yr] > G.cap[yr - 1], 'the cap grows');
+    E.finishResign(); E.finishFA();
+    assert.equal(G.draft.pool.length, 150, `${yr} has a full draft class`);
+    E.finishDraft();
+    for (const id of E.cutPlan()) E.cutPlayer(id);
+    E.startSeason2();
+    for (const t of E.teamList()) assert.ok(E.roster(t).length >= 53, `${t} fields 53 in ${yr}`);
+    assert.ok([yr + 1, yr + 2].every(y => G.picks.some(k => k.yr === y)), 'picks for the next two drafts');
+  }
+  const bad = Object.values(G.players).filter(p => G.teams[p.tm] && (p.end < G.season || !Number.isFinite(p.cap)));
+  assert.equal(bad.length, 0, 'every rostered player has a live contract');
+});
+
+test('contracts match real lengths', () => {
+  E.newGame(DATA, 'NYJ', 1);
+  assert.equal(byName('Justin Herbert').end, 2029);
+  assert.equal(byName('Joe Burrow').end, 2029);
+  assert.equal(byName('Trevor Lawrence').end, 2030);
+});

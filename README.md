@@ -27,7 +27,10 @@
 - **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.
 - **A game model tuned to the real league.** Team wins spread like they do in the NFL (best record usually 13 to 15 wins). Position value follows real analytics: the quarterback explains about 30% of the gap between teams, so an elite QB is worth about +5 wins and a star running back well under one. Every player card and trade shows what a move is worth in wins.
 - **21-0 is a moonshot, not a lottery.** A team as it stands has about a 1 in 20,000 shot. A well-built team has about 1%, and a true superteam about 3%. Any given Sunday still applies.
-- **Challenge modes:** No trades, Cap hell, and Worst to first.
+- **Worst to first:** an optional mode limited to the 8 worst rosters.
+- **Real contracts.** Lengths and salaries come from OverTheCap: this season's cap hit now, then each deal's real average from next season. The cap is the real $301.2M for 2026 and $327M for 2027, then grows about 7% a year.
+- **Keep playing.** The scored run is 2026 and 2027, but after the final report you can keep going: a new offseason, a new draft class and a new season every year. Players age, retire and get replaced by drafted and undrafted rookies, so the league stays near the real average age of about 26.
+- **Scout ahead.** The next draft class is in League › More, well before draft day.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
 ## Controls
@@ -68,7 +71,7 @@ They play the engine end to end: a full 2026 season, trade-value sanity checks, 
 | `data.json` | Rosters, contracts, ratings, potential, production, hype, schedule and 2027 prospects |
 | `heads.json`, `img/` | Player headshot sprite sheets, one per team |
 | `tests/` | Engine tests (`node --test`) |
-| `tools/` | Scripts that built the ratings, headshots and trade research, plus a local server |
+| `tools/` | Scripts that built the ratings, contracts, headshots and trade research, plus a local server |
 
 ## Data and credits
 
