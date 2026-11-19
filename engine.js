@@ -720,6 +720,11 @@ function whyNoMarket(pid, kind, pos) {
 }
 function toggleBlock(id) { const B = blockOf(), i = B.ids.indexOf(id); if (i >= 0) B.ids.splice(i, 1); else if (G.players[id] && G.players[id].tm === G.user) B.ids.push(id); return B.ids.includes(id); }
 function setBlockWant(want, pos) { const B = blockOf(); if (want) B.want = want; if (pos) B.pos = pos; return B; }
+// Offers for one player the moment you put him on the block
+function blockOffersFor(pid) {
+  const p = G.players[pid]; if (!p) return [];
+  return shopPlayer(pid, 'any').slice(0, 2).map(x => ({id: `b${G.season}${G.phase}${G.step || ''}${x.partner}${pid}`, from: x.partner, kind: 'block', give: [pid], get: x.get, msg: `For ${p.n}, off your trade block.`}));
+}
 function blockOffers() {
   const B = blockOf(), out = [];
   for (const id of B.ids) for (const x of shopPlayer(id, B.want, B.pos).slice(0, 2)) {
@@ -1803,7 +1808,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

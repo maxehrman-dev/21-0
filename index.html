@@ -269,7 +269,7 @@ nav.tabs button.on { color: var(--chalk); border-bottom-color: var(--gold); }
 .meter::after { content: ""; position: absolute; left: 80%; top: 0; bottom: 0; width: 2px; background: var(--chalk); opacity: .5; }
 .dealfoot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
 .dealfoot b { color: var(--chalk); }
-.alist { max-height: 560px; overflow-y: auto; overflow-x: hidden; display: grid; gap: 2px; padding-right: 2px; }
+.alist { max-height: 560px; overflow-y: auto; overflow-x: hidden; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding-right: 2px; }
 .asset > * { min-width: 0; }
 .asset .an { overflow: hidden; }
 .asset { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
@@ -778,6 +778,24 @@ a.btn { text-decoration: none; }
 .blockchips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 4px; }
 .bchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 4px; border-radius: 999px; border: 1px solid var(--line2); background: var(--panel2); font-weight: 600; font-size: 13.5px; }
 .bchip .xs { margin-left: 2px; }
+/* ---------- calmer screens ---------- */
+details.fold { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; font-family: var(--display); font-size: 17px; text-transform: uppercase; letter-spacing: .03em; color: var(--chalk); }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::after { content: '▾'; color: var(--muted); font-family: var(--body, inherit); font-size: 14px; transition: transform .2s; }
+details.fold[open] > summary::after { transform: rotate(180deg); }
+details.fold > summary .small { font-family: var(--body, inherit); text-transform: none; letter-spacing: 0; }
+details.dfold { margin-top: 12px; }
+details.dfold > summary { font-size: 13px; font-family: var(--body, inherit); font-weight: 700; color: var(--muted); }
+.showall { width: 100%; margin-top: 8px; }
+.need .nmain { flex: 1; min-width: 0; }
+.need .nmain .small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.need .nright { flex: none; }
+nav.tabs .tabtools .ibtn2 { display: grid; place-items: center; line-height: 1; }
+.blk { flex: none; height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line2); background: transparent; color: var(--muted); font: 600 11.5px/1 var(--body, inherit); cursor: pointer; }
+.blk:hover { color: var(--chalk); border-color: #4a5d82; }
+.blk.on { color: #1b1203; background: var(--gold); border-color: var(--gold); }
+.blockline2 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .dnew, .dgone { position: relative; border-radius: 10px; padding: 2px 6px; margin: 3px -6px; }
 .dnew { background: rgba(243,181,47,.12); box-shadow: inset 3px 0 0 var(--gold); }
 .dgone { opacity: .55; }
