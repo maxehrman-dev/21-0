@@ -663,12 +663,23 @@ function pendingResign() {
   let room = E.capSpace(G.user); const fits = starters.filter(p => { const c = E.resignPrice(p, E.yearsFor(p)); if (c <= room) { room -= c; return true; } return false; });
   return {all: list, starters, cost, wins, fits, fitCost: fits.reduce((a, p) => a + E.resignPrice(p, E.yearsFor(p)), 0)};
 }
+// Release players under contract to free cap room for the players you want to keep
+function capRoomSheet() {
+  const d = E.depth(G.user), isStarter = p => { const i = d[p.pos].indexOf(p); return i > -1 && i < E.STARTERS[p.pos]; };
+  const L = E.roster(G.user).filter(p => p.end >= G.season && p.cap > 1.2).map(p => ({p, c: E.cutCost(p), v: E.playerValue(p)}))
+    .filter(x => x.c.save >= .5).sort((a, b) => a.v / a.c.save - b.v / b.c.save).slice(0, 12);
+  const R = pendingResign();
+  modal(`<div class="sheeth"><div><div class="kicker">Cap space ${money(E.capSpace(G.user))}${R.starters.length ? ` · keeping your unsigned starters costs ${money(R.cost)}` : ''}</div><h3>Make cap room</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <p class="small muted">Release players under contract to free money for re-signing. Cutting someone with years left leaves dead money. Best savings for the least talent first.</p>
+    <div class="plist">${L.map(({p, c}) => `<div class="trow">${pRow(p, `${isStarter(p) ? '<b>Starter</b> · ' : ''}saves ${money(c.save)}${c.dead ? ` · ${money(c.dead)} dead` : ''}`)}<button class="btn sm" data-act="cutNow" data-id="${p.id}">Cut</button></div>`).join('') || '<p class="muted">Nobody to cut who would free real money.</p>'}</div>
+    <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
+}
 function leaveResignSheet() {
   const R = pendingResign();
   modal(`<div class="sheeth"><div><div class="kicker">Before free agency</div><h3>${R.starters.length} starter${R.starters.length > 1 ? 's' : ''} will leave</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <p>Their contracts are up. If you move on now, they become free agents and other teams can sign them. That costs you about <b class="bad">${R.wins.toFixed(1)} wins</b> next season.</p>
     <div class="plist">${R.starters.map(p => `<div class="trow">${pRow(p, `Starter · asks ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)} yr`)}</div>`).join('')}</div>
-    ${R.fits.length < R.starters.length ? `<p class="small warn">${R.fits.length ? `You can afford ${R.fits.length} of them at their asking price.` : 'None of them fit under your cap at their asking price.'} Negotiate for less, or clear cap space.</p>` : ''}
+    ${R.fits.length < R.starters.length ? `<p class="small warn">${R.fits.length ? `You can afford ${R.fits.length} of them at their asking price.` : 'None of them fit under your cap at their asking price.'} Negotiate for less, or <button class="linkbtn" data-act="capRoom">make cap room</button>.</p>` : ''}
     <div class="row end">${R.fits.length ? `<button class="btn ghost" data-act="toFA" data-force="1">Let them go</button><button class="btn" data-act="closeModal">Decide one by one</button><button class="btn go" data-act="resignStarters" data-then="toFA">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : `<button class="btn" data-act="closeModal">Negotiate</button><button class="btn go" data-act="toFA" data-force="1">Let them go</button>`}</div>`, true);
 }
 function homeResign() {
@@ -679,8 +690,8 @@ function homeResign() {
   const starter = p => d[p.pos].indexOf(p) > -1 && d[p.pos].indexOf(p) < E.STARTERS[p.pos];
   return `${stepper(1)}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
     <p class="lead">Keep who you want. Anyone left goes to free agency. You have ${money(E.capSpace(G.user))} free.</p></div>
-    <div class="row"><button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
-  ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} of your starters ${R.starters.length > 1 ? 'are' : 'is'} unsigned.</b><span class="small muted">Anyone you do not re-sign leaves when you move on. Losing them costs about ${R.wins.toFixed(1)} wins.</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices. Tap a player to negotiate.</span>'}</div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
+    <div class="row"><button class="btn ghost" data-act="capRoom">Make cap room</button><button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
+  ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} of your starters ${R.starters.length > 1 ? 'are' : 'is'} unsigned.</b><span class="small muted">Anyone you do not re-sign leaves when you move on. Losing them costs about ${R.wins.toFixed(1)} wins.</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices.</span>'}<button class="btn" data-act="capRoom">Make cap room</button></div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
   <div class="card"><div class="plist">${list.map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
     ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><button class="btn sm ghost negbtn" data-act="negOpen" data-id="${p.id}">Negotiate</button><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
 }
@@ -1628,6 +1639,8 @@ document.addEventListener('click', e => {
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
+    case 'capRoom': capRoomSheet(); return;
+    case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockToggle': { const on = E.toggleBlock(id); toast(on ? `${G.players[id].n} is on your trade block. Teams will make offers.` : `${G.players[id].n} is off the block.`); persist(); if ($('#layer .pchead')) openPlayer(id); render(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockAsk': {
@@ -1661,7 +1674,7 @@ document.addEventListener('click', e => {
     case 'toResign': G.step = 'resign'; E.refreshOffers(); break;
     case 'resign': {
       const yrs = E.yearsFor(G.players[id]), price = E.resignPrice(G.players[id], yrs);
-      if (price > E.capSpace(G.user) + .001) { toast(`Not enough cap space. You have ${money(E.capSpace(G.user))}.`); return; }
+      if (price > E.capSpace(G.user) + .001) { toast(`Not enough cap space: you have ${money(E.capSpace(G.user))}. Tap Make cap room to cut someone.`); return; }
       E.resignPlayer(id, true, yrs); toast(`${G.players[id].n} re-signed: ${yrs} yr, ${money(price * yrs)} total.`); break;
     }
     case 'resignStarters': {

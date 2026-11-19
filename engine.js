@@ -127,7 +127,8 @@ function roster(t) {
   if (!CACHE.r) { CACHE.r = {}; for (const p of Object.values(G.players)) (CACHE.r[p.tm] = CACHE.r[p.tm] || []).push(p); }
   return (CACHE.r[t] || []).slice();
 }
-const payroll = t => roster(t).reduce((s, p) => s + p.cap, 0) + (G.dead[t] || 0);
+// Contracts that ended before this season do not count, so expiring players you are still deciding on cost nothing until you re-sign them
+const payroll = t => roster(t).reduce((s, p) => s + (p.end >= G.season ? p.cap : 0), 0) + (G.dead[t] || 0);
 const capSpace = t => G.cap[G.season] - payroll(t);
 const activeRoster = t => roster(t).filter(p => !p.inj);
 

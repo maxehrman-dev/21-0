@@ -197,3 +197,18 @@ test('the trade block brings offers for what you ask for, and says why when nobo
   for (const o of offers) assert.ok(o.get.every(id => E.G.players[id] && E.G.players[id].pos === 'CB'), 'only corners come back');
   assert.match(E.whyNoMarket(byName('Breece Hall').id, 'any'), /\w/);
 });
+
+test('expiring contracts do not count against the cap while you decide, and cutting frees room', () => {
+  E.newGame(DATA, 'BUF', 12);
+  const G = E.G;
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  E.beginOffseason(); G.phase = 'offseason'; G.step = 'resign';
+  const pending = Object.keys(G.resign).map(id => G.players[id]);
+  const counted = E.roster('BUF').filter(p => p.end >= G.season).reduce((a, p) => a + p.cap, 0) + (G.dead.BUF || 0);
+  assert.ok(Math.abs(E.payroll('BUF') - counted) < .01, 'payroll counts only contracts that run into 2027');
+  assert.ok(pending.length > 0 && pending.every(p => p.end < G.season));
+  const before = E.capSpace('BUF');
+  const cut = E.roster('BUF').filter(p => p.end > G.season && p.cap > 3).sort((a, b) => a.ovr - b.ovr)[0];
+  E.cutPlayer(cut.id);
+  assert.ok(E.capSpace('BUF') > before, 'cutting a player under contract frees cap room');
+});
