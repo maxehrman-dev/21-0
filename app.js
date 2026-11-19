@@ -15,7 +15,7 @@ const MODES = {standard: ['Standard', 'Any team.'], worst: ['Worst to first', 'O
 const modeTag = m => m && m !== 'standard' ? `<span class="tag warn">${MODES[m][0]}</span>` : '';
 const RANK_LETTER = r => r <= 4 ? 'A' : r <= 12 ? 'B' : r <= 20 ? 'C' : r <= 26 ? 'D' : 'F';
 
-function persist() { try { localStorage.setItem(SAVE_KEY, E.save()); } catch (e) { /* storage unavailable */ } }
+function persist() { try { localStorage.setItem(SAVE_KEY, E.save()); localStorage.setItem(SAVE_KEY + '-ver', String(Date.now())); } catch (e) { /* storage unavailable */ } cloudSave(); }
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
 function toast(m) { document.querySelectorAll('.toast').forEach(x => x.remove()); const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'status'); d.textContent = m; document.body.appendChild(d); setTimeout(() => d.classList.add('out'), 3150); setTimeout(() => d.remove(), 3400); }
 
@@ -209,6 +209,48 @@ function cloudWrite(path, data) {
   if (!C.db) return;
   C.q = C.q.then(() => C.db.doc(path).set(data)).catch(err => { if (err && (err.code === 'invalid_argument' || err.code === 'revoked' || err.code === 'not_granted')) { C.db = null; C.cloud = 'off'; } });
 }
+// ---------- cloud save ----------
+// Inside Claude, your game also lives in your private area of the page's database, so it follows you to any device.
+// A save is gzipped and split into parts under 256 KB; the index document is written last, so a half-written save is never loaded.
+const PART = 180000;
+const CLOUD = {t: null};
+async function packSave(str) {
+  const gz = new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  let bin = ''; for (let i = 0; i < gz.length; i += 0x8000) bin += String.fromCharCode.apply(null, gz.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function unpackSave(b64) {
+  const bin = atob(b64), u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+}
+function cloudSave() {
+  if (!C.db || !G || typeof CompressionStream === 'undefined') return;
+  clearTimeout(CLOUD.t);
+  CLOUD.t = setTimeout(async () => {
+    try {
+      const b64 = await packSave(E.save()), n = Math.ceil(b64.length / PART), base = `data/users/${C.uid}/profile`, ver = Date.now();
+      for (let i = 0; i < n; i++) cloudWrite(`${base}/save/${i}`, {ver, part: b64.slice(i * PART, (i + 1) * PART)});
+      cloudWrite(`${base}/savemeta/latest`, {ver, parts: n, team: G.user, season: G.season, updatedAt: ver});
+    } catch (e) { /* the device save still has it */ }
+  }, 4000);
+}
+function cloudClear() { if (C.db) cloudWrite(`data/users/${C.uid}/profile/savemeta/latest`, {ver: Date.now(), cleared: true}); }
+// On open: if your account has a newer game than this device, pick it up
+async function cloudResume(db, uid) {
+  if (typeof DecompressionStream === 'undefined') return;
+  const base = `data/users/${uid}/profile`, meta = await db.doc(`${base}/savemeta/latest`).get();
+  if (!meta.exists) return;
+  const m = meta.data();
+  let localVer = 0; try { localVer = +(localStorage.getItem(SAVE_KEY + '-ver') || 0); } catch (e) { /* storage unavailable */ }
+  if (m.cleared || !m.parts || m.ver <= localVer) return;
+  const parts = await Promise.all(Array.from({length: m.parts}, (_, i) => db.doc(`${base}/save/${i}`).get()));
+  if (parts.some(d => !d.exists || d.data().ver !== m.ver)) return;
+  const str = await unpackSave(parts.map(d => d.data().part).join(''));
+  try { localStorage.setItem(SAVE_KEY, str); localStorage.setItem(SAVE_KEY + '-ver', String(m.ver)); } catch (e) { return; }
+  const b = document.createElement('button'); b.dataset.act = 'resume'; b.hidden = true; document.body.appendChild(b); b.click(); b.remove();
+  toast('Picked up your game from your account.');
+}
 async function connectCareer() {
   const timer = setTimeout(() => { if (C.cloud === 'pending') { C.cloud = 'slow'; if (UI.tab === 'resume') render(); } }, 10000);
   try {
@@ -219,6 +261,7 @@ async function connectCareer() {
     const base = `data/users/${uid}/profile`;
     const [ps, rs] = await Promise.all([db.doc(base).get(), db.doc(base).collection('runs').get()]);
     C.db = db; C.uid = uid;
+    cloudResume(db, uid).catch(() => { /* the device save still works */ });
     const remote = {};
     rs.docs.forEach(d => { remote[d.id] = JSON.parse(JSON.stringify(d.data())); });
     const pd = ps.exists ? ps.data() : null;
@@ -1100,7 +1143,7 @@ function renderResume() {
   const T = careerTotals();
   const name = C.gmName || 'Your name';
   const ini = (C.gmName || 'GM').split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  const store = C.cloud === 'on' ? 'Saved to your account' : C.cloud === 'pending' ? 'Connecting to your account' : C.cloud === 'slow' ? 'Your account is slow to answer. Showing this device for now.' : 'Saved on this device only';
+  const store = C.cloud === 'on' ? 'Your résumé and game are saved to your account' : C.cloud === 'pending' ? 'Connecting to your account' : C.cloud === 'slow' ? 'Your account is slow to answer. Showing this device for now.' : 'Saved on this device only';
   const order = ['AFC East', 'AFC North', 'AFC South', 'AFC West', 'NFC East', 'NFC North', 'NFC South', 'NFC West'];
   const winPct = T.w + T.l ? (T.w / (T.w + T.l)).toFixed(3).replace(/^0/, '') : '.000';
   UI.share = [`21-0 GM résumé · ${C.gmName || 'Anonymous GM'}`, `Titles: ${T.titles.length}${T.titles.length ? ' (' + T.titles.map(s => `${s.yr} ${DATA.teams[s.team].nick}`).join(', ') + ')' : ''}`,
@@ -1388,105 +1431,259 @@ async function drawFace(ctx, p, x, y, r, ring) {
   ctx.restore();
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.lineWidth = 4; ctx.strokeStyle = ring || 'rgba(255,255,255,.25)'; ctx.stroke();
 }
-function cardBase(ctx, W, H, c1) {
-  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b1424'); g.addColorStop(1, '#05080f');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  const rg = ctx.createRadialGradient(W * .8, -80, 40, W * .8, -80, 900); rg.addColorStop(0, hexA(c1, .55)); rg.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 2;
-  for (let y = 120; y < H; y += 90) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-  ctx.fillStyle = '#f3b52f'; ctx.font = '900 64px "Big Shoulders Display", Impact, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('21', 64, 112); const w = ctx.measureText('21').width; ctx.fillStyle = '#eef2f8'; ctx.fillText('-', 64 + w, 112); ctx.fillStyle = '#f3b52f'; ctx.fillText('0', 64 + w + ctx.measureText('-').width, 112);
+// ---------- card toolkit: two social sizes, team colors, one flowing layout ----------
+const CARD_SIZES = {post: [1080, 1350, 'Post · 4:5'], story: [1080, 1920, 'Story · 9:16']};
+const FD = '"Big Shoulders Display", Impact, sans-serif', FB = '"Barlow", sans-serif';
+const CARD_URL = '21-0-rust.vercel.app';
+function rgbOf(hex) { const n = parseInt(String(hex).replace('#', ''), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
+function hexA(hex, a) { const [r, g, b] = rgbOf(hex); return `rgba(${r},${g},${b},${a})`; }
+function lum(hex) { return rgbOf(hex).map(v => { v /= 255; return v <= .04 ? v / 12.9 : Math.pow((v + .055) / 1.055, 2.4); }).reduce((s, v, i) => s + v * [.2126, .7152, .0722][i], 0); }
+function mix(a, b, t) { const A = rgbOf(a), B = rgbOf(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); }
+// The color that reads on a dark card: the primary if it is bright enough, else the secondary, else a lifted primary
+function accentOf(t) {
+  if (lum(t.c1) >= .045) return t.c1;
+  if (lum(t.c2) >= .045) return t.c2;
+  return mix(t.c1, '#ffffff', .4);
 }
-function hexA(hex, a) { const n = parseInt(String(hex).replace('#', ''), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
-function txt(ctx, s, x, y, font, color, align) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align || 'left'; ctx.fillText(s, x, y); }
-function fitFont(ctx, s, weight, max, maxW) { let size = max; do { ctx.font = `${weight} ${size}px "Big Shoulders Display", Impact, sans-serif`; size -= 4; } while (ctx.measureText(s).width > maxW && size > 20); return ctx.font; }
+function txt(ctx, s, x, y, font, color, align) { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(s, x, y); }
+function fitFont(ctx, s, weight, max, maxW, fam) { let size = max; do { ctx.font = `${weight} ${size}px ${fam || FD}`; size -= 4; } while (ctx.measureText(s).width > maxW && size > 20); return ctx.font; }
+function rrect(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+function tile(ctx, x, y, w, h, edge) {
+  rrect(ctx, x, y, w, h, 22); ctx.fillStyle = 'rgba(255,255,255,.055)'; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = edge || 'rgba(255,255,255,.1)'; ctx.stroke();
+}
+function logo(ctx, x, y, size) {
+  ctx.font = `900 ${size}px ${FD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const a = ctx.measureText('21').width, b = ctx.measureText('-').width;
+  ctx.fillStyle = '#f3b52f'; ctx.fillText('21', x, y); ctx.fillStyle = '#eef2f8'; ctx.fillText('-', x + a, y); ctx.fillStyle = '#f3b52f'; ctx.fillText('0', x + a + b, y);
+  return a + b + ctx.measureText('0').width;
+}
+// Dark field tinted with the team, a diagonal color slash, a giant ghost number and yard lines
+function cardBase(ctx, W, H, team, ghost) {
+  const c1 = team.c1, acc = accentOf(team);
+  const g = ctx.createLinearGradient(0, 0, W * .3, H); g.addColorStop(0, mix(c1, '#060a12', .55)); g.addColorStop(.55, '#070b14'); g.addColorStop(1, '#03050a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 2;
+  for (let y = 0; y < H; y += 96) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+  // the slash
+  ctx.save(); ctx.translate(W * .78, H * .02); ctx.rotate(-.42);
+  const sg = ctx.createLinearGradient(-200, 0, 260, 0); sg.addColorStop(0, hexA(acc, 0)); sg.addColorStop(.5, hexA(acc, .55)); sg.addColorStop(1, hexA(acc, .15));
+  ctx.fillStyle = sg; ctx.fillRect(-200, -H, 300, H * 2.4);
+  ctx.fillStyle = hexA(lum(team.c2) > .02 ? team.c2 : '#f3b52f', .7); ctx.fillRect(130, -H, 26, H * 2.4);
+  ctx.restore();
+  // ghost number
+  if (ghost) { ctx.save(); ctx.font = `900 ${Math.round(W * .62)}px ${FD}`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.045)'; ctx.strokeText(ghost, W + 30, H * .62); ctx.restore(); }
+  const vg = ctx.createRadialGradient(W / 2, H * .45, H * .3, W / 2, H * .45, H * .85); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+// Stack blocks top to bottom and share the spare room between them
+async function flow(ctx, H, top, bottom, blocks) {
+  const room = H - top - bottom, need = B => B.reduce((s, b) => s + b.h, 0) + (B.length - 1) * 12;
+  while (need(blocks) > room && blocks.some(b => b.opt)) { const drop = blocks.filter(b => b.opt).sort((a, b) => b.opt - a.opt)[0]; blocks = blocks.filter(b => b !== drop); }
+  const used = blocks.reduce((s, b) => s + b.h, 0), gap = Math.min(60, Math.max(8, (room - used) / Math.max(1, blocks.length - 1)));
+  let y = top + Math.max(0, (room - used - gap * (blocks.length - 1)) / 2);
+  for (const b of blocks) { await b.draw(y); y += b.h + gap; }
+}
+// Gold band: the challenge on the left, the game and its link on the right. On a story it sits above the reply bar.
+const FOOT = {post: [150, 0], story: [140, 130]};
+function footer(ctx, W, H, line, story) {
+  const [h, lift] = FOOT[story ? 'story' : 'post'], y = H - h - lift;
+  ctx.fillStyle = '#f3b52f'; ctx.fillRect(0, y, W, h + lift);
+  ctx.fillStyle = 'rgba(27,18,3,.9)'; ctx.fillRect(0, y, W, 6);
+  txt(ctx, line, 64, y + h / 2 + 28, fitFont(ctx, line, 900, 84, W - 128 - 290), '#1b1203');
+  txt(ctx, 'RUN THE FRONT OFFICE', W - 64, y + h / 2 - 6, `800 30px ${FD}`, '#1b1203', 'right');
+  txt(ctx, CARD_URL, W - 64, y + h / 2 + 30, `600 24px ${FB}`, 'rgba(27,18,3,.75)', 'right');
+}
+const cardBottom = story => FOOT[story ? 'story' : 'post'][0] + FOOT[story ? 'story' : 'post'][1] + 24;
+function header(ctx, W, y, right) {
+  logo(ctx, 64, y + 58, 66);
+  if (right) txt(ctx, right, W - 64, y + 52, '700 26px ' + FB, '#c9d2e2', 'right');
+}
+const gradeCol = g => g[0] === 'A' ? '#3fc07f' : g[0] === 'B' ? '#f3b52f' : g[0] === 'C' ? '#e8a33c' : '#ef5b51';
+function shortFinish(f) {
+  if (f.perfect) return ['PERFECT SEASON', '#f3b52f'];
+  if (f.label === 'Won the Super Bowl') return ['SUPER BOWL CHAMPS', '#f3b52f'];
+  if (f.label === 'Missed playoffs') return ['MISSED PLAYOFFS', '#8f9cb4'];
+  return [f.label.replace('Lost in the ', 'LOST IN ').toUpperCase(), '#c9d2e2'];
+}
+function cardSeasons() {
+  const S = Object.keys(G.history || {}).map(Number).filter(y => G.history[y] && G.history[y].finish).sort().map(y => ({yr: y, f: G.history[y].finish}));
+  if (!S.find(s => s.yr === G.season) && G.playoffs[G.season] && G.playoffs[G.season].champ) S.push({yr: G.season, f: E.userFinish(G.season)});
+  return S;
+}
+// The best season: a ring beats everything, then wins
+function bestSeason(S) { return S.slice().sort((a, b) => (b.f.label === 'Won the Super Bowl') - (a.f.label === 'Won the Super Bowl') || b.f.w - a.f.w || b.yr - a.yr)[0]; }
+function keyMoves(R) {
+  const M = [];
+  const grades = (G.trades || []).filter(t => t.got && t.got.length).map(t => ({t, k: ((t.getIds || []).some(id => G.players[id]) ? 100 : 0) + t.vGet})).sort((a, b) => b.k - a.k);
+  for (const {t} of grades.slice(0, 2)) M.push(['TRADED FOR', t.got.slice(0, 2).join(' + ') + (t.got.length > 2 ? ` +${t.got.length - 2}` : ''), `from ${G.teams[t.partner].nick}`]);
+  if (R && R.sign) M.push(['SIGNED', R.sign.now.n, `${R.sign.now.pos} · ${R.sign.now.ovr} OVR`]);
+  if (R && R.rookies && R.rookies[0]) M.push(['DRAFTED', R.rookies[0].n, `${R.rookies[0].pos} · ${R.rookies[0].ovr} OVR`]);
+  return M;
+}
 
-async function rebuildCard() {
-  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+async function rebuildCard(size) {
+  const [W, H] = CARD_SIZES[size] || CARD_SIZES.post, story = size === 'story';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  try { await document.fonts.load('900 100px "Big Shoulders Display"'); await document.fonts.load('600 30px "Barlow"'); } catch (e) { /* fonts optional */ }
-  const team = G.teams[G.user], R = E.cached(E.rebuildReport)(), h = G.history, f26 = h[2026].finish, f27 = h[2027].finish;
-  const perfect = f26.perfect || f27.perfect;
-  cardBase(ctx, W, H, team.c1);
-  txt(ctx, 'I REBUILT THE', 64, 230, '700 34px "Barlow", sans-serif', '#8f9cb4');
-  txt(ctx, team.name.toUpperCase(), 64, 330, fitFont(ctx, team.name.toUpperCase(), 900, 112, W - 128), '#eef2f8');
-  ctx.fillStyle = team.c1; ctx.fillRect(64, 356, 180, 10); ctx.fillStyle = team.c2; ctx.fillRect(244, 356, 90, 10);
-  // then -> now and the grade ring
-  txt(ctx, 'INHERITED', 64, 440, '700 26px "Barlow", sans-serif', '#8f9cb4');
-  txt(ctx, String(R.then.ovr), 64, 580, '900 170px "Big Shoulders Display", Impact', '#eef2f8');
-  txt(ctx, '→', 300, 560, '800 90px "Big Shoulders Display", Impact', '#8f9cb4');
-  txt(ctx, 'BUILT', 400, 440, '700 26px "Barlow", sans-serif', '#8f9cb4');
-  txt(ctx, String(R.now.ovr), 400, 580, '900 170px "Big Shoulders Display", Impact', R.now.ovr >= 90 ? '#f3b52f' : R.now.ovr >= 80 ? '#3fc07f' : '#eef2f8');
-  const cx = 860, cy = 500, rr = 120, col = R.grade[0] === 'A' ? '#3fc07f' : R.grade[0] === 'B' ? '#f3b52f' : R.grade[0] === 'C' ? '#e8a33c' : '#ef5b51';
-  ctx.lineWidth = 22; ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(cx, cy, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * R.score / 100); ctx.stroke(); ctx.lineCap = 'butt';
-  txt(ctx, R.grade, cx, cy + 34, '900 110px "Big Shoulders Display", Impact', col, 'center');
-  txt(ctx, `${R.score}/100`, cx, cy + 74, '600 26px "Barlow", sans-serif', '#8f9cb4', 'center');
-  // seasons
-  const line = (y, yr, f) => { txt(ctx, yr, 64, y, '800 40px "Big Shoulders Display", Impact', '#8f9cb4'); txt(ctx, `${f.w}-${f.l}`, 170, y, '900 64px "Big Shoulders Display", Impact', '#eef2f8'); txt(ctx, f.label, 340, y - 6, '600 34px "Barlow", sans-serif', f.label === 'Won the Super Bowl' ? '#f3b52f' : '#c9d2e2'); };
-  line(700, '2026', f26); line(780, '2027', f27);
-  // the core
-  txt(ctx, 'THE CORE', 64, 880, '800 34px "Big Shoulders Display", Impact', '#f3b52f');
-  const d = E.depth(G.user);
+  try { await document.fonts.load(`900 100px ${FD}`); await document.fonts.load(`600 30px ${FB}`); await document.fonts.load(`700 30px ${FB}`); } catch (e) { /* fonts optional */ }
+  const team = G.teams[G.user], acc = accentOf(team), R = E.cached(E.rebuildReport)();
+  const S = cardSeasons(), best = bestSeason(S), perfect = S.some(s => s.f.perfect);
+  const rings = S.filter(s => s.f.label === 'Won the Super Bowl').length;
+  const yrs = S.length ? (S.length > 1 ? `${S[0].yr}–${S[S.length - 1].yr}` : String(S[0].yr)) : '';
+  cardBase(ctx, W, H, team, best ? `${best.f.w}-${best.f.l}` : '');
+  const name = team.name.toUpperCase(), d = E.depth(G.user);
   const starters = E.POS_ORDER.filter(p => p !== 'K' && p !== 'P').flatMap(pos => d[pos].slice(0, E.STARTERS[pos]));
   const core = starters.sort((a, b) => (b.how ? 3 : 0) + b.ovr - ((a.how ? 3 : 0) + a.ovr)).slice(0, 4);
-  for (let i = 0; i < core.length; i++) {
-    const p = core[i], x = 64 + i * 244 + 70;
-    await drawFace(ctx, p, x, 990, 70, p.how ? '#f3b52f' : 'rgba(255,255,255,.25)');
-    txt(ctx, lastName(p.n).toUpperCase().slice(0, 14), x, 1102, '800 30px "Big Shoulders Display", Impact', '#eef2f8', 'center');
-    txt(ctx, `${p.pos} · ${p.ovr}${p.how ? ' · ' + p.how.toUpperCase() : ''}`, x, 1138, '600 22px "Barlow", sans-serif', p.how ? '#f3b52f' : '#8f9cb4', 'center');
-  }
-  // footer
-  ctx.fillStyle = '#f3b52f'; ctx.fillRect(0, H - 150, W, 150);
-  txt(ctx, perfect ? 'PERFECT. 21-0.' : 'CAN YOU DO BETTER?', 64, H - 60, '900 76px "Big Shoulders Display", Impact', '#1b1203');
-  txt(ctx, `${C.gmName ? 'GM ' + C.gmName + ' · ' : ''}${R.style.name}`, W - 64, H - 64, '700 28px "Barlow", sans-serif', '#1b1203', 'right');
-  const caption = `I rebuilt the ${team.name} in 21-0: ${R.then.ovr} → ${R.now.ovr} OVR, ${f26.w}-${f26.l} then ${f27.w}-${f27.l}${f27.label === 'Won the Super Bowl' || f26.label === 'Won the Super Bowl' ? ' with a ring' : ''}. Rebuild grade ${R.grade}. Can you do better?`;
-  return {cv, caption, file: `21-0-${G.user}-rebuild.png`};
+  const moves = keyMoves(R).slice(0, story ? 3 : 1);
+  const blocks = [
+    {h: 70, draw: y => header(ctx, W, y, [C.gmName ? 'GM ' + C.gmName.toUpperCase() : '', yrs].filter(Boolean).join(' · '))},
+    {h: story ? 210 : 186, draw: y => {
+      txt(ctx, 'I REBUILT THE', 64, y + 40, `800 ${story ? 44 : 38}px ${FD}`, acc);
+      txt(ctx, name, 60, y + (story ? 166 : 144), fitFont(ctx, name, 900, story ? 150 : 128, W - 124), '#ffffff');
+      ctx.fillStyle = acc; ctx.fillRect(64, y + (story ? 192 : 168), 200, 12); ctx.fillStyle = lum(team.c2) > .02 ? team.c2 : '#f3b52f'; ctx.fillRect(264, y + (story ? 192 : 168), 100, 12);
+    }},
+    best && {h: story ? 260 : 214, draw: y => {
+      const big = `${best.f.w}-${best.f.l}`, [lab, col] = shortFinish(best.f);
+      txt(ctx, big, 56, y + (story ? 244 : 200), `900 ${story ? 300 : 246}px ${FD}`, perfect ? '#f3b52f' : '#ffffff');
+      const bw = ctx.measureText(big).width, x = 56 + bw + 36, mw = W - 64 - x;
+      txt(ctx, String(best.yr), x, y + (story ? 110 : 92), `800 ${story ? 56 : 46}px ${FD}`, '#8f9cb4');
+      const lines = lab.split(' '), half = Math.ceil(lines.length / 2);
+      const l1 = lines.slice(0, half).join(' '), l2 = lines.slice(half).join(' ');
+      txt(ctx, l1, x, y + (story ? 178 : 148), fitFont(ctx, l1, 900, story ? 70 : 58, mw), col);
+      if (l2) txt(ctx, l2, x, y + (story ? 244 : 200), fitFont(ctx, l2, 900, story ? 70 : 58, mw), col);
+      if (rings > 1) txt(ctx, `${rings} RINGS`, x, y + (story ? 40 : 34), `800 ${story ? 34 : 28}px ${FD}`, '#f3b52f');
+    }},
+    {h: story ? 170 : 136, draw: y => {
+      const h = story ? 170 : 136, gw = 28, w = (W - 128 - gw * 2) / 3;
+      const T = [['TEAM OVR', `${R.then.ovr}→${R.now.ovr}`, R.now.ovr >= 90 ? '#f3b52f' : '#ffffff'], ['GRADE', R.grade, gradeCol(R.grade)], ['GM STYLE', R.style.name.toUpperCase(), '#ffffff']];
+      T.forEach(([l, v, c], i) => {
+        const x = 64 + i * (w + gw); tile(ctx, x, y, w, h, i === 1 ? hexA(gradeCol(R.grade), .6) : null);
+        txt(ctx, l, x + 26, y + (story ? 44 : 38), `700 ${story ? 26 : 22}px ${FB}`, '#8f9cb4');
+        txt(ctx, v, x + 24, y + h - (story ? 30 : 22), fitFont(ctx, v, 900, story ? 96 : 70, w - 48), c);
+        if (i === 1) txt(ctx, `${R.score}/100`, x + w - 24, y + h - (story ? 34 : 26), `700 ${story ? 30 : 26}px ${FB}`, '#c9d2e2', 'right');
+      });
+    }},
+    S.length > 1 && {h: story ? 140 : 112, opt: 1, draw: y => {
+      const L = S.slice(-4), gw = 18, w = (W - 128 - gw * (L.length - 1)) / L.length, h = story ? 140 : 112;
+      L.forEach((s, i) => {
+        const x = 64 + i * (w + gw), [lab, col] = shortFinish(s.f), champ = s.f.label === 'Won the Super Bowl';
+        rrect(ctx, x, y, w, h, 18); ctx.fillStyle = champ ? 'rgba(243,181,47,.14)' : 'rgba(255,255,255,.04)'; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = champ ? 'rgba(243,181,47,.7)' : 'rgba(255,255,255,.08)'; ctx.stroke();
+        txt(ctx, String(s.yr), x + 20, y + (story ? 36 : 32), `800 ${story ? 28 : 24}px ${FD}`, '#8f9cb4');
+        txt(ctx, `${s.f.w}-${s.f.l}`, x + 20, y + (story ? 98 : 80), `900 ${story ? 58 : 46}px ${FD}`, '#ffffff');
+        txt(ctx, lab, x + 20, y + h - 14, fitFont(ctx, lab, 700, story ? 22 : 19, w - 40, FB), col);
+      });
+    }},
+    moves.length && {h: (story ? 46 : 0) + moves.length * (story ? 80 : 66) - 10, opt: 2, draw: y => {
+      let yy = y;
+      if (story) { txt(ctx, 'KEY MOVES', 64, yy + 32, `800 36px ${FD}`, acc); yy += 46; }
+      moves.forEach(([k, v, sub]) => {
+        const h = story ? 70 : 56; tile(ctx, 64, yy, W - 128, h);
+        txt(ctx, k, 92, yy + h / 2 + 10, `800 ${story ? 30 : 26}px ${FD}`, acc);
+        const kx = 92 + (story ? 200 : 176);
+        txt(ctx, v, kx, yy + h / 2 + 12, fitFont(ctx, v, 800, story ? 40 : 34, W - 128 - (kx - 64) - 260), '#ffffff');
+        txt(ctx, sub, W - 92, yy + h / 2 + 9, `600 ${story ? 26 : 22}px ${FB}`, '#8f9cb4', 'right');
+        yy += h + 10;
+      });
+    }},
+    core.length && {h: story ? 50 + 152 + 92 : 50 + 116 + 78, draw: async y => {
+      const r = story ? 76 : 58, cw = (W - 128) / 4;
+      txt(ctx, 'THE CORE', 64, y + 30, `800 ${story ? 36 : 30}px ${FD}`, acc);
+      for (let i = 0; i < core.length; i++) {
+        const p = core[i], x = 64 + cw * i + cw / 2, cy = y + 50 + r;
+        await drawFace(ctx, p, x, cy, r, p.how ? '#f3b52f' : 'rgba(255,255,255,.3)');
+        rrect(ctx, x - 34, cy + r - 24, 68, 36, 18); ctx.fillStyle = p.ovr >= 90 ? '#f3b52f' : '#eef2f8'; ctx.fill();
+        txt(ctx, String(p.ovr), x, cy + r + 4, `900 28px ${FD}`, '#0b1424', 'center');
+        const ln = lastName(p.n).toUpperCase();
+        txt(ctx, ln, x, cy + r + (story ? 54 : 46), fitFont(ctx, ln, 800, story ? 36 : 30, cw - 16), '#ffffff', 'center');
+        txt(ctx, p.pos + (p.how ? ' · ' + p.how.toUpperCase() : ''), x, cy + r + (story ? 88 : 76), `700 ${story ? 24 : 20}px ${FB}`, p.how ? '#f3b52f' : '#8f9cb4', 'center');
+      }
+    }},
+  ].filter(Boolean);
+  await flow(ctx, H, story ? 130 : 50, cardBottom(story), blocks);
+  footer(ctx, W, H, perfect ? 'PERFECT. 21-0.' : 'CAN YOU DO BETTER?', story);
+  const f26 = G.history[2026] && G.history[2026].finish, f27 = G.history[2027] && G.history[2027].finish;
+  const recs = S.map(s => `${s.f.w}-${s.f.l}`).join(', then ');
+  const caption = `I rebuilt the ${team.name} in 21-0: ${R.then.ovr} → ${R.now.ovr} OVR, ${recs || (f26 && f27 ? `${f26.w}-${f26.l} then ${f27.w}-${f27.l}` : '')}${rings ? ` with ${rings > 1 ? rings + ' rings' : 'a ring'}` : ''}. Rebuild grade ${R.grade}. Can you do better?`;
+  return {cv, caption, file: `21-0-${G.user}-rebuild-${size || 'post'}.png`};
 }
-async function resumeCard() {
-  const W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+async function resumeCard(size) {
+  const [W, H] = CARD_SIZES[size] || CARD_SIZES.post, story = size === 'story';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d');
-  try { await document.fonts.load('900 100px "Big Shoulders Display"'); await document.fonts.load('600 30px "Barlow"'); } catch (e) { /* fonts optional */ }
+  try { await document.fonts.load(`900 100px ${FD}`); await document.fonts.load(`600 30px ${FB}`); await document.fonts.load(`700 30px ${FB}`); } catch (e) { /* fonts optional */ }
   const T = careerTotals();
-  cardBase(ctx, W, H, '#f3b52f');
-  txt(ctx, 'GM RÉSUMÉ', 64, 230, '700 34px "Barlow", sans-serif', '#8f9cb4');
+  const fav = Object.entries(T.teams).sort((a, b) => (b[1].titles || 0) - (a[1].titles || 0) || (b[1].w || 0) - (a[1].w || 0))[0];
+  const team = fav ? DATA.teams[fav[0]] : {c1: '#f3b52f', c2: '#0b1424'};
+  cardBase(ctx, W, H, team, String(T.titles.length));
   const nm = (C.gmName || 'Anonymous GM').toUpperCase();
-  txt(ctx, nm, 64, 330, fitFont(ctx, nm, 900, 120, W - 128), '#eef2f8');
-  txt(ctx, String(T.titles.length), 64, 560, '900 230px "Big Shoulders Display", Impact', '#f3b52f');
-  txt(ctx, T.titles.length === 1 ? 'SUPER BOWL' : 'SUPER BOWLS', 64 + ctx.measureText(String(T.titles.length)).width + 30, 540, '800 60px "Big Shoulders Display", Impact', '#eef2f8');
   const pctS = T.w + T.l ? (T.w / (T.w + T.l)).toFixed(3).replace(/^0/, '') : '.000';
-  const stats = [[`${T.w}-${T.l}`, 'RECORD'], [pctS, 'WIN PCT'], [String(T.perfect.length), 'PERFECT'], [`${Object.keys(T.teams).length}/32`, 'TEAMS RUN']];
-  stats.forEach(([v, l], i) => { const x = 64 + i * 245; txt(ctx, v, x, 700, '900 74px "Big Shoulders Display", Impact', '#eef2f8'); txt(ctx, l, x, 740, '700 22px "Barlow", sans-serif', '#8f9cb4'); });
-  txt(ctx, 'RINGS', 64, 840, '800 34px "Big Shoulders Display", Impact', '#f3b52f');
-  const rings = T.titles.slice(0, 6);
-  if (!rings.length) txt(ctx, T.sb ? `${T.sb} Super Bowl trip${T.sb > 1 ? 's' : ''}. Still chasing the first ring.` : 'Still chasing the first ring.', 64, 900, '600 34px "Barlow", sans-serif', '#c9d2e2');
-  rings.forEach((s, i) => {
-    const x = 64 + (i % 3) * 320, y = 880 + Math.floor(i / 3) * 110, t = DATA.teams[s.team];
-    ctx.fillStyle = t.c1; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, 84, 84, 16) : ctx.rect(x, y, 84, 84); ctx.fill();
-    txt(ctx, s.team, x + 42, y + 56, '900 34px "Big Shoulders Display", Impact', '#fff', 'center');
-    txt(ctx, String(s.yr), x + 100, y + 38, '800 36px "Big Shoulders Display", Impact', '#eef2f8');
-    txt(ctx, `${t.nick} · ${s.w}-${s.l}`.slice(0, 18), x + 100, y + 72, '600 24px "Barlow", sans-serif', '#8f9cb4');
-  });
+  const rings = T.titles.slice(0, story ? 6 : 3);
   const unlocked = T.ach.filter(a => a[2]).map(a => a[0]);
-  txt(ctx, unlocked.length ? 'UNLOCKED: ' + unlocked.join(' · ').toUpperCase() : `${T.po} PLAYOFF TRIPS`, 64, 1130, fitFont(ctx, unlocked.length ? 'UNLOCKED: ' + unlocked.join(' · ').toUpperCase() : 'X', 800, 36, W - 128), '#c9d2e2');
-  ctx.fillStyle = '#f3b52f'; ctx.fillRect(0, H - 150, W, 150);
-  txt(ctx, 'CAN YOU BEAT IT?', 64, H - 60, '900 76px "Big Shoulders Display", Impact', '#1b1203');
+  const runs = T.runs.filter(r => r.seasons && Object.keys(r.seasons).length).slice(0, story ? 5 : 3);
+  const blocks = [
+    {h: 80, draw: y => header(ctx, W, y, 'GM RÉSUMÉ')},
+    {h: story ? 170 : 140, draw: y => { txt(ctx, nm, 60, y + (story ? 140 : 118), fitFont(ctx, nm, 900, story ? 160 : 130, W - 124), '#ffffff'); ctx.fillStyle = '#f3b52f'; ctx.fillRect(64, y + (story ? 160 : 132), 240, 10); }},
+    {h: story ? 280 : 220, draw: y => {
+      const n = String(T.titles.length);
+      txt(ctx, n, 56, y + (story ? 250 : 200), `900 ${story ? 300 : 240}px ${FD}`, '#f3b52f');
+      const x = 56 + ctx.measureText(n).width + 34;
+      txt(ctx, T.titles.length === 1 ? 'SUPER' : 'SUPER', x, y + (story ? 150 : 120), `900 ${story ? 90 : 74}px ${FD}`, '#ffffff');
+      txt(ctx, T.titles.length === 1 ? 'BOWL' : 'BOWLS', x, y + (story ? 240 : 194), `900 ${story ? 90 : 74}px ${FD}`, '#ffffff');
+    }},
+    {h: story ? 170 : 140, draw: y => {
+      const st = [[`${T.w}-${T.l}`, 'RECORD'], [pctS, 'WIN PCT'], [String(T.perfect.length), 'PERFECT'], [`${Object.keys(T.teams).length}/32`, 'TEAMS']];
+      const gw = 18, w = (W - 128 - gw * 3) / 4, h = story ? 170 : 140;
+      st.forEach(([v, l], i) => { const x = 64 + i * (w + gw); tile(ctx, x, y, w, h); txt(ctx, l, x + 22, y + 40, `700 ${story ? 24 : 21}px ${FB}`, '#8f9cb4'); txt(ctx, v, x + 20, y + h - 28, fitFont(ctx, v, 900, story ? 74 : 62, w - 40), '#ffffff'); });
+    }},
+    {h: rings.length ? 46 + Math.ceil(rings.length / 3) * (story ? 120 : 104) : 100, draw: y => {
+      txt(ctx, 'RINGS', 64, y + 32, `800 ${story ? 36 : 32}px ${FD}`, '#f3b52f');
+      if (!rings.length) { txt(ctx, T.sb ? `${T.sb} Super Bowl trip${T.sb > 1 ? 's' : ''}. Still chasing the first ring.` : 'Still chasing the first ring.', 64, y + 86, `600 ${story ? 36 : 32}px ${FB}`, '#c9d2e2'); return; }
+      const cw = (W - 128) / 3;
+      rings.forEach((s, i) => {
+        const x = 64 + (i % 3) * cw, yy = y + 52 + Math.floor(i / 3) * (story ? 120 : 104), t = DATA.teams[s.team], b = story ? 96 : 84;
+        rrect(ctx, x, yy, b, b, 18); ctx.fillStyle = t.c1; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = hexA(accentOf(t), .9); ctx.stroke();
+        txt(ctx, s.team, x + b / 2, yy + b / 2 + 13, `900 ${story ? 38 : 34}px ${FD}`, '#fff', 'center');
+        txt(ctx, String(s.yr), x + b + 16, yy + 40, `800 ${story ? 40 : 36}px ${FD}`, '#ffffff');
+        txt(ctx, `${s.w}-${s.l}`, x + b + 16, yy + 76, `700 ${story ? 26 : 24}px ${FB}`, '#8f9cb4');
+      });
+    }},
+    runs.length && {h: 46 + runs.length * (story ? 86 : 70) - 10, opt: 1, draw: y => {
+      txt(ctx, 'RUNS', 64, y + 32, `800 ${story ? 36 : 32}px ${FD}`, '#f3b52f');
+      runs.forEach((r, i) => {
+        const h = story ? 76 : 60, yy = y + 46 + i * (h + 10), t = DATA.teams[r.team], yrsR = Object.keys(r.seasons || {}).map(Number).sort();
+        const w = Object.values(r.seasons || {}).reduce((s, x) => s + x.w, 0), l = Object.values(r.seasons || {}).reduce((s, x) => s + x.l, 0);
+        const ringsR = Object.values(r.seasons || {}).filter(x => x.champ).length;
+        tile(ctx, 64, yy, W - 128, h, ringsR ? 'rgba(243,181,47,.6)' : null);
+        rrect(ctx, 64, yy, 14, h, 7); ctx.fillStyle = accentOf(t); ctx.fill();
+        txt(ctx, t.name.toUpperCase(), 98, yy + h / 2 + 12, `800 ${story ? 38 : 32}px ${FD}`, '#ffffff');
+        const meta = `${yrsR.length ? (yrsR.length > 1 ? yrsR[0] + '–' + yrsR[yrsR.length - 1] : yrsR[0]) + ' · ' : ''}${w}-${l}${ringsR ? ' · ' + ringsR + ' ring' + (ringsR > 1 ? 's' : '') : ''}${r.fired ? ' · fired' : ''}`;
+        txt(ctx, meta, W - 64 - (r.grade ? 90 : 28), yy + h / 2 + 9, `600 ${story ? 26 : 22}px ${FB}`, ringsR ? '#f3b52f' : '#8f9cb4', 'right');
+        if (r.grade) txt(ctx, r.grade, W - 92, yy + h / 2 + 15, `900 ${story ? 46 : 40}px ${FD}`, gradeCol(r.grade), 'right');
+      });
+    }},
+    {h: 50, draw: y => { const s = unlocked.length ? unlocked.join(' · ').toUpperCase() : `${T.po} PLAYOFF TRIP${T.po === 1 ? '' : 'S'}`; txt(ctx, s, 64, y + 38, fitFont(ctx, s, 800, story ? 40 : 34, W - 128), '#c9d2e2'); }},
+  ].filter(Boolean);
+  await flow(ctx, H, story ? 130 : 50, cardBottom(story), blocks);
+  footer(ctx, W, H, 'CAN YOU BEAT IT?', story);
   const caption = `My 21-0 GM résumé: ${T.titles.length} Super Bowl${T.titles.length === 1 ? '' : 's'}, ${T.w}-${T.l} career, ${Object.keys(T.teams).length} of 32 teams run. Can you beat it?`;
-  return {cv, caption, file: '21-0-resume.png'};
+  return {cv, caption, file: `21-0-resume-${size || 'post'}.png`};
 }
-async function openShare(kind) {
+async function openShare(kind, size) {
+  UI.shareKind = kind = kind || UI.shareKind || 'final'; UI.shareSize = size = size || UI.shareSize || 'post';
   modal(`<div class="sheeth"><div><div class="kicker">Share</div><h3>Making your card</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">Drawing it now.</p>`, true);
   let r;
-  try { r = kind === 'resume' ? await resumeCard() : await rebuildCard(); } catch (e) { modal(`<div class="sheeth"><h3>Could not draw the card</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">Copy the text version instead.</p>`); return; }
+  try { r = kind === 'resume' ? await resumeCard(size) : await rebuildCard(size); } catch (e) { console.error(e); modal(`<div class="sheeth"><h3>Could not draw the card</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">Copy the text version instead.</p><div class="row end"><button class="btn" data-act="copy">Copy text</button></div>`); return; }
   UI.shareCard = r; UI.share = r.caption;
   const url = r.cv.toDataURL('image/png');
   const enc = encodeURIComponent(r.caption);
   modal(`<div class="sheeth"><div><div class="kicker">Share</div><h3>${kind === 'resume' ? 'Your GM résumé' : 'Your rebuild'}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
-    <img class="sharepreview" src="${url}" alt="${esc(r.caption)}">
-    <p class="small muted">${esc(r.caption)}</p>
+    <div class="seg sharesize">${Object.entries(CARD_SIZES).map(([k, v]) => `<button class="${k === size ? 'on' : ''}" data-act="shareSize" data-k="${k}">${v[2]}</button>`).join('')}</div>
+    <img class="sharepreview ${size}" src="${url}" alt="${esc(r.caption)}">
     <div class="row end"><button class="btn" data-act="copy">Copy caption</button><a class="btn" href="https://twitter.com/intent/tweet?text=${enc}" target="_blank" rel="noopener">Post on X</a><a class="btn" href="https://www.threads.net/intent/post?text=${enc}" target="_blank" rel="noopener">Threads</a><button class="btn go" data-act="saveCard" id="saveCardBtn">Save image</button></div>
-    <p class="small muted">Save the image, then attach it to your post. Instagram and TikTok take it straight from your photos.</p>`, true);
+    <p class="small muted">${size === 'story' ? 'Sized for Instagram, TikTok and Snapchat stories.' : 'Sized for Instagram and X feeds.'} Save it, then attach it to your post.</p>`, true);
 }
 async function saveCard() {
   const r = UI.shareCard; if (!r) return;
@@ -1940,9 +2137,10 @@ document.addEventListener('click', e => {
       return;
     }
     case 'share': openShare(el.dataset.k); return;
+    case 'shareSize': openShare(UI.shareKind, el.dataset.k); return;
     case 'saveCard': saveCard(); return;
     case 'askReset': modal(`<div class="sheeth"><h3>Start over?</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">This erases your current game. Your résumé keeps every finished season.</p><div class="row end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn danger" data-act="newgame">Start over</button></div>`); return;
-    case 'newgame': try { localStorage.removeItem(SAVE_KEY); } catch (err) { /* storage unavailable */ } G = null; closeModal(); UI.tab = 'home'; render(); window.scrollTo(0, 0); return;
+    case 'newgame': try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(SAVE_KEY + '-ver'); } catch (err) { /* storage unavailable */ } cloudClear(); G = null; closeModal(); UI.tab = 'home'; render(); window.scrollTo(0, 0); return;
   }
   if (G) persist();
   render();
