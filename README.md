@@ -19,10 +19,10 @@
 
 ## What's inside
 
-- **Real starting point.** 2026 rosters, contracts and cap hits. Ratings come from 2023–26 production, playing time, contracts and draft pedigree, so one bad year doesn't erase a career.
+- **Real starting point.** 2026 rosters, contracts and cap hits. Ratings work like Madden's. They draw on box scores, efficiency, advanced and Next Gen stats since 2019, snap share, contracts, draft pedigree and age curves, plus winning and playoff success for quarterbacks. Proven stars stay near the top through a quiet year, and every player card shows what his rating rests on.
 - **A trade market calibrated on real deals.** Values were fitted to the last 1,000 trades (2013–2026): the pick chart from 375 pick-for-pick swaps, future picks worth about 60% of the same slot, and star prices matching what Tyreek Hill, Davante Adams and Jalen Ramsey actually fetched. Each team also weighs its own situation, needs, GM style, scouting, cap room and division rivalries.
 - **Trading like a front office.** Offers come to you every window. Put players on your trade block and teams bid. Build a trade from a grid of teams that shows who wants your players, filter by position, and see every deal's value in wins. Ask around on any player for what teams would give. Seven-round picks, so role players move for late picks.
-- **Trade calls.** Pitch a deal on the phone and keep talking: sweeten it, take something off, meet in the middle, ask who else they would move, bluff, or walk away. Every GM reacts differently.
+- **Trade calls.** Pitch a deal on the phone and negotiate. Every GM opens above fair value, and a bar shows your offer against their price. Every answer comes with their reasons, and the price comes down as you talk. Sweeten it, take something off, meet in the middle, ask who else they would move, bluff, or walk away. Each GM's temperament changes how the call goes.
 - **Free agency with people in it.** Players care about money, winning, role and loyalty in different amounts. Every offer gets an answer right away: yes, a counter you can accept, or no. Pitch them to raise their interest, and hear about anyone you talked to who signs elsewhere.
 - **Trade for anyone.** Search the league by name or position and trade for a player straight from the list. Every deal, offer and call has an × on each piece to take it out.
 - **Position flexibility.** Move a tackle to guard or a corner to safety in the depth chart, a few points worse than at his own spot.

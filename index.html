@@ -1134,6 +1134,24 @@ details.fold > summary { font-family: var(--body); text-transform: none; letter-
 .srow.hot .sicon { background: rgba(243,181,47,.12); }
 .potg, .counterbar { box-shadow: none; }
 body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
+
+/* the phone call */
+.tread { padding: 12px 14px; margin-bottom: 12px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); display: grid; gap: 8px; }
+.treadbar { position: relative; height: 10px; border-radius: 99px; background: rgba(255,255,255,.06); }
+.treadbar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: var(--bad); }
+.treadbar i.close { background: var(--warn); } .treadbar i.ok { background: var(--good); }
+.treadbar em { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--chalk); border-radius: 2px; }
+.treadnums { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); } .treadnums b { color: var(--chalk); font-size: 15px; }
+.treadtags { display: flex; flex-wrap: wrap; gap: 6px; }
+.whyl { margin: 6px 0 0; padding-left: 16px; font-size: 13px; color: var(--muted); display: grid; gap: 3px; line-height: 1.35; }
+.whyd { margin-top: 4px; } .whyd > summary { cursor: pointer; font-size: 12px; color: var(--muted); list-style: none; } .whyd > summary::-webkit-details-marker { display: none; }
+.whyd > summary::before { content: '▸ '; } .whyd[open] > summary::before { content: '▾ '; }
+.saygroup2 { margin-top: 10px; } .saygrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-top: 6px; }
+.talkchip2 { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel); color: var(--chalk); font: inherit; text-align: left; cursor: pointer; min-height: 44px; }
+.talkchip2 b { font-size: 14px; } .talkchip2 span { font-size: 12px; color: var(--muted); } .talkchip2:hover { border-color: var(--gold); }
+.yesbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; border: 1px solid rgba(63,192,127,.4); background: rgba(63,192,127,.06); font-size: 14px; }
+
+.ratewhy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 10px; }
 </style>
 </head>
 <body>

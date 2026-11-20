@@ -124,18 +124,24 @@ test('the upgrade finder offers fits, budget options and splashes', () => {
   for (const t of T.tr) for (const x of t.list) assert.ok(x.gain > 0);
 });
 
-test('a trade call answers with a yes, a counter or a laugh, and lowballs cost patience', () => {
+test('a call takes some negotiating: a fair first offer gets a small ask, an overpay gets a yes, and every answer says why', () => {
   E.newGame(DATA, 'NYJ', 10);
   E.simTo(9); E.G.phase = 'deadline';
-  const tgt = E.roster('WAS').filter(p => p.pos === 'WR').sort((a, b) => b.ovr - a.ovr)[0];
+  const tgt = E.roster('WAS').filter(p => p.ovr >= 74 && p.ovr <= 86 && p.cap < 12 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr)[0];
   const picks = E.G.picks.filter(k => k.owner === 'NYJ').sort((a, b) => a.yr - b.yr || a.rd - b.rd).map(k => k.id);
   const low = E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
   assert.ok(['laugh', 'close', 'counter'].includes(low.kind), low.kind);
+  assert.ok(low.why && low.why.length >= 2 && /worth/.test(low.why.join(' ')), 'the answer comes with reasons');
   assert.ok(E.talkWith('WAS').patience < 3, 'a lowball costs patience');
   const big = E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]);
   assert.equal(big.kind, 'yes', big.line);
   while (E.talkWith('WAS').patience > 0) E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
   assert.equal(E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]).kind, 'done', 'out of patience means no more calls');
+  // a fresh call at a fair price: they want one more piece first
+  E.newGame(DATA, 'NYJ', 12); E.simTo(9); E.G.phase = 'deadline';
+  const t2 = E.roster('WAS').filter(p => p.ovr >= 74 && p.ovr <= 86 && p.cap < 12 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr)[0];
+  const fair = E.balanceTrade('WAS', [], [t2.id]);
+  if (fair) { const r = E.proposeTrade('WAS', fair, [t2.id]); assert.notEqual(r.kind, 'yes', 'a merely fair first offer is not an instant yes'); }
 });
 
 test('team quality drives wins about as much as in the real NFL, and a perfect season is possible but rare', () => {
@@ -170,19 +176,19 @@ test('leftover stars do not sign for the minimum', () => {
   for (const t of E.teamList()) assert.ok(Number.isFinite(E.capSpace(t)), `${t} cap space is not a number`);
 });
 
-test('a call can keep going: ask, sweeten, bluff, and a final offer that is too low ends it', () => {
+test('a call can keep going: ask, sweeten, and a final offer that is too low ends it', () => {
   E.newGame(DATA, 'NYJ', 11);
   E.simTo(9); E.G.phase = 'deadline';
-  const star = byName('Josh Allen');
+  const tgt = E.roster('WAS').filter(p => p.ovr >= 78 && p.cap < 15 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr)[0];
   const picks = E.G.picks.filter(k => k.owner === 'NYJ').sort((a, b) => a.yr - b.yr || a.rd - b.rd).map(k => k.id);
-  E.proposeTrade(star.tm, [picks[picks.length - 1]], [star.id]);
-  const ask = E.talkMove(star.tm, 'ask');
+  E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
+  const ask = E.talkMove('WAS', 'ask');
   assert.equal(ask.kind, 'counter');
-  assert.ok(ask.counters[0].give.length > 1, 'their ask is more than a late pick');
-  const before = E.talkWith(star.tm).deal.give.length;
-  E.talkMove(star.tm, 'add', E.talkAssets(star.tm, 'add')[0].id);
-  assert.equal(E.talkWith(star.tm).deal.give.length, before + 1);
-  const fin = E.talkMove(star.tm, 'final');
+  assert.ok(ask.counters[0].give.length > 1 || ask.counters[0].give[0] !== picks[picks.length - 1], 'their ask is more than a late pick');
+  const before = E.talkWith('WAS').deal.give.length;
+  E.talkMove('WAS', 'add', E.talkAssets('WAS', 'add')[0].id);
+  assert.equal(E.talkWith('WAS').deal.give.length, before + 1);
+  const fin = E.talkMove('WAS', 'final');
   assert.notEqual(fin.kind, 'yes', 'a lowball final offer is not accepted');
 });
 

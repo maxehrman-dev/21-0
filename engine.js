@@ -39,8 +39,9 @@ function newGame(DATA, userTeam, seed) {
   R = makeRng(seed || Date.now());
   const players = {};
   for (const a of DATA.players) {
-    const [id, n, pos, tm, age, ovr, cap, end, st25, st26, inj, rook, prior, pot, potWhy, prod, hype, apy] = a;
+    const [id, n, pos, tm, age, ovr, cap, end, st25, st26, inj, rook, prior, pot, potWhy, prod, hype, apy, why] = a;
     players[id] = {id, n, pos, tm, age, ovr, cap, end, st25, st26, inj: !!inj, rook: !!rook, prior: prior || ovr, pot: pot || null, potWhy: potWhy || '', prod: prod == null ? -1 : prod, hype: hype == null ? 30 : hype, hist: [[2026, ovr, 'Week 1']]};
+    if (why) players[id].why = why;
     // contracts that pay more after this season (extensions, back-loaded deals) switch to their real average next year
     if (apy != null && end >= 2027) players[id].apy = apy;
     // hurt at kickoff: most come back during the season, about one in five is out for the year
@@ -530,6 +531,7 @@ function balanceTrade(partner, give, get) { return fillSide(partner, give, get, 
 const TALK = {
   yes: ['You have got a deal.', 'Done. Send the paperwork over.', 'We can live with that. Deal.', 'That works for us. Shake on it?', 'Yeah, we will do that.'],
   eager: ['Deal! Before you change your mind.', 'Yes. Absolutely yes.', 'Wow. Okay. Deal.', 'We accept. Quickly.'],
+  nibble: ['Almost. One more piece and we are there.', 'That is fair, but we want a little something for our trouble.', 'Close. Throw in one small thing.', 'We can get there. We just need a touch more.'],
   counter: ['Not quite. Here is what gets it done.', 'Close. Meet us here.', 'We like where your head is at, but not at that price.', 'Cannot do that one. How about this instead?'],
   close: ['We are close. Find a little more.', 'Not there yet, but we are listening.', 'Nudge it a bit and we can talk.'],
   far: ['That is not close.', 'We are a long way apart.', 'You will need a lot more than that.'],
@@ -563,7 +565,39 @@ function talkWith(partner) {
   let T = G.talks[partner];
   if (!T || T.key !== talkKey()) T = G.talks[partner] = {key: talkKey(), patience: 3, log: [], deal: null, boost: 0, used: {}};
   T.used = T.used || {}; T.boost = T.boost || 0;
+  if (T.firm == null) T.firm = 1 + openingAnchor(partner);
   return T;
+}
+// Every GM opens above fair value. Gamblers ask a little more than fair, hard bargainers a lot more,
+// and a contender at the deadline is in a hurry. The bar comes down as you keep talking.
+function temperament(partner) {
+  const r = gmOf(partner).risk;
+  return r > .66 ? {name: 'Gambler', note: 'moves fast and bites on a good story'} : r < .33 ? {name: 'Hard bargainer', note: 'starts high and makes you earn every point'} : {name: 'Fair dealer', note: 'starts a little high, meets you if you are reasonable'};
+}
+function openingAnchor(partner) {
+  const gm = gmOf(partner), sit = situation(partner);
+  let a = .06 + .14 * (1 - gm.risk);
+  if (G.phase === 'deadline' && sit.status === 'Contender') a -= .03;
+  return Math.round(clamp(a, .04, .2) * 100) / 100;
+}
+// Their reasons, in plain words: how they value each side, what moves their price, and where their bar is
+function talkWhy(partner, give, get) {
+  const T = talkWith(partner), ev = evalTrade(partner, give, get), nick = G.teams[partner].nick, out = [];
+  const fmt = v => v < 20 ? v.toFixed(1) : String(Math.round(v)), vin = fmt(ev.vIn * (1 + T.boost)), need = fmt(ev.need * T.firm), vout = fmt(ev.vOut);
+  out.push(`To us, what we give up is worth ${vout}. Your side is worth ${vin}. Our bar right now is about ${need}.`);
+  const team = st => ['Scouting', 'GM style', 'Age taste', 'Situation', 'Deadline push', 'Fit', 'Our guy', 'Franchise QB', 'Cap room', 'Rental', 'Control', 'Scarcity', 'Next year cap', 'Injury need', 'Risk'].includes(st.k) && st.m != null && Math.abs(st.m - 1) >= .04;
+  const top = ids => ids.filter(id => G.players[id]).map(id => G.players[id]).sort((a, b) => playerValue(b, partner) - playerValue(a, partner))[0];
+  const key = (p, mine) => {
+    if (!p) return;
+    const st = valueParts(p, partner).steps.filter(team).sort((a, b) => Math.abs(Math.log(b.m)) - Math.abs(Math.log(a.m))).slice(0, 2);
+    for (const x of st) out.push(`${mine ? 'On ' : 'On our '}${p.n}: ${x.note.replace(/: ×[\d.]+$/, '').replace(/\.$/, '')}. ${x.m > 1 ? 'Worth more' : 'Worth less'} to us.`);
+  };
+  key(top(get), false); key(top(give), true);
+  const picks = give.filter(id => !G.players[id]);
+  if (picks.length) { const sit = situation(partner); out.push(sit.status === 'Rebuilding' || sit.status === 'Seller' ? 'Picks are exactly what a team like ours wants.' : sit.status === 'Contender' ? 'Picks do not help us win this year, so they count for less.' : 'Picks are fine, but we would rather help now.'); }
+  if (T.firm > 1.005) out.push(`We started above fair, as everyone does. Keep talking and that comes down.`);
+  ev.issues.filter(i => !i.startsWith('Both')).forEach(i => out.push(i));
+  return out;
 }
 // How their GM sees the deal on the table right now, with what you have talked them into.
 function talkEval(partner, give, get) {
@@ -573,16 +607,33 @@ function talkEval(partner, give, get) {
   return {ev, ratio, blocking, ok: ratio >= 1 && !blocking.length && !ev.fleece};
 }
 // Their answer to the deal on the table. Only lowballs and greed cost patience.
+function nibble(partner, give, get, target) {
+  // the smallest piece from your side that lifts the deal over their bar
+  const T = talkWith(partner);
+  const pool = userPool('all', get).filter(id => !give.includes(id)).map(id => ({id, v: assetValue(id, partner)})).filter(x => x.v >= .3).sort((a, b) => a.v - b.v);
+  return pool.find(x => { const e = talkEval(partner, [...give, x.id], get); return e.ok && e.ratio >= target; });
+}
 function talkRespond(partner, free) {
   const T = talkWith(partner), {give, get} = T.deal, E2 = talkEval(partner, give, get);
   const cost = n => { if (!free) T.patience -= n; };
   let r;
-  if (E2.ok) r = {kind: 'yes', line: say(E2.ratio > 1.6 ? 'eager' : 'yes')};
-  else if (E2.ratio >= 1 && E2.blocking.length && !E2.ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${E2.blocking[0]}`};
-  else if (E2.ev.fleece) { cost(1); r = {kind: 'laugh', line: say('fleece')}; }
-  else if (E2.ratio < .55) { cost(1); r = {kind: 'laugh', line: say('laugh')}; }
-  else if (E2.ratio >= .85) { const c = counterTrade(partner, give, get); r = c ? {kind: 'counter', line: say('counter'), counters: c} : {kind: 'close', line: say('close')}; }
-  else r = {kind: 'close', line: say('far')};
+  const why = talkWhy(partner, give, get);
+  if (E2.ok && E2.ratio >= T.firm + .3) r = {kind: 'yes', line: say('eager'), why: ['That is more than we hoped for.', ...why]};
+  else if (E2.ok && E2.ratio >= T.firm) r = {kind: 'yes', line: say('yes'), why};
+  else if (E2.ok) {
+    // fair, but not yet over their bar: they ask for one small thing, and the bar comes down a little anyway
+    const n = nibble(partner, give, get, T.firm);
+    r = n ? {kind: 'counter', line: say('nibble'), counters: [{label: 'Add one piece', give: [...give, n.id], get: get.slice()}], why: [`We are close. Add ${assetName(n.id)} and it is done.`, ...why]} : {kind: 'close', line: say('close'), why};
+    T.firm = Math.max(1, T.firm - .05);
+    if (r) return r;
+  }
+  else if (E2.ratio >= 1 && E2.blocking.length && !E2.ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${E2.blocking[0]}`, why};
+  else if (E2.ev.fleece) { cost(1); r = {kind: 'laugh', line: say('fleece'), why: ['We know what we are giving up, and that deal is too good for you.', ...why]}; }
+  else if (E2.ratio < .55) { cost(1); r = {kind: 'laugh', line: say('laugh'), why: [`You are offering about ${Math.round(E2.ratio * 100)}% of what we need.`, ...why]}; }
+  else if (E2.ratio >= .85) { const c = counterTrade(partner, give, get); r = c ? {kind: 'counter', line: say('counter'), counters: c, why} : {kind: 'close', line: say('close'), why}; }
+  else r = {kind: 'close', line: say('far'), why: [`You are offering about ${Math.round(E2.ratio * 100)}% of what we need.`, ...why]};
+  // every exchange brings their bar down a little
+  T.firm = Math.max(1, T.firm - .03);
   return r;
 }
 function talkReply(partner, r) {
@@ -649,14 +700,14 @@ function talkMove(partner, move, arg) {
   T.used[move] = 1;
   if (move === 'bluff') {
     // Gamblers bite more often; careful GMs call your bluff
-    if (rand() < .3 + .35 * gm.risk) { T.boost += .07; const r = talkRespond(partner, true); r.line = say('bluffWin') + ' ' + andYet(r); return talkReply(partner, r); }
-    T.patience -= 1; const r = talkRespond(partner, true); r.line = say('bluffLose') + (r.kind === 'yes' ? ' But the deal still stands.' : ''); return talkReply(partner, r);
+    if (rand() < .3 + .35 * gm.risk) { T.boost += .07; T.firm = Math.max(1, T.firm - .04); const r = talkRespond(partner, true); r.line = say('bluffWin') + ' ' + andYet(r); r.why = [`They believed you: your side now looks about 7% better to them.`, ...(r.why || [])]; return talkReply(partner, r); }
+    T.patience -= 1; const r = talkRespond(partner, true); r.line = say('bluffLose') + (r.kind === 'yes' ? ' But the deal still stands.' : ''); r.why = [`${temperament(partner).name}s call bluffs. That cost you patience.`, ...(r.why || [])]; return talkReply(partner, r);
   }
   if (move === 'fit') {
     const fills = d.give.some(id => G.players[id] && needBoost(partner, G.players[id]) > 1);
     const r = talkRespond(partner, true);
-    if (fills) { T.boost += .05; const r2 = talkRespond(partner, true); r2.line = say('fitWin') + ' ' + andYet(r2); return talkReply(partner, r2); }
-    r.line = say('fitLose') + (r.kind === 'yes' ? ' The deal still stands, though.' : ''); return talkReply(partner, r);
+    if (fills) { T.boost += .05; const r2 = talkRespond(partner, true); r2.line = say('fitWin') + ' ' + andYet(r2); r2.why = ['Your player fills a real hole for them, so your side counts for about 5% more.', ...(r2.why || [])]; return talkReply(partner, r2); }
+    r.line = say('fitLose') + (r.kind === 'yes' ? ' The deal still stands, though.' : ''); r.why = ['Nobody you are sending would start for them.', ...(r.why || [])]; return talkReply(partner, r);
   }
   if (move === 'final') {
     const {ratio} = talkEval(partner, d.give, d.get);
@@ -2111,7 +2162,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
