@@ -58,7 +58,7 @@ function assetMini(id) {
   const p = G.players[id];
   if (p) return `<div class="amini">${face(p, 'xs')}<span class="an">${pname(p)}</span><span class="muted small">${p.pos}</span><span class="ovrb sm ${oc(p.ovr)}">${p.ovr}</span></div>`;
   const k = G.picks.find(x => x.id === id);
-  return `<div class="amini"><span class="face xs pk" aria-hidden="true">R${k ? k.rd : '?'}</span><span class="an">${k ? esc(E.pickLabel(k)) : 'Pick'}</span><span class="muted small">pick</span></div>`;
+  return `<div class="amini"><span class="face xs pk" aria-hidden="true">R${k ? k.rd : '?'}</span><span class="an">${k ? esc(E.pickLabel(k)) : 'Pick'}</span></div>`;
 }
 // Pop-up for results: signings, trades, rejections
 function awardsCard(season) {
@@ -91,7 +91,7 @@ function popup(kicker, title, body, cls) {
 const isPick = id => !G.players[id];
 function assetGroup(ids) {
   const pl = ids.filter(id => !isPick(id)), pk = ids.filter(isPick);
-  return (pl.map(assetMini).join('') || '') + (pk.length ? `<div class="sublbl">Picks</div>${pk.map(assetMini).join('')}` : '') || '<span class="small muted">Nothing</span>';
+  return [...pl, ...pk].map(assetMini).join('') || '<span class="small muted">Nothing</span>';
 }
 function tradePopup(partner, give, get, how) {
   popup(how || 'Trade complete', `Deal with the ${esc(G.teams[partner].nick)}`, `<div class="offerb tradedone"><div><div class="lbl">You got</div>${assetGroup(get)}</div><div><div class="lbl">You sent</div>${assetGroup(give)}</div></div>`, 'win');
@@ -493,6 +493,7 @@ function perfectNow() {
 }
 function renderHeader() {
   renderBottomNav();
+  document.body.classList.toggle('ingame', !!G);
   try { document.title = G ? `${rec(G.user)} ${G.teams[G.user].nick} · 21-0` : '21-0: Run the Front Office'; } catch (e) { /* title is cosmetic */ }
   if (!G) {
     $('#hdr').innerHTML = `<div class="hbar"><button class="logo" data-tab="home" aria-label="21-0 home">21<span>-</span>0</button><div class="hmeta">Run the Front Office</div>
@@ -502,9 +503,10 @@ function renderHeader() {
   const tr = E.teamRating(G.user), cap = G.cap[G.season], pay = E.payroll(G.user);
   const rank = E.teamList().map(t => E.teamRating(t).ovr).filter(o => o > tr.ovr).length + 1;
   const n = offerCount();
-  const tabs = [['home', 'Front office'], ['roster', 'Roster'], ['trade', 'Trade'], ['league', 'League'], ['resume', 'Résumé']];
+  const tabs = [['home', 'Home'], ['roster', 'Roster'], ['trade', 'Trade'], ['league', 'League'], ['resume', 'Résumé']];
+  const a = nextAction();
   $('#hdr').innerHTML = `<div class="hbar">
-    <button class="logo" data-tab="home" aria-label="Front office" title="Shortcuts: N for the next step, 1 to 5 for tabs">21<span>-</span>0</button>
+    <button class="logo" data-tab="home" aria-label="Home" title="Shortcuts: N for the next step, 1 to 5 for sections">21<span>-</span>0</button>
     <div class="hteam">${badge(G.user)}<div class="hmeta"><b>${esc(G.teams[G.user].name)}${perfectNow() ? ' <i class="perfect" title="Still unbeaten">Perfect</i>' : ''}</b><span>${esc(phaseLabel())}</span></div></div>
     <div class="hstats">
       <div class="stat"><b class="num">${rec(G.user)}</b><span>${(() => { const k = E.streak(G.user, G.season); return k && G.phase !== 'offseason' ? `<em class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n}</em> streak` : 'Record'; })()}</span></div>
@@ -514,8 +516,10 @@ function renderHeader() {
     <div class="capbox"><div class="caprow"><span>${G.season} cap</span><span class="num"><b>${money(cap - pay)}</b> free</span></div>
       <div class="capbar ${pay > cap ? 'over' : ''}"><i style="width:${Math.min(100, pay / cap * 100)}%"></i></div></div>
   </div>
-  <nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}">${l}${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}
-    <span class="tabtools">${(() => { const a = nextAction(); return a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''; })()}<button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
+  <nav class="tabs" aria-label="Sections">
+    ${a ? `<button class="sidenext" data-act="${a.act}" ${a.k ? `data-k="${a.k}"` : ''} title="Shortcut: N"><span class="kicker">${esc(a.sub || 'Next')}</span><b>${esc(a.label)}</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>` : ''}
+    ${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k || (k === 'league' && UI.tab === 'league') ? 'on' : ''} ${k === 'resume' ? 'minor' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}"><svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICON[k]}</svg><span>${l}</span>${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}
+    <span class="tabtools">${a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''}<button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
 }
 
 // ---------- team picker ----------
@@ -544,23 +548,6 @@ function renderPicker() {
 }
 
 // ---------- outlook / expectations ----------
-function outlookCard(season, mode) {
-  const e = E.setExpectations(season);
-  let pr = null;
-  if (mode === 'live') { const key = season + '-' + G.week; if (!UI.proj || UI.proj.key !== key) UI.proj = {key, v: E.project(season, 500)[G.user]}; pr = UI.proj.v; }
-  const r = E.record(G.user, season);
-  const shown = pr || {w: e.wins, po: e.po, div: e.div, sb: e.sb};
-  const diff = pr ? Math.round((pr.w - e.wins) * 10) / 10 : 0;
-  return `<div class="card outlook"><div class="cardh"><h3>${mode === 'live' ? 'Rest-of-season outlook' : `${season} outlook`}</h3><span class="tag">#${e.rank} roster</span></div>
-    <div class="goal"><span class="kicker">Front office expects</span><b>${esc(e.goal)}</b></div>
-    ${confMeter()}
-    <div class="kpis">
-      <div><b class="num">${shown.w.toFixed(1)}</b><span>Projected wins${pr ? ` <em class="${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '+' : ''}${diff} vs preseason</em>` : ''}</span></div>
-      <div><b class="num">${pct(shown.po)}</b><span>Playoffs</span></div>
-      <div><b class="num">${pct(shown.sb)}</b><span>Super Bowl</span></div>
-    </div></div>`;
-}
-
 function confMeter() {
   const c = G.conf == null ? 55 : G.conf, last = (G.confLog || []).slice(-1)[0];
   const col = c >= 55 ? 'var(--good)' : c >= 35 ? 'var(--warn)' : 'var(--bad)';
@@ -621,22 +608,56 @@ function needModal(pos) {
 // ---------- offers ----------
 function offerCard(o, draft) {
   const ev = E.evalTrade(o.from, o.give, o.get);
-  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div><b>${esc(G.teams[o.from].name)}</b><div class="small muted">${esc(o.msg)}</div></div>${fairTag(ev.fair)}</div>
-    <div class="offerb"><div><div class="lbl">You get</div>${assetGroup(o.get)}</div><div><div class="lbl">You send</div>${assetGroup(o.give)}</div></div>
+  const why = o.kind === 'sell' ? 'Selling' : o.give.length && G.players[o.give[0]] ? `Need a ${G.players[o.give[0]].pos}` : draft ? 'Trading up' : '';
+  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div title="${esc(o.msg || '')}"><b>${esc(G.teams[o.from].name)}</b>${why ? `<div class="small muted">${why}</div>` : ''}</div>${fairTag(ev.fair)}</div>
+    <div class="offerb"><div><div class="lbl">Get</div>${assetGroup(o.get)}</div><div><div class="lbl">Send</div>${assetGroup(o.give)}</div></div>
     ${ev.issues.length ? `<div class="small bad">${esc(ev.issues[0])}</div>` : ''}
     <div class="row end"><button class="btn ghost sm" data-act="${draft ? 'declineDraft' : 'decline'}" data-id="${o.id}">Decline</button><button class="btn sm" data-act="counter" data-id="${o.id}" data-draft="${draft ? 1 : ''}">Counter</button><button class="btn sm go" data-act="${draft ? 'acceptDraft' : 'accept'}" data-id="${o.id}" ${ev.issues.length ? 'disabled' : ''}>Accept</button></div></div>`;
 }
-function inboxTeaser() {
-  if (!tradeOpen()) return '';
-  const L = G.offers || [];
-  return `<button class="mobonly inboxrow" data-act="openInbox"><span class="count">${L.length}</span><span><b>Trade offer${L.length === 1 ? '' : 's'} waiting</b><span class="small muted">${L.slice(0, 3).map(o => esc(G.teams[o.from].nick)).join(', ') || 'Ask around for offers'}</span></span><span class="chev" aria-hidden="true">›</span></button><div class="card deskonly"><div class="cardh"><h3>Trade inbox</h3><span class="tag ${L.length ? 'gold' : ''}">${L.length} offer${L.length === 1 ? '' : 's'}</span></div>
-    ${L.slice(0, 3).map(o => `<div class="prow" style="margin-bottom:8px">${badge(o.from, 1)}<div class="pmain"><div class="pn">${esc(G.teams[o.from].nick)}</div><div class="psub">Want ${o.give.map(id => esc(E.assetName(id))).join(', ')}</div></div></div>`).join('') || '<p class="muted">No offers yet.</p>'}
-    <div class="row"><button class="btn go" data-act="openInbox">Open inbox</button><button class="btn" data-act="openMake">Make a trade</button></div></div>`;
+// ---------- home building blocks ----------
+// Four numbers at a glance, then one row per thing that might need you. Every row opens the full detail.
+const ICO = {flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>', trade: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>', hurt: '<path d="M12 5v14M5 12h14"/>', target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+  money: '<path d="M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.6 0-4 1.3-4 3s1.6 2.5 4 3 4 1.3 4 3-1.6 3-4.3 3c-2 0-3.6-.8-4.4-2"/>', list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'};
+const srow = (ico, label, value, attrs, tone) => `<button class="srow ${tone || ''}" ${attrs}><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO[ico]}</svg></span><span class="slabel">${label}</span><span class="sval">${value}</span><span class="chev" aria-hidden="true">›</span></button>`;
+function liveProj(season) { const key = season + '-' + G.week; if (!UI.proj || UI.proj.key !== key) UI.proj = {key, v: E.project(season, 500)[G.user]}; return UI.proj.v; }
+function kpiStrip(season, live) {
+  const e = E.setExpectations(season), pr = live ? liveProj(season) : null, shown = pr || {w: e.wins, po: e.po, sb: e.sb};
+  const diff = pr ? Math.round((pr.w - e.wins) * 10) / 10 : null;
+  const c = G.conf == null ? 55 : G.conf, col = c >= 55 ? 'var(--good)' : c >= 35 ? 'var(--warn)' : 'var(--bad)';
+  return `<div class="kpistrip">
+    <div class="kpi"><span>Projected wins</span><b class="num">${shown.w.toFixed(1)}</b>${diff != null ? `<em class="${diff >= 0 ? 'good' : 'bad'}">${diff >= 0 ? '+' : ''}${diff} vs preseason</em>` : `<em>#${e.rank} roster</em>`}</div>
+    <div class="kpi"><span>Playoffs</span><b class="num">${pct(shown.po)}</b></div>
+    <div class="kpi"><span>Super Bowl</span><b class="num">${pct(shown.sb)}</b></div>
+    <button class="kpi" data-act="ownerSheet"><span>Owner</span><b style="color:${col}">${E.confLabel(c)}</b><i class="gbar"><i style="width:${c}%;background:${col}"></i></i></button></div>`;
 }
-function offersBlock() {
-  const L = G.offers || [];
-  return `<div class="card"><div class="cardh"><h3>Offers for you</h3><button class="btn ghost sm" data-act="moreOffers">Shop around</button></div>
-    ${L.length ? `<div class="offers">${L.map(o => offerCard(o)).join('')}</div>` : '<p class="muted">No offers on the table. Shop around to hear from more teams.</p>'}</div>`;
+function hurtStarters() {
+  const d = E.depth(G.user), wouldStart = p => { const L = d[p.pos], last = L[E.STARTERS[p.pos] - 1]; return !last || p.ovr > last.ovr; };
+  return E.roster(G.user).filter(p => p.inj).filter(wouldStart);
+}
+function homeRows(season) {
+  const e = E.setExpectations(season), rows = [];
+  rows.push(srow('flag', 'Owner expects', esc(e.goal), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
+  if (tradeOpen()) { const n = (G.offers || []).length; rows.push(srow('trade', 'Trade offers', n ? `${n} waiting` : 'None yet', 'data-act="openInbox"', n ? 'hot' : '')); }
+  const hurt = hurtStarters();
+  if (hurt.length) rows.push(srow('hurt', 'Injured starters', `${hurt.length} out`, 'data-act="injurySheet"', 'bad'));
+  const N = E.teamNeeds().filter(n => n.level !== 'Low').slice(0, 3);
+  rows.push(srow('target', 'Biggest needs', N.length ? N.map(n => n.pos).join(' · ') : 'None', 'data-act="rview" data-k="needs"'));
+  return `<div class="card slist">${rows.join('')}</div>`;
+}
+function ownerSheet() {
+  const s = G.season, e = E.setExpectations(s);
+  const log = (G.confLog || []).slice(-8).reverse();
+  modal(`<div class="sheeth"><div><div class="kicker">${s} · #${e.rank} roster</div><h3>The owner</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="goal"><span class="kicker">Front office expects</span><b>${esc(e.goal)}</b></div>
+    ${G.mandate ? `<div class="verdict bad">Hot seat: ${esc(G.mandate.goal.toLowerCase())} in ${G.mandate.season} or you are fired.</div>` : ''}
+    ${confMeter()}
+    ${log.length ? `<h4 class="sub">What moved it</h4>${log.map(x => `<div class="confline"><b class="${x.d >= 0 ? 'good' : 'bad'}">${x.d >= 0 ? '+' : ''}${x.d}</b><span>${esc(x.why)}</span><span class="small muted">${x.s}</span></div>`).join('')}` : '<p class="small muted">Win, hit your goal and make good trades to raise it. Losing streaks and bad deals lower it.</p>'}
+    <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
+}
+function injurySheet() {
+  const c = injuryCard();
+  modal(`<div class="sheeth"><div><div class="kicker">Backups moved up on their own</div><h3>Injuries</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${c ? c.replace('<div class="card injcard">', '<div class="injcard">').replace(/<div class="cardh"><h3>Injured starters<\/h3>.*?<\/div>/, '') : '<p class="muted">Nobody important is hurt.</p>'}
+    <div class="row end"><button class="btn" data-act="rview" data-k="lineup">Depth chart</button><button class="btn go" data-act="closeModal">Done</button></div>`, true);
 }
 
 // ---------- home by phase ----------
@@ -654,29 +675,26 @@ const poShort = r => /wild/i.test(r) ? 'WC' : /div/i.test(r) ? 'DIV' : /conf|cha
 function resultsStrip(season) {
   const L = userGames(season);
   if (!L.length) return '';
-  return `<div class="card resstrip"><div class="cardh"><h3>Your games</h3><span class="small muted">Tap for the box score</span></div><div class="rstrip">${L.map(g => {
+  return `<div class="card resstrip"><div class="cardh"><h3>Your games</h3></div><div class="rstrip">${L.map(g => {
     const home = g.h === G.user, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = home ? g.a : g.h, r = us > them ? 'w' : 'l';
     return `<button class="rchip ${r}" data-act="box" data-k="${gameKey(g)}" data-s="${season}"><b>${r.toUpperCase()}</b><span class="num">${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}</em><em>${g.po ? poShort(g.po) : 'Wk ' + g.wk}</em></button>`;
   }).join('')}</div></div>`;
 }
 function homePre() {
   const first = G.season === 2026;
-  return `<section class="hero"><div><div class="kicker">${G.season} season · Week 1 ${modeTag(G.mode)}</div>
+  return `<section class="hero"><div><div class="kicker">${G.season} · Week 1 ${modeTag(G.mode)}</div>
     <h2>${first ? 'Week 1. Make a move?' : `Your ${G.season} roster is set`}${helpBtn('pre')}</h2>
-    <p class="lead">${first ? 'Trades are open until kickoff. The next window is the Week 9 deadline.' : 'Trades are open until kickoff, then again at the Week 9 deadline.'}</p></div>
-    <div class="row"><button class="btn" data-tab="trade">Trade center${(G.offers || []).length ? ` · ${G.offers.length}` : ''}</button><button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></div></section>
-  ${injuryCard()}<div class="grid g2">${outlookCard(G.season)}<div class="card"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(3)}</div></div>`;
+    <p class="lead">Trades are open until kickoff, then at the Week 9 deadline.</p></div>
+    <div class="row"><button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></div></section>
+  ${kpiStrip(G.season)}${homeRows(G.season)}`;
 }
 function homeDeadline() {
   const r = E.record(G.user, G.season);
-  const last = userGames(G.season).slice(-9);
   return `<section class="hero"><div><div class="kicker">${G.season} trade deadline · after Week ${G.week}</div>
     <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2>
     <p class="lead">Your one trade window this season.</p></div>
-    <div class="row"><button class="btn" data-tab="trade">Open trade center</button><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
-  ${resultsStrip(G.season)}<div class="grid g2">${inboxTeaser()}${injuryCard()}${outlookCard(G.season, 'live')}
-    <div class="card homeneeds"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(3)}</div>
-  </div>`;
+    <div class="row"><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
+  ${kpiStrip(G.season, true)}${resultsStrip(G.season)}${homeRows(G.season)}`;
 }
 function homePlayoffs() {
   const P = G.playoffs[G.season];
@@ -687,7 +705,7 @@ function homePlayoffs() {
     <h2>${alive ? `${f.w}-${f.l}. ${4 - P.round} wins from a title.` : esc(f.label) + '.'}${helpBtn('playoffs')}</h2>
     <p class="lead">${alive ? 'Play it one round at a time.' : 'Your season is over. Finish the bracket to see who wins it.'}</p></div>
     <div class="row"><button class="btn" data-act="poSkip">Skip to the end</button><button class="btn go lg" data-act="poNext">Play the ${esc(E.ROUND_NAMES[P.round])}</button></div></section>
-  ${injuryCard()}${resultsStrip(G.season)}<div class="card">${bracket()}</div>`;
+  ${resultsStrip(G.season)}${hurtStarters().length ? `<div class="card slist">${srow('hurt', 'Injured starters', `${hurtStarters().length} out`, 'data-act="injurySheet"', 'bad')}</div>` : ''}<div class="card">${bracket()}</div>`;
 }
 function homeSeasonDone() {
   const f = E.userFinish(G.season), P = G.playoffs[G.season], gm = E.goalMet(G.season);
@@ -716,9 +734,13 @@ function homeProgress() {
   return `${stepper(0)}<section class="hero"><div><h2>A year older${helpBtn('progress')}</h2>
     <p class="lead">Ratings changed. Next, decide who to keep.</p></div>
     <button class="btn go lg" data-act="toResign">Next: re-sign your players</button></section>
-  <div class="grid g2"><div class="card"><h3>Your roster changes</h3><div class="plist">
-  ${up.filter(x => x.now !== x.old).sort((a, b) => Math.abs(b.now - b.old) - Math.abs(a.now - a.old)).map(x => { const p = G.players[x.id]; return `<div class="prow">${face(p || {n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${p ? pname(p) : esc(x.n)}</div><div class="psub">${x.pos} · ${x.old} → ${x.now}</div></div><span class="tag ${x.now > x.old ? 'good' : x.now < x.old ? 'bad' : ''}">${x.now > x.old ? '+' : ''}${x.now - x.old}</span></div>`; }).join('')}
-  ${ret.map(x => `<div class="prow">${face({n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${esc(x.n)}</div><div class="psub">${x.pos}</div></div><span class="tag bad">Retired</span></div>`).join('')}</div></div></div>`;
+  ${(() => { const ch = up.filter(x => x.now !== x.old).sort((a, b) => Math.abs(b.now - b.old) - Math.abs(a.now - a.old));
+    const row = x => { const p = G.players[x.id]; return `<div class="prow">${face(p || {n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${p ? pname(p) : esc(x.n)}</div><div class="psub">${x.pos} · ${x.old} → ${x.now}</div></div><span class="tag ${x.now > x.old ? 'good' : x.now < x.old ? 'bad' : ''}">${x.now > x.old ? '+' : ''}${x.now - x.old}</span></div>`; };
+    const gain = ch.filter(x => x.now > x.old).length;
+    return `<div class="kpistrip three"><div class="kpi"><span>Improved</span><b class="num good">${gain}</b></div><div class="kpi"><span>Declined</span><b class="num bad">${ch.length - gain}</b></div><div class="kpi"><span>Retired</span><b class="num">${ret.length}</b></div></div>
+    <div class="grid g2"><div class="card"><h3>Biggest changes</h3><div class="plist">${ch.slice(0, 8).map(row).join('') || '<p class="muted small">No changes.</p>'}</div>
+    ${ch.length > 8 ? `<details class="fold" data-fold="progall" ${foldOpen('progall')}><summary>All ${ch.length} changes</summary><div class="plist">${ch.slice(8).map(row).join('')}</div></details>` : ''}</div>
+    ${ret.length ? `<div class="card"><h3>Retired</h3><div class="plist">${ret.map(x => `<div class="prow">${face({n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${esc(x.n)}</div><div class="psub">${x.pos}</div></div><span class="tag bad">Retired</span></div>`).join('')}</div></div>` : ''}</div>`; })()}`;
 }
 // Unsigned players from the re-sign list: the starters among them, what they would cost, and what losing them costs in wins.
 function pendingResign() {
@@ -757,9 +779,9 @@ function homeResign() {
   const d = E.depth(G.user);
   const starter = p => d[p.pos].indexOf(p) > -1 && d[p.pos].indexOf(p) < E.STARTERS[p.pos];
   return `${stepper(1)}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
-    <p class="lead">Keep who you want. Anyone left goes to free agency. You have ${money(E.capSpace(G.user))} free.</p></div>
-    <div class="row"><button class="btn ghost" data-act="capRoom">Make cap room</button><button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
-  ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} of your starters ${R.starters.length > 1 ? 'are' : 'is'} unsigned.</b><span class="small muted">Anyone you do not re-sign leaves when you move on. Losing them costs about ${R.wins.toFixed(1)} wins.</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices.</span>'}<button class="btn" data-act="capRoom">Make cap room</button></div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
+    <p class="lead">${money(E.capSpace(G.user))} cap space. Anyone you do not keep becomes a free agent.</p></div>
+    <div class="row">${pendingResign().starters.length ? '' : '<button class="btn ghost" data-act="capRoom">Make cap room</button>'}<button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
+  ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} unsigned starter${R.starters.length > 1 ? 's' : ''}</b><span class="small muted">About ${R.wins.toFixed(1)} wins walk out the door if they leave</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices.</span>'}<button class="btn" data-act="capRoom">Make cap room</button></div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
   <div class="card"><div class="plist">${list.slice().sort((a, b) => (starter(b.p) - starter(a.p)) || b.p.ovr - a.p.ovr).map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
     ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><span class="chev deskonly-inline" aria-hidden="true">›</span><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
 }
@@ -890,7 +912,7 @@ function lineupView() {
     <div class="field">${rows.map(r => `<div class="frow">${r.map(([pos, i]) => slotChip(d, pos, i, needs)).join('')}</div>`).join('')}</div></div>`;
   const order = ['QB', 'RB', 'WR', 'TE', 'OT', 'IOL', 'EDGE', 'DT', 'LB', 'CB', 'S', 'K', 'P'];
   const mob = `<div class="mobonly card mdepth">${order.map(pos => { const L = d[pos], n = E.STARTERS[pos], nd = needs.find(x => x.pos === pos); return `<button class="mrow" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}${nd ? `<i class="g${RANK_LETTER(nd.rank)}">${RANK_LETTER(nd.rank)}</i>` : ''}</span><span class="mfaces">${L.slice(0, n).map(p => `<span class="mp">${face(p, 'sm')}<span><b class="${oc(p.ovr)}">${p.ovr}</b> ${esc(lastName(p.n))}</span></span>`).join('') || '<span class="bad small">Empty</span>'}</span><span class="chev" aria-hidden="true">›</span></button>`; }).join('')}</div>`;
-  return `${mob}<div class="deskonly"><p class="hint">Tap a player to change the depth chart at that spot. Red rings mark a high-need position.</p>
+  return `${mob}<div class="deskonly"><p class="hint">Tap a player to change the depth chart. Red ring: a big need.</p>
     <div class="grid">${field('Offense', OFF_ROWS, `${tr.off} OVR`)}${field('Defense', DEF_ROWS, `${tr.def} OVR`)}</div>
     <div class="card" style="margin-top:14px"><div class="cardh"><h3>Specialists</h3></div><div class="frow left">${slotChip(d, 'K', 0, needs)}${slotChip(d, 'P', 0, needs)}</div></div></div>`;
 }
@@ -1003,7 +1025,7 @@ function talkSheet(P, typing) {
     const isLast = i === log.length - 1;
     let extra = '';
     if (isLast && m.kind === 'counter') { UI.counter = {partner: P, list: m.counters}; const base = T.deal || {give: [], get: []}; extra = m.counters.map((x, j) => `<div class="talkcounter"><div class="bubt">${esc(x.label)}</div><div class="talkdeal"><div><div class="lbl">You send</div>${diffSide(x.give, base.give)}</div><div><div class="lbl">You get</div>${diffSide(x.get, base.get)}</div></div><div class="row"><button class="btn go sm" data-act="counterAccept" data-i="${j}">Accept</button><button class="btn sm" data-act="talkMove" data-k="work" data-id="${j}">Work from this</button><button class="btn sm ghost" data-act="counterEdit" data-i="${j}">Builder</button></div></div>`).join(''); }
-    if (isLast && m.kind === 'alts') extra = `<div class="talkalts">${m.alts.map(id => `<div class="trow">${pRow(G.players[id], money(G.players[id].cap) + ' thru ' + G.players[id].end)}<button class="btn sm" data-act="talkMove" data-k="swap" data-id="${id}">Ask about him</button></div>`).join('')}</div>`;
+    if (isLast && m.kind === 'alts') extra = `<div class="talkalts">${m.alts.map(id => `<div class="trow">${pRow(G.players[id])}<button class="btn sm" data-act="talkMove" data-k="swap" data-id="${id}">Ask about him</button></div>`).join('')}</div>`;
     return `<div class="bub them ${m.kind}">${badge(P, 1)}<div><div class="bubl">${esc(m.line)}</div>${extra}</div></div>`;
   };
   const pat = Math.max(0, T.patience), over = !last || last.done || pat <= 0;
@@ -1077,7 +1099,7 @@ function renderTrade() {
   <div class="mobonly tmobseg">${seg('tmob', [['give', 'Your team' + (UI.give.length ? ' · ' + UI.give.length : '')], ['get', esc(G.teams[P].nick) + (UI.get.length ? ' · ' + UI.get.length : '')], ['panel', 'Needs']], UI.tmob || 'give')}</div>
   <div class="tradecols m-${UI.tmob || 'give'}">
     <div class="card col-give"><div class="cardh"><h3>Your team</h3><span class="row nowrap">${want.size ? `<span class="tag gold">${want.size} they want</span>` : ''}<span class="small muted">Value to them</span></span></div>${side('tsGive', mine, picks(G.user), 'tposGive')}</div>
-    <div class="card col-get"><div class="cardh"><h3>${esc(G.teams[P].name)}</h3><span class="small muted">Value to them</span></div>${side('tsGet', theirs, picks(P), 'tposGet')}</div>
+    <div class="card col-get"><div class="cardh"><h3>${esc(G.teams[P].name)}</h3><span class="small muted">Value to them</span></div><div class="deskonly needline"><span class="lbl">Your needs</span>${needChips('tNeedPos', UI.tposGet)}<button class="linkbtn" data-act="depthSheet">Depth chart</button></div>${side('tsGet', theirs, picks(P), 'tposGet')}</div>
     <div class="col-panel">${teamPanel('tNeedPos', UI.tposGet)}</div>
   </div>
   <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(mood)}</span><span class="dp-go">Review</span></button>
@@ -1103,10 +1125,10 @@ function blockTab() {
   const league = E.cached(() => E.teamList().filter(t => t !== G.user).flatMap(t => E.onBlock(t, 3).map(x => ({...x, t}))).sort((a, b) => b.v - a.v).slice(0, 20))();
   return `<div class="grid g2">
     <div class="card"><div class="cardh"><h3>Your trade block</h3>${wantPicker('blockWant', B.want)}</div>
-      ${yours || '<p class="small muted">Put players up and teams make offers. Tap + on anyone below.</p>'}
+      ${yours || '<p class="small muted">Tap + to shop a player.</p>'}
       <div class="lbl" style="margin-top:12px">Your players</div>${posChips('tposBlock', UI.tposBlock)}
-      <div class="alist">${mine.map(p => `<div class="trow">${pRow(p, `${money(p.cap)} thru ${p.end}`)}<button class="btn sm" data-act="blockToggle" data-id="${p.id}">+ Block</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div></div>
-    <div class="card"><h3>On other teams' blocks</h3><div class="alist">${league.map(x => `<div class="trow">${pRow(x.p, `${esc(tname(x.t))} · ${esc(x.why)}`)}<button class="btn sm" data-act="findFor" data-id="${x.p.id}">Find a deal</button></div>`).join('') || '<p class="small muted">Nobody is being shopped right now.</p>'}</div></div>
+      <div class="alist">${mine.map(p => `<div class="trow">${pRow(p)}<button class="btn sm" data-act="blockToggle" data-id="${p.id}">+ Block</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div></div>
+    <div class="card"><h3>On other teams' blocks</h3><div class="alist">${league.map(x => `<div class="trow" title="${esc(x.why)}">${pRow(x.p, esc(G.teams[x.t].nick))}<button class="btn sm" data-act="findFor" data-id="${x.p.id}">Find a deal</button></div>`).join('') || '<p class="small muted">Nobody is being shopped right now.</p>'}</div></div>
   </div>`;
 }
 
@@ -1119,9 +1141,10 @@ function classView() {
     </div>`;
 }
 function renderLeague() {
-  const more = [['scores', 'Scores'], ['schedule', 'Schedule'], ['leaders', 'Leaders'], ['awards', 'Awards'], ['moves', 'Your moves'], ['classview', `${E.nextDraftYear()} draft class`], ['resume', 'Résumé']];
-  const cur = more.find(([k]) => k === UI.league);
-  const nav = `<div class="lgnav"><button class="btn ${!cur ? 'go' : ''} sm" data-act="seg" data-seg="league" data-k="standings">Standings</button><span class="moremenu"><button class="btn sm ${cur ? 'go' : 'ghost'}" data-act="lgMore" aria-expanded="${!!UI.lgMore}">${cur ? esc(cur[1]) : 'More'} ▾</button>${UI.lgMore ? `<span class="morepop down">${more.map(([k, l]) => `<button class="btn sm ${k === UI.league ? 'go' : 'ghost'}" data-act="seg" data-seg="league" data-k="${k}">${esc(l)}</button>`).join('')}</span>` : ''}</span></div>`;
+  const main = [['standings', 'Standings'], ['scores', 'Scores'], ['leaders', 'Leaders']];
+  const more = [['schedule', 'Schedule'], ['awards', 'Awards'], ['moves', 'Your moves'], ['classview', `${E.nextDraftYear()} draft class`], ['resume', 'Résumé']];
+  const cur = more.find(([k]) => k === UI.league), lg = UI.league || 'standings';
+  const nav = `<div class="lgnav"><div class="seg">${main.map(([k, l]) => `<button class="${lg === k ? 'on' : ''}" data-act="seg" data-seg="league" data-k="${k}">${l}</button>`).join('')}</div><span class="moremenu"><button class="btn sm ${cur ? 'go' : 'ghost'}" data-act="lgMore" aria-expanded="${!!UI.lgMore}">${cur ? esc(cur[1]) : 'More'} ▾</button>${UI.lgMore ? `<span class="morepop down">${more.map(([k, l]) => `<button class="btn sm ${k === UI.league ? 'go' : 'ghost'}" data-act="seg" data-seg="league" data-k="${k}">${esc(l)}</button>`).join('')}</span>` : ''}</span></div>`;
   let body;
   if (UI.league === 'resume') return `<section class="hero tight"><div><h2>League</h2></div>${nav}</section>` + renderResume();
   if (UI.league === 'schedule') body = renderSchedule();
@@ -1802,6 +1825,11 @@ async function saveCard() {
 }
 
 // ---------- your team panel: needs + depth chart ----------
+// Your needs as small grade chips; tapping one filters a list to that position
+function needChips(act, cur) {
+  const needs = E.teamNeeds().filter(n => n.level !== 'Low');
+  return `<span class="needchips2">${needs.map(n => `<button class="nchip ${n.level === 'High' ? 'hi' : ''} ${cur === n.pos ? 'on' : ''}" data-act="${act}" data-k="${cur === n.pos ? 'ALL' : n.pos}"><span class="ng sm g${RANK_LETTER(n.rank)}">${RANK_LETTER(n.rank)}</span>${n.pos}</button>`).join('') || '<span class="small muted">No big holes</span>'}</span>`;
+}
 function teamPanel(act, cur) {
   const N = E.teamNeeds(), d = E.depth(G.user), tr = E.teamRating(G.user);
   const order = ['QB', 'RB', 'WR', 'TE', 'OT', 'IOL', 'EDGE', 'DT', 'LB', 'CB', 'S', 'K'];
@@ -1831,7 +1859,7 @@ function ddPick(id, v) {
 // ---------- free agency: meetings, offers, waves ----------
 function interestBar(it) {
   const c = it.score >= 65 ? 'var(--good)' : it.score >= 40 ? 'var(--warn)' : 'var(--bad)';
-  return `<span class="ilab">Interest</span><div class="ibar" title="How much he wants to play for you"><i style="width:${it.score}%;background:${c}"></i></div><b class="num" style="color:${c}">${it.score}</b>`;
+  return `<div class="ibar" title="Interest: how much he wants to play for you" aria-label="Interest ${it.score}"><i style="width:${it.score}%;background:${c}"></i></div><b class="num" style="color:${c}">${it.score}</b>`;
 }
 function homeFA() {
   G.fa.met = G.fa.met || {}; G.fa.offers = G.fa.offers || {}; G.fa.decisions = G.fa.decisions || []; G.fa.meetings = G.fa.meetings || 0;
@@ -1851,7 +1879,7 @@ function homeFA() {
       <div class="small muted">Match at ${money(dc.match)} per year and he is yours.</div></div>
       <div class="row nowrap"><button class="btn sm ghost" data-act="faPass" data-id="${p.id}">Let him go</button><button class="btn sm go" data-act="faMatch" data-id="${p.id}" ${dc.match > space ? 'disabled title="Not enough cap space"' : ''}>Match ${money(dc.match)}</button></div></div>`; }).join('');
   return `${stepper(2)}<section class="hero"><div><h2>Free agency · wave ${Math.min(F.wave, 3)} of 3${helpBtn('fa')}</h2>
-    <p class="lead">Sign at the asking price, or tap a player to meet him or offer less.</p></div>
+    <p class="lead">Sign at the ask, or tap a player to meet him or offer less.</p></div>
     <div class="row">${F.wave <= 3 && !F.decisions.length ? `<button class="btn go lg" data-act="faWave">End wave ${F.wave}</button>` : ''}<button class="btn" data-act="toDraft">${F.wave > 3 ? 'Next: the draft' : 'Skip to the draft'}</button></div></section>
   ${decisions ? `<div class="card decisions"><div class="cardh"><h3>Decision time</h3><span class="small muted">Rivals made better offers. Match or walk away before the next wave.</span></div>${decisions}</div>` : ''}
   <div class="toolbar fatool"><button class="btn needsbtn" data-act="needsSheet">Needs</button><label class="search fasearch"><span class="sr">Search free agents</span><input id="faQ" type="search" placeholder="Search by name or old team" value="${esc(UI.faQ || '')}" autocomplete="off"></label>${seg('faFit', [['need', 'Fits my needs'], ['all', 'Everyone']], UI.faFit)}${dd('faPos', posOpts, UI.faPos)}
@@ -1863,8 +1891,8 @@ function homeFA() {
       <div class="psub">${p.pos} · ${Math.floor(p.age)} · <span class="${up > 0 ? 'gold' : ''}">${!st ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'depth'}</span></div></div>
       <span class="ovrb ${oc(p.ovr)}">${p.ovr}</span><div class="icell">${interestBar(it)}</div>
       <div class="row nowrap"><span class="chev deskonly-inline" aria-hidden="true">›</span><button class="btn sm go" data-act="faSign" data-id="${p.id}" ${E.faPrice(p) > space ? 'disabled title="Not enough cap space"' : ''}>Sign ${money(E.faPrice(p))}</button></div></div>`; }).join('') || (q ? `<p class="muted">No free agent matches "${esc(UI.faQ)}". He may have signed already.</p>` : '<p class="muted">Nobody left who upgrades a need. Switch to Everyone to see the whole pool.</p>')}</div></div>
-  <div class="grid"><div class="deskonly">${teamPanel('faNeedPos', UI.faPos)}</div>${open.length ? `<div class="card"><h3>Your offers</h3>${open.map(([pid, o]) => { const p = G.players[pid]; return `<div class="trow">${pRow(p, `${money(o.apy)} × ${o.yrs} yr`)}<button class="xs" data-act="faCancel" data-id="${pid}" aria-label="Withdraw offer">×</button></div>`; }).join('') .join('')}</div>` : ''}
-  <div class="card"><h3>The wire</h3><ul class="news">${F.log.slice(0, 40).map(n => `<li>${esc(n)}</li>`).join('') || '<li class="muted">Nobody has signed yet.</li>'}</ul></div></div></div>`;
+  <div class="grid"><div class="deskonly">${teamPanel('faNeedPos', UI.faPos)}</div>${open.length ? `<div class="card"><h3>Your offers</h3>${open.map(([pid, o]) => { const p = G.players[pid]; return `<div class="trow">${pRow(p, `${money(o.apy)} × ${o.yrs} yr`)}<button class="xs" data-act="faCancel" data-id="${pid}" aria-label="Withdraw offer">×</button></div>`; }).join('')}</div>` : ''}
+  <details class="fold card" data-fold="wire" ${foldOpen('wire')}><summary>The wire <span class="small muted">${F.log.length} signing${F.log.length === 1 ? '' : 's'}</span></summary><ul class="news">${F.log.slice(0, 40).map(n => `<li>${esc(n)}</li>`).join('') || '<li class="muted">Nobody has signed yet.</li>'}</ul></details></div></div>`;
 }
 function stepperRow(id, val, min) {
   return `<div class="stepper2"><button class="btn icon" data-act="apyStep" data-id="${id}" data-d="-0.5" aria-label="Lower">−</button><label><span class="sr">Per year ($M)</span><input id="apy-${id}" type="number" step="0.1" min="${min}" value="${val}"></label><button class="btn icon" data-act="apyStep" data-id="${id}" data-d="0.5" aria-label="Raise">+</button><span class="small muted">$M per year</span></div>`;
@@ -1941,7 +1969,7 @@ function render() {
 }
 const foldOpen = k => (UI.folds || {})[k] ? 'open' : '';
 document.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.fold) (UI.folds = UI.folds || {})[d.dataset.fold] = d.open; }, true);
-// 3. the back button: closes a sheet, then goes back to Front office, before it ever leaves the game
+// 3. the back button: closes a sheet, then goes back to Home, before it ever leaves the game
 const NAV = {pushed: false};
 function navMark() { if (NAV.pushed) return; try { history.pushState({inGame: 1}, ''); NAV.pushed = true; } catch (e) { /* history unavailable */ } }
 window.addEventListener('popstate', () => {
@@ -2016,6 +2044,9 @@ document.addEventListener('click', e => {
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
     case 'faSheet': faSheet(el.dataset.k); return;
+    case 'ownerSheet': ownerSheet(); return;
+    case 'depthSheet': modal(`<div class="sheeth"><h3>Your team</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel(null).replace('<details class="fold dfold" data-fold="depth" ', '<details class="fold dfold" open ')}`, true); return;
+    case 'injurySheet': injurySheet(); return;
     case 'midSign': { const r = E.signMidseason(id); if (!r.ok) { toast(r.msg); return; } persist(); render(); toast(`${G.players[id].n} signed for the rest of the season: ${money(r.price)}.`); faSheet(); return; }
     case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } break;
     case 'tPartner': UI.partner = el.dataset.t || null; UI.get = []; UI.tposGet = 'ALL'; window.scrollTo(0, 0); break;

@@ -34,6 +34,7 @@
 - **Scout ahead.** The next draft class is in League › More, well before draft day.
 - **Box scores for every game.** Tap any result for passing, rushing, receiving, defense and kicking lines and a player of the game. Season stats (completions, carries, targets, tackles, pass breakups, field goals) are built play by play and land in real NFL ranges.
 - **A draft you can follow.** The draft shows who is on the clock, a ticker of the picks around now, the big board, and the full order round by round.
+- **Calm by default.** Home shows four numbers and a short list of things that might need you: the owner, trade offers, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
 ## Controls
@@ -41,7 +42,7 @@
 | Key | Action |
 |---|---|
 | `N` | Do the next step (sim, play the next round, end the wave...) |
-| `1`–`5` | Front office, Roster, Trade, League, Résumé |
+| `1`–`5` | Home, Roster, Trade, League, Résumé |
 | `Esc` | Close a pop-up or menu |
 
 On a phone, the gold ▶ button in the middle of the tab bar always does the next step.
