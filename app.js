@@ -2006,7 +2006,7 @@ function homeFA() {
   const row = p => {
     const it = E.interest(p, G.user), [ic, il] = interestWord(it.score), up = upOf(p), price = E.faPrice(p), yrs = E.yearsFor(p), c = F.counter[p.id];
     return `<div class="farow2" data-act="faOpen" data-id="${p.id}">${face(p, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)}${needPos.has(p.pos) && up > 0 ? ' <span class="tag gold">Need</span>' : ''}</div>
-      <div class="psub">${p.pos} · ${Math.floor(p.age)} · <span class="${up > 0 ? 'good' : ''}">${up > 0 ? '+' + up + ' over your starter' : 'Depth'}</span> · <span class="${ic}">${il}</span></div></div>
+      <div class="psub">${p.pos} · ${Math.floor(p.age)} · <span class="${up > 0 ? 'good' : ''}">${!d[p.pos][E.STARTERS[p.pos] - 1] ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'Depth'}</span> · <span class="${ic}">${il}</span></div></div>
       <span class="ovrb ${oc(p.ovr)}">${p.ovr}</span>
       <div class="faprice"><b class="num">${money(c ? c.apy : price)}</b><span class="small muted">${c ? 'his counter' : `× ${yrs} yr`}</span></div>
       <button class="btn sm ${price <= space ? 'go' : ''}" data-act="${price <= space ? 'faSign' : 'faOpen'}" data-id="${p.id}">${price <= space ? 'Sign' : 'Offer'}</button></div>`;
@@ -2050,7 +2050,7 @@ function faModal(id, msg) {
     return `<button class="offerbtn ${k === 1 ? 'main' : ''}" data-act="faBid" data-id="${id}" data-v="${v}" ${over || walked ? 'disabled' : ''}><b class="num">${money(v)}</b><span>${label}</span><em class="${odds === 'Long shot' ? 'bad' : odds === 'He may counter' ? 'warn' : 'good'}">${over ? 'Over your cap' : odds}</em></button>`; };
   const {w} = E.priorities(p), pri = [['Money', w.money], ['Winning', w.win], ['Role', w.role], ['Loyalty', w.loyal]].sort((a, b) => b[1] - a[1]);
   modal(`<div class="pchead">${face(p, 'xl')}<div class="pcmid"><div class="kicker">${p.pos} · ${Math.floor(p.age)} · ${p.fromTeam ? 'last ' + esc(tname(p.fromTeam)) : 'free agent'}</div><h3>${esc(p.n)}</h3>
-      <div class="pchips"><span class="tag ${ic}">${il} · ${it.score}</span><span class="tag ${up > 0 ? 'gold' : ''}">${up > 0 ? '+' + up + ' over your starter' : 'Depth'}</span><span class="tag">Wants ${E.yearsFor(p)} yr</span></div></div>
+      <div class="pchips"><span class="tag ${ic}">${il} · ${it.score}</span><span class="tag ${up > 0 ? 'gold' : ''}">${!st ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'Depth'}</span><span class="tag">Wants ${E.yearsFor(p)} yr</span></div></div>
       <div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     ${msg ? `<div class="agent">${esc(msg)}</div>` : ''}
     ${c && !walked ? `<div class="counterbar"><div><b>He will sign for ${money(c.apy)} × ${c.yrs} yr</b><span class="small muted">Accept now, before another team does</span></div><button class="btn go" data-act="faTake" data-id="${id}" ${c.apy > space ? 'disabled' : ''}>Accept</button></div>` : ''}
