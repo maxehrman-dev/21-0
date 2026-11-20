@@ -308,7 +308,7 @@ function recordRun(final) {
     const f = E.userFinish(s), gm = E.goalMet(s);
     seasons[s] = {w: f.w, l: f.l, rw: f.rw, rl: f.rl, label: f.label, champ: P.champ === G.user, perfect: !!f.perfect, po: f.label !== 'Missed playoffs', sb: P.champ === G.user || f.label === 'Lost in the Super Bowl', goal: gm ? gm.goal : '', met: gm ? !!gm.met : null};
   }
-  const run = Object.assign({}, prev, {team: G.user, startedAt: G.startedAt, updatedAt: Date.now(), startOvr: G.start ? G.start.ovr : G.startOvr, startRank: G.startRank || prev.startRank || null, seasons, trades: G.trades.length, mode: G.mode || 'standard', fired: G.fired || null, extended: (G.extended || []).length});
+  const run = Object.assign({}, prev, {team: G.user, startedAt: G.startedAt, updatedAt: Date.now(), startOvr: G.start ? G.start.ovr : G.startOvr, startRank: G.startRank || prev.startRank || null, seasons, trades: G.trades.length, goals: Object.values(G.goalsHit || {}).reduce((a, b) => a + b, 0), mode: G.mode || 'standard', fired: G.fired || null, extended: (G.extended || []).length});
   if (final) {
     const R = E.rebuildReport();
     Object.assign(run, {done: true, score: R.score, grade: R.grade, style: R.style.name, endOvr: R.now.ovr});
@@ -409,8 +409,38 @@ function helpSheet(k) {
   modal(`<div class="sheeth"><div><div class="kicker">How it works</div><h3>${title}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="helplist">${rows.map(([h, t]) => `<div class="helprow"><b>${h}</b><span>${t}</span></div>`).join('')}</div>
     <p class="small muted soundline">Sound effects are ${SND.on ? 'on' : 'off'}. <button class="linkbtn" data-act="sound">Turn ${SND.on ? 'off' : 'on'}</button></p>
-    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : ''}<button class="btn go" data-act="closeModal">Got it</button></div>`, true);
+    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : G ? '<button class="btn ghost" data-act="guide">Show me around</button>' : ''}<button class="btn go" data-act="closeModal">Got it</button></div>`, true);
 }
+// ---------- first-time guide ----------
+// Four stops, one thing lit up at a time: the goal, the button that moves the season, trades, and your roster.
+const GUIDE = [
+  {sel: ['.kpistrip'], k: 'Your job', t: 'Win, and keep the owner happy', b: 'These are your odds this season. The owner sets a goal, and you get three season goals of your own on top.'},
+  {sel: ['#hdr .sidenext', '#bnav .bnext'], k: 'Moving forward', t: 'This button plays the season', b: 'It always does the next thing: play a week, sim to the trade deadline, start the offseason. Nothing happens until you press it.'},
+  {sel: ['#hdr nav.tabs [data-tab=trade]', '#bnav [data-tab=trade]'], k: 'Making moves', t: 'Trades are where you win', b: 'Teams send offers, and you can call any GM. Every offer shows what it does to your wins this season.'},
+  {sel: ['#hdr nav.tabs [data-tab=roster]', '#bnav [data-tab=roster]'], k: 'Your team', t: 'Check your roster', b: 'Your lineup, your biggest needs, and every player\'s rating with the reasons behind it. Then press play.'},
+];
+function guideTarget(i) {
+  for (const q of GUIDE[i].sel) { const el = document.querySelector(q); if (el) { const r = el.getBoundingClientRect(); if (r.width && r.height) return r; } }
+  return null;
+}
+function showGuide(i) {
+  UI.guide = i;
+  let g = $('#guide');
+  if (i == null || i >= GUIDE.length) { if (g) g.remove(); UI.guide = null; return; }
+  if (!g) { g = document.createElement('div'); g.id = 'guide'; document.body.appendChild(g); }
+  const r = guideTarget(i), S = GUIDE[i], pad = 6;
+  if (r && (r.top < 0 || r.bottom > innerHeight)) { window.scrollTo({top: Math.max(0, scrollY + r.top - 120)}); return setTimeout(() => showGuide(i), 60); }
+  const spot = r ? `left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + pad * 2}px;height:${r.height + pad * 2}px` : 'left:50%;top:50%;width:0;height:0';
+  const W = Math.min(340, innerWidth - 32), below = r && r.bottom + 220 < innerHeight;
+  let left = r ? Math.min(Math.max(16, r.left), innerWidth - W - 16) : (innerWidth - W) / 2;
+  let top = r ? (below ? r.bottom + 16 : Math.max(16, r.top - 16 - 210)) : innerHeight / 2 - 110;
+  if (r && r.right + W + 32 < innerWidth && r.height > 120) { left = r.right + 20; top = Math.max(16, Math.min(r.top, innerHeight - 240)); }   // a tall target: put the tip beside it
+  if (r && r.left < 260 && r.width < 260 && innerWidth >= 1100) { left = r.right + 20; top = Math.max(16, Math.min(r.top - 20, innerHeight - 240)); }      // sidebar items: tip to the right
+  g.innerHTML = `<div class="gspot" style="${spot}"></div><div class="gtip" role="dialog" aria-label="${esc(S.t)}" style="left:${left}px;top:${top}px">
+    <div class="kicker">${esc(S.k)} · ${i + 1} of ${GUIDE.length}</div><h3>${esc(S.t)}</h3><p>${esc(S.b)}</p>
+    <div class="gfoot"><span class="gdots">${GUIDE.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('')}</span><span class="row nowrap"><button class="btn ghost sm" data-act="guideSkip">Skip</button><button class="btn go sm" data-act="guideNext">${i === GUIDE.length - 1 ? 'Let\'s go' : 'Next'}</button></span></div></div>`;
+}
+addEventListener('resize', () => { if (UI.guide != null) showGuide(UI.guide); });
 const helpBtn = k => `<button class="qhelp" data-act="help" data-k="${k}" aria-label="How this works">?</button>`;
 
 // ---------- sound ----------
@@ -626,8 +656,11 @@ function needModal(pos) {
 // ---------- offers ----------
 function offerCard(o, draft) {
   const ev = E.evalTrade(o.from, o.give, o.get);
-  const why = o.kind === 'sell' ? 'Selling' : o.give.length && G.players[o.give[0]] ? `Need a ${G.players[o.give[0]].pos}` : draft ? 'Trading up' : '';
-  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div title="${esc(o.msg || '')}"><b>${esc(G.teams[o.from].name)}</b>${why ? `<div class="small muted">${why}</div>` : ''}</div>${fairTag(ev.fair)}</div>
+  // the one line that decides it: what this does to your team this season
+  const dw = E.winsDelta(G.user, o.get, o.give), onlyPicks = o.get.every(id => !G.players[id]);
+  const ch = E.chemTrade(o.give, o.get).d;
+  const eff = (Math.abs(dw) < .05 ? 'No change this season' : `<b class="${dw > 0 ? 'good' : 'bad'}">${winsTxt(dw)}</b> this season${dw < 0 && onlyPicks ? ', picks for later' : ''}`) + (ch <= -3 ? ` · <span class="bad">locker room ${ch}</span>` : '');
+  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div title="${esc(o.msg || '')}"><b>${esc(G.teams[o.from].name)}</b><div class="small muted">${eff}</div></div>${fairTag(ev.fair)}</div>
     <div class="offerb"><div><div class="lbl">Get</div>${assetGroupX(o.get, id => o.get.length > 1 ? `data-act="offerDrop" data-id="${o.id}" data-a="${id}" data-draft="${draft ? 1 : ''}"` : '')}</div><div><div class="lbl">Send</div>${assetGroupX(o.give, id => o.give.length > 1 ? `data-act="offerDrop" data-id="${o.id}" data-a="${id}" data-draft="${draft ? 1 : ''}"` : '')}</div></div>
     ${ev.issues.length ? `<div class="small bad">${esc(ev.issues[0])}</div>` : ''}
     <div class="row end"><button class="btn ghost sm" data-act="${draft ? 'declineDraft' : 'decline'}" data-id="${o.id}">Decline</button><button class="btn sm" data-act="counter" data-id="${o.id}" data-draft="${draft ? 1 : ''}">Counter</button><button class="btn sm" data-act="${draft ? 'acceptDraft' : 'accept'}" data-id="${o.id}" ${ev.issues.length ? 'disabled' : ''}>Accept</button></div></div>`;
@@ -635,6 +668,7 @@ function offerCard(o, draft) {
 // ---------- home building blocks ----------
 // Four numbers at a glance, then one row per thing that might need you. Every row opens the full detail.
 const ICO = {flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>', trade: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>', hurt: '<path d="M12 5v14M5 12h14"/>', target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+  goal: '<path d="M4 12.5l4.5 4.5L20 6"/>', chem: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19c.5-3 2.8-5 5.5-5 1.6 0 3 .7 4 1.8 1-1.1 2.4-1.8 4-1.8 2.7 0 5 2 5.5 5"/>',
   money: '<path d="M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.6 0-4 1.3-4 3s1.6 2.5 4 3 4 1.3 4 3-1.6 3-4.3 3c-2 0-3.6-.8-4.4-2"/>', list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'};
 const srow = (ico, label, value, attrs, tone) => `<button class="srow ${tone || ''}" ${attrs}><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO[ico]}</svg></span><span class="slabel">${label}</span><span class="sval">${value}</span><span class="chev" aria-hidden="true">›</span></button>`;
 function liveProj(season) { const key = season + '-' + G.week; if (!UI.proj || UI.proj.key !== key) UI.proj = {key, v: E.project(season, 500)[G.user]}; return UI.proj.v; }
@@ -681,11 +715,15 @@ function homeRows(season) {
   rows.push(srow('flag', 'Owner expects', esc(shortGoal(e.goal)), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
   if (tradeOpen()) { const n = (G.offers || []).length; rows.push(srow('trade', 'Trade offers', n ? `${n} waiting` : 'None yet', 'data-act="openInbox"', n ? 'hot' : '')); }
   const iss = (G.phase === 'season' || G.phase === 'deadline') && G.week >= 2 ? seasonIssue(season) : null;
-  if (iss && iss.rank > 16) rows.push(srow('target', `Biggest issue: ${iss.label}`, `${ordinalJ(iss.rank)} · ${iss.line}`, `data-act="needPos" data-pos="${iss.fix}"`, iss.rank >= 25 ? 'bad' : ''));
+  const gs = E.goalStatus(season);
+  if (gs.length) { const n = gs.filter(x => x.done).length; rows.push(srow('goal', 'Season goals', `${n} of ${gs.length} done`, 'data-act="goalsSheet"', n === gs.length ? 'good' : '')); }
+  const c = E.chemOf();
+  rows.push(srow('chem', 'Locker room', E.chemLabel(c), 'data-act="chemSheet"', c >= 75 ? 'good' : c < 35 ? 'bad' : ''));
+  if (iss && iss.rank > 16) rows.push(srow('target', 'Biggest issue', `<span title="${esc(iss.line)}">${esc(iss.label)} · ${ordinalJ(iss.rank)}</span>`, `data-act="needPos" data-pos="${iss.fix}"`, iss.rank >= 25 ? 'bad' : ''));
   const hurt = hurtStarters();
   if (hurt.length) rows.push(srow('hurt', 'Injured starters', `${hurt.length} out`, 'data-act="injurySheet"', 'bad'));
   const N = E.teamNeeds().filter(n => n.level !== 'Low').slice(0, 3);
-  rows.push(srow('target', 'Biggest needs', N.length ? N.map(n => n.pos).join(' · ') : 'None', 'data-act="rview" data-k="needs"'));
+  if (!(iss && iss.rank > 16)) rows.push(srow('target', 'Biggest needs', N.length ? N.map(n => n.pos).join(' · ') : 'None', 'data-act="rview" data-k="needs"'));
   return `<div class="card slist">${rows.join('')}</div>`;
 }
 function ownerSheet() {
@@ -696,6 +734,26 @@ function ownerSheet() {
     ${G.mandate ? `<div class="verdict bad">Hot seat: ${esc(G.mandate.goal.toLowerCase())} in ${G.mandate.season} or you are fired.</div>` : ''}
     ${confMeter()}
     ${log.length ? `<h4 class="sub">What moved it</h4>${log.map(x => `<div class="confline"><b class="${x.d >= 0 ? 'good' : 'bad'}">${x.d >= 0 ? '+' : ''}${x.d}</b><span>${esc(x.why)}</span><span class="small muted">${x.s}</span></div>`).join('')}` : '<p class="small muted">Win, hit your goal and make good trades to raise it. Losing streaks and bad deals lower it.</p>'}
+    <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
+}
+// Season goals: three a season on top of the owner's, each with live progress
+function goalsList(season) {
+  return `<div class="goallist">${E.goalStatus(season).map(x => `<div class="goalrow ${x.done ? 'done' : x.fail ? 'fail' : ''}"><span class="gmark" aria-hidden="true">${x.done ? '✓' : x.fail ? '×' : ''}</span><b>${esc(x.t)}</b><span class="small muted">${x.done ? 'Done' : x.fail ? 'Missed' : esc(x.line)}</span></div>`).join('')}</div>`;
+}
+function goalsSheet() {
+  modal(`<div class="sheeth"><div><div class="kicker">${G.season} · on top of the owner's goal</div><h3>Season goals</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    ${goalsList(G.season)}
+    <p class="small muted">Each one you hit raises the owner's confidence when the season ends and counts on your résumé.</p>
+    <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
+}
+// The locker room: what it is worth on Sundays and what moved it
+function chemSheet() {
+  const c = E.chemOf(), e = E.chemEdge(), col = c >= 55 ? 'var(--good)' : c >= 35 ? 'var(--warn)' : 'var(--bad)';
+  const log = (G.chemLog || []).slice(-8).reverse();
+  modal(`<div class="sheeth"><div><div class="kicker">${Math.abs(e) < .05 ? 'No effect on games' : `${e > 0 ? '+' : '−'}${Math.abs(e).toFixed(1)} points a game`}</div><h3>Locker room: ${E.chemLabel(c)}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="chemmeter"><i style="width:${c}%;background:${col}"></i></div>
+    ${log.length ? `<h4 class="sub">What moved it</h4>${log.map(x => `<div class="confline"><b class="${x.d >= 0 ? 'good' : 'bad'}">${x.d >= 0 ? '+' : ''}${x.d}</b><span>${esc(x.why)}</span><span class="small muted">${x.s}</span></div>`).join('')}` : ''}
+    <p class="small muted">Wins build it. Trading away or cutting players the room trusts costs it, veterans most of all. Landing a star lifts everyone.</p>
     <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
 }
 function injurySheet() {
@@ -826,7 +884,7 @@ function homeSeasonDone() {
     <p class="lead">${f.perfect ? 'You did it. 21-0.' : `${esc(G.teams[P.champ].nick)} won it all.`}${gm ? ` Goal <b class="${gm.met ? 'gold' : 'bad'}">${gm.met ? 'met' : 'missed'}</b>.` : ''}</p>${verdictLine(G.season)}</div>
     <button class="btn go lg" data-act="${G.season === 2027 && !G.reported ? 'final' : G.fired ? 'newgame' : 'offseason'}">${G.season === 2027 && !G.reported ? 'See final results' : G.fired ? 'Pick a new team' : `Start the ${G.season + 1} offseason`}</button></section>
   ${P.champ === G.user ? `<div class="champbanner"><span class="kicker">Super Bowl champions</span><b>${esc(G.teams[G.user].name)}</b><span class="small muted">${f.perfect ? 'And nobody beat them. 21-0.' : `${f.w}-${f.l}, ${G.season}`}</span></div>` : ''}
-  ${resultsStrip(G.season)}${awardsCard(G.season)}
+  ${resultsStrip(G.season)}${E.goalStatus(G.season).length ? `<div class="card"><div class="cardh"><h3>Season goals</h3><span class="small muted">${E.goalStatus(G.season).filter(x => x.done).length} of 3</span></div>${goalsList(G.season)}</div>` : ''}${awardsCard(G.season)}
   <details class="fold card" style="margin-top:14px" data-fold="bracket" ${foldOpen('bracket')}><summary>Playoff bracket</summary>${bracket()}</details>`;
 }
 function verdictLine(s) {
@@ -1249,7 +1307,7 @@ function renderTrade() {
   </div>
   <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(mood)}</span><span class="dp-go">Review</span></button>
   <div class="dealdock card deskonly-grid"><div class="dock-sides"><div><div class="lbl">You send</div>${dockSide(UI.give, 'give')}</div><div><div class="lbl">You get</div>${dockSide(UI.get, 'get')}</div></div>
-    <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<span class="small muted">For your team: <b class="${E.winsDelta(G.user, UI.get, UI.give) >= .05 ? 'good' : E.winsDelta(G.user, UI.get, UI.give) <= -.05 ? 'bad' : ''}">${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season</span>` : ''}${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
+    <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<span class="small muted">For your team: <b class="${E.winsDelta(G.user, UI.get, UI.give) >= .05 ? 'good' : E.winsDelta(G.user, UI.get, UI.give) <= -.05 ? 'bad' : ''}">${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season${(() => { const ch = E.chemTrade(UI.give, UI.get).d; return ch ? ` · locker room <b class="${ch > 0 ? 'good' : 'bad'}">${ch > 0 ? '+' : ''}${ch}</b>` : ''; })()}</span>` : ''}${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
       <div class="row nowrap"><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn go" data-act="callTeam" ${ready ? '' : 'disabled'}>Make the call</button></div></div></div>`;
 }
 // Find anyone in the league by name or position, then trade for him straight from the list
@@ -1566,6 +1624,7 @@ function homeFinal() {
     <div class="row" style="justify-content:center;gap:34px;margin-top:16px">
       <div class="stat"><b class="num">${f26.w}-${f26.l}</b><span>2026 · ${esc(f26.label)}</span></div>
       <div class="stat"><b class="num">${f27.w}-${f27.l}</b><span>2027 · ${esc(f27.label)}</span></div>
+      <div class="stat"><b class="num">${Object.values(G.goalsHit || {}).reduce((a, b) => a + b, 0)}/6</b><span>Season goals hit</span></div>
     </div>
     ${prev ? `<p class="small" style="margin:14px 0 0;color:${beat ? 'var(--good)' : 'var(--muted)'}">${beat ? `New personal best with the ${esc(team.nick)}. Your old best was ${prev.grade} (${prev.score}).` : `Your best with the ${esc(team.nick)} is still ${prev.grade} (${prev.score}), ${esc(prev.rec)} in 2027.`}</p>` : ''}
     <div class="dare">Can you do better? Run it back with the same Week 1 roster, or take over a worse team.</div>
@@ -2211,6 +2270,7 @@ function dealsSheet(id) {
 }
 
 document.addEventListener('click', e => {
+  if (UI.guide != null && !e.target.closest('#guide')) showGuide(null);
   if (UI.ddOpen && !e.target.closest('.dd')) { UI.ddOpen = null; if (!e.target.closest('[data-act],[data-tab]')) { render(); return; } }
   const tb = e.target.closest('[data-tab]');
   if (tb && !tb.closest('[data-act]')) { closeModal(); go(tb.dataset.tab); return; }
@@ -2230,13 +2290,15 @@ document.addEventListener('click', e => {
       modal(`<div class="sheeth"><div><div class="kicker">Take the job</div><h3>Run the ${esc(DATA.teams[t].name)}?</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${(() => { E.newGame(DATA, t, 1); const r = E.teamRating(t), qb = r.d.QB[0], rank = E.teamList().filter(x => E.teamRating(x).ovr > r.ovr).length + 1, cap = E.G.cap[2026] - E.payroll(t); const goal = [[4, 'Win it all'], [10, 'Deep run'], [18, 'Playoffs'], [25, 'Winning record'], [32, 'Show progress']].find(g => rank <= g[0])[1]; return `<div class="kpis pickkpis"><div><b class="num ${oc(r.ovr)}">${r.ovr}</b><span>OVR · #${rank}</span></div><div><b class="num">${money(cap)}</b><span>Cap space</span></div><div><b>${esc(goal)}</b><span>Owner expects</span></div></div>${qb ? `<p class="small muted">QB ${esc(qb.n)} (${qb.ovr})</p>` : ''}`; })()}<div class="row end"><button class="btn" data-act="closeModal">Back</button><button class="btn go" data-act="confirmPick" data-t="${t}">Take the job</button></div>`);
       return;
     }
-    case 'confirmPick': { startGame(el.dataset.t); closeModal(); window.scrollTo(0, 0); let seen = false; try { seen = localStorage.getItem('21-0-guide') === '1'; localStorage.setItem('21-0-guide', '1'); } catch (e) { /* storage unavailable */ } persist(); render(); if (!seen) setTimeout(() => helpSheet('run'), 250); return; }
+    case 'confirmPick': { startGame(el.dataset.t); closeModal(); window.scrollTo(0, 0); let seen = false; try { seen = localStorage.getItem('21-0-guide') === '1'; localStorage.setItem('21-0-guide', '1'); } catch (e) { /* storage unavailable */ } persist(); render(); if (!seen) setTimeout(() => showGuide(0), 300); return; }
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
     case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
     case 'faSheet': faSheet(el.dataset.k); return;
     case 'flexMove': { const p = G.players[id], back = !el.dataset.k, from = back ? (G.flex || {})[id] : p.pos; E.setFlex(id, el.dataset.k || null); persist(); render(); depthModal(back ? from : el.dataset.k); toast(back ? `${p.n} is back at ${p.pos}.` : `${p.n} now plays ${el.dataset.k}.`); return; }
     case 'ownerSheet': ownerSheet(); return;
+    case 'goalsSheet': goalsSheet(); return;
+    case 'chemSheet': chemSheet(); return;
     case 'depthSheet': modal(`<div class="sheeth"><h3>Your team</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel(null).replace('<details class="fold dfold" data-fold="depth" ', '<details class="fold dfold" open ')}`, true); return;
     case 'injurySheet': injurySheet(); return;
     case 'midSign': { const r = E.signMidseason(id); if (!r.ok) { toast(r.msg); return; } persist(); render(); toast(`${G.players[id].n} signed for the rest of the season: ${money(r.price)}.`); faSheet(); return; }
@@ -2273,6 +2335,9 @@ document.addEventListener('click', e => {
     }
     case 'shopWant': { UI.shopWant = el.dataset.k; const fid = UI.found && UI.found.id; if (fid) openFound(fid, E.shopPlayer(fid, UI.shopWant)); return; }
     case 'help': helpSheet(el.dataset.k || helpKey()); return;
+    case 'guideNext': showGuide(UI.guide + 1); return;
+    case 'guideSkip': showGuide(null); return;
+    case 'guide': closeModal(); window.scrollTo(0, 0); UI.tab = 'home'; render(); setTimeout(() => showGuide(0), 120); return;
     case 'sound': SND.on = !SND.on; try { localStorage.setItem('21-0-sound', SND.on ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } if (SND.on) sfx('tap'); if ($('.helpfoot')) helpSheet(helpKey()); return;
     case 'seg': UI[el.dataset.seg] = el.dataset.k; if (el.dataset.seg === 'league') UI.lgMore = false; if (el.dataset.go) { go(el.dataset.go); return; } render(); return;
     case 'rview': UI.rview = el.dataset.k; go('roster'); return;
@@ -2455,7 +2520,7 @@ document.addEventListener('click', e => {
       if (!o) return;
       UI.partner = o.from; UI.give = o.give.slice(); UI.get = o.get.slice(); UI.tview = 'make'; closeModal(); go('trade'); toast('Adjust the deal, then propose it.'); return;
     }
-    case 'moreOffers': { const before = (G.offers || []).map(o => o.id); const fresh = E.genOffers(4).filter(o => !before.includes(o.id)); G.offers = (G.offers || []).concat(fresh).slice(-6); toast(fresh.length ? `${fresh.length} new offer${fresh.length > 1 ? 's' : ''}.` : 'Nobody new is calling right now.'); break; }
+    case 'moreOffers': { const before = (G.offers || []).map(o => o.id); const fresh = E.genOffers(3).filter(o => !before.includes(o.id)); G.offers = (G.offers || []).concat(fresh).slice(-4); toast(fresh.length ? `${fresh.length} new offer${fresh.length > 1 ? 's' : ''}.` : 'Nobody new is calling right now.'); break; }
     case 'findTrades': {
       const p = G.players[id]; if (!p) return;
       const list = p.tm === G.user ? E.shopPlayer(id, UI.shopWant || 'any') : E.findPackages(id).map(x => Object.assign(x, {label: x.label + ' · ' + G.teams[x.partner].nick}));

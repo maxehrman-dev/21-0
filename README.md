@@ -28,6 +28,9 @@
 - **Position flexibility.** Move a tackle to guard or a corner to safety in the depth chart, a few points worse than at his own spot.
 - **The real 2027 draft class**, with scouting ranges that can be wrong. Every pick's true rating is revealed on the spot: steal, as projected, or bust.
 - **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.
+- **Season goals.** Every season sets three goals on top of the owner's, picked for your team: win a set number of games, take the division, sweep a rival, a top-10 offense or defense, a winning streak. Each one you hit raises the owner's confidence and counts on your final report.
+- **Locker room.** Chemistry rises with wins and drops when you trade away or cut players the room trusts, veterans most of all. A tight room is worth up to two points a game, and every trade shows what it will cost before you make it.
+- **Offers that make sense.** At most three at a time, all close to fair. Each one says what it does to your wins this season, and only one will ask you to give up a starter for later.
 - **A game model tuned to the real league.** Team wins spread like they do in the NFL (best record usually 13 to 15 wins). Position value follows real analytics: the quarterback explains about 30% of the gap between teams, so an elite QB is worth about +5 wins and a star running back well under one. Every player card and trade shows what a move is worth in wins.
 - **21-0 is a moonshot, not a lottery.** A team as it stands has about a 1 in 20,000 shot. A well-built team has about 1%, and a true superteam about 3%. Any given Sunday still applies.
 - **Worst to first:** an optional mode limited to the 8 worst rosters.
@@ -36,7 +39,7 @@
 - **Scout ahead.** The next draft class is in League › More, well before draft day.
 - **Box scores for every game.** Tap any result for passing, rushing, receiving, defense and kicking lines and a player of the game. Season stats (completions, carries, targets, tackles, pass breakups, field goals) are built play by play and land in real NFL ranges.
 - **A draft you can follow.** The draft shows who is on the clock, a ticker of the picks around now, the big board, and the full order round by round.
-- **Calm by default.** Home shows four numbers and a short list of things that might need you: the owner, trade offers, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
+- **Calm by default.** A four-step guide the first time you play. After that, Home shows four numbers and a short list of things that might need you: the owner, trade offers, season goals, the locker room, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
 ## Controls

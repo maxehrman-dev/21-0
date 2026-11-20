@@ -52,16 +52,36 @@ test('teams refuse piles of backups for a star', () => {
   assert.ok(ev.ratio < 1);
 });
 
-test('AI offers come in at least threes and are fair to you', () => {
-  E.newGame(DATA, 'NYJ', 5);
-  E.simTo(9); E.G.phase = 'deadline';
-  const offers = E.refreshOffers();
-  assert.ok(offers.length >= 3, `only ${offers.length} offers`);
-  for (const o of offers) {
-    const ev = cached(() => E.evalTrade(o.from, o.give, o.get));
-    assert.ok(ev.fair >= .85, `${o.from} offer is unfair to you (${ev.fair.toFixed(2)})`);
-    assert.equal(ev.issues.length, 0, ev.issues.join('; '));
+test('AI offers are few, fair to you, and at most one costs you wins this season', () => {
+  for (const [t, seed] of [['NYJ', 5], ['KC', 7], ['TEN', 9]]) {
+    E.newGame(DATA, t, seed);
+    E.simTo(9); E.G.phase = 'deadline';
+    const offers = E.refreshOffers().filter(o => o.kind !== 'block');
+    assert.ok(offers.length >= 1 && offers.length <= 3, `${t}: ${offers.length} offers`);
+    let costly = 0;
+    for (const o of offers) {
+      const ev = cached(() => E.evalTrade(o.from, o.give, o.get));
+      assert.ok(ev.fair >= .92, `${o.from} offer is unfair to you (${ev.fair.toFixed(2)})`);
+      assert.equal(ev.issues.length, 0, ev.issues.join('; '));
+      if (o.kind === 'want' && cached(() => E.winsDelta(t, o.get, o.give)) < -.25) costly++;
+    }
+    assert.ok(costly <= 1, `${t}: ${costly} offers make you worse`);
   }
+});
+
+test('season goals track progress and the locker room reacts to games and trades', () => {
+  E.newGame(DATA, 'DET', 11);
+  const G = E.G, goals = E.seasonGoals(2026);
+  assert.equal(goals.length, 3);
+  assert.ok(goals[0].t.startsWith('Win '));
+  assert.equal(E.chemOf(), 60);
+  E.simTo(17);
+  assert.notEqual(E.chemOf(), 60, 'games should move the locker room');
+  const st = E.goalStatus(2026);
+  assert.ok(st.every(x => typeof x.line === 'string' && x.line.length));
+  // trading away a star costs chemistry
+  const star = E.roster('DET').filter(p => p.ovr >= 88).sort((a, b) => b.ovr - a.ovr)[0];
+  assert.ok(E.chemTrade([star.id], []).d <= -5);
 });
 
 test('a full two-season run reaches the final report', () => {

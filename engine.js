@@ -57,7 +57,7 @@ function newGame(DATA, userTeam, seed) {
     playoffs: {}, trades: [], news: [], history: {}, fa: null, draft: null, resign: null, prog: null,
   };
   G.startOvr = teamRating(userTeam).ovr;
-  G.offers = []; G.expect = {}; G.conf = 55; G.confLog = [];
+  G.offers = []; G.expect = {}; G.conf = 55; G.confLog = []; G.chem = 60; G.chemLog = []; G.goals = {};
   // hidden potential: young players can grow past their current rating
   // potential comes from real data (age, draft pedigree, 2025 to 2026 trend); older saves fall back to an age estimate
   for (const p of Object.values(G.players)) if (!p.pot) p.pot = p.age <= 25 ? clamp(Math.round(p.ovr + (26 - p.age) * 1.5), p.ovr, 99) : p.ovr;
@@ -104,8 +104,10 @@ function updateConfidence(event) {
   } else {
     const gm = goalMet(s), P = G.playoffs[s];
     const poW = (G.results[s] || []).filter(g => g.po && ((g.h === G.user && g.hs > g.as) || (g.a === G.user && g.as > g.hs))).length;
-    d = Math.round((r.w - e.wins) * 3 + (gm && gm.met ? 15 : -12) + poW * 4 + (P && P.champ === G.user ? 15 : 0));
-    why = `${s} season: ${gm && gm.met ? 'met' : 'missed'} the goal (${e.goal})`;
+    const hit = goalStatus(s).filter(x => x.done).length;
+    d = Math.round((r.w - e.wins) * 3 + (gm && gm.met ? 15 : -12) + poW * 4 + (P && P.champ === G.user ? 15 : 0) + hit * 4);
+    why = `${s} season: ${gm && gm.met ? 'met' : 'missed'} the goal (${e.goal})${hit ? `, ${hit} of 3 season goals` : ''}`;
+    (G.goalsHit = G.goalsHit || {})[s] = hit;
   }
   G.conf = clamp((G.conf == null ? 55 : G.conf) + d, 0, 100);
   (G.confLog = G.confLog || []).push({s, event, d, why, now: G.conf});
@@ -486,8 +488,10 @@ function doTrade(partner, give, get, how) {
   const when = G.phase === 'offseason' ? (G.step === 'draft' ? 'Draft day' : 'Offseason') : `Week ${G.week}`;
   const rec = {season: G.season, when, partner, gave: give.map(assetName), got: get.map(assetName), giveIds: give.slice(), getIds: get.slice(),
     vGive: give.reduce((s, id) => s + assetValue(id), 0), vGet: get.reduce((s, id) => s + assetValue(id), 0)};
+  const ch = chemTrade(give, get);
   for (const id of give) { if (G.players[id]) G.players[id].tm = partner; else { pickById(id).owner = partner; syncDraftSlot(id, partner); } }
-  for (const id of get) { if (G.players[id]) { G.players[id].tm = G.user; G.players[id].how = 'Trade'; } else { pickById(id).owner = G.user; syncDraftSlot(id, G.user); } }
+  for (const id of get) { if (G.players[id]) { G.players[id].tm = G.user; G.players[id].how = 'Trade'; G.players[id].joined = G.season; } else { pickById(id).owner = G.user; syncDraftSlot(id, G.user); } }
+  rec.chem = chemShift(ch.d, ch.why);
   G.trades.push(rec);
   G.news.unshift(`Trade with ${G.teams[partner].nick}: you get ${rec.got.join(', ')}.`);
   G.offers = (G.offers || []).filter(o => ![...o.give, ...o.get].some(id => give.includes(id) || get.includes(id)));
@@ -797,8 +801,17 @@ function buildPackage(t, pid, loose, kind, pos) {
 }
 // Offers other teams send you
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+// What an offer does to your team this season, and whether it is one worth showing you at all.
+// Teams do not call to take a starter for picks unless you are selling, or unless they really pay.
+function offerSense(give, get, fair) {
+  if (fair < .95) return {ok: false};
+  if (fair >= 1.15 || rebuilding(G.user)) return {ok: true};
+  // a starter is the usual target: check what losing him costs you before you ever see the offer
+  const gone = give.some(id => G.players[id] && depth(G.user)[G.players[id].pos].slice(0, STARTERS[G.players[id].pos]).some(p => p.id === id));
+  return {ok: !gone || winsDelta(G.user, get, give) >= -.25};
+}
 function genOffers(n, minimum) {
-  n = n || 5; minimum = minimum || 3;
+  n = n || 3; minimum = minimum == null ? 1 : minimum;
   const offers = [];
   const used = new Set();
   const mine = roster(G.user).filter(p => p.ovr >= 70 && !p.inj && p.pos !== 'K' && p.pos !== 'P');
@@ -815,7 +828,8 @@ function genOffers(n, minimum) {
           const extra = userPool('all', [vet.id]).filter(id => !ask.includes(id)).map(id => ({id, v: assetValue(id)})).sort((a, b) => a.v - b.v).find(x => x.v >= 2);
           if (extra) ask.push(extra.id);
         }
-        if (ask && ask.length <= 3 && !ask.some(id => used.has(id)) && evalTrade(t, ask, [vet.id]).fair <= 1.45 && evalTrade(t, ask, [vet.id]).fair >= .85) {
+        const fv = ask ? evalTrade(t, ask, [vet.id]).fair : 0;
+        if (ask && ask.length <= 3 && !ask.some(id => used.has(id)) && fv <= 1.35 && fv >= .93 && winsDelta(G.user, [vet.id], ask) >= .15) {
           ask.forEach(id => used.add(id));
           offers.push({id: 'o' + G.week + t + vet.id, from: t, kind: 'sell', give: ask, get: [vet.id], msg: `The ${G.teams[t].nick} are rebuilding and will move ${vet.n}.`});
           continue;
@@ -826,7 +840,7 @@ function genOffers(n, minimum) {
     const tgt = targets[Math.min(targets.length - 1, rint(0, 2))];
     if (!tgt) continue;
     const pkg = buildPackage(t, tgt.id);
-    if (!pkg || evalTrade(t, [tgt.id], pkg).fair < .85) continue;
+    if (!pkg || !offerSense([tgt.id], pkg, evalTrade(t, [tgt.id], pkg).fair).ok) continue;
     used.add(tgt.id);
     offers.push({id: 'o' + G.week + t + tgt.id, from: t, kind: 'want', give: [tgt.id], get: pkg, msg: `The ${G.teams[t].nick} want ${tgt.n} to fill their ${tgt.pos} spot.`});
   }
@@ -836,13 +850,17 @@ function genOffers(n, minimum) {
     const tgt = mine.filter(p => !used.has(p.id) && needBoost(t, p) >= 1).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t))[rint(0, 3)];
     if (!tgt) continue;
     const pkg = buildPackage(t, tgt.id, true);
-    if (!pkg || evalTrade(t, [tgt.id], pkg).fair < .85) continue;
+    if (!pkg || !offerSense([tgt.id], pkg, evalTrade(t, [tgt.id], pkg).fair).ok) continue;
     used.add(tgt.id);
     offers.push({id: 'o' + G.week + (G.step || '') + t + tgt.id, from: t, kind: 'want', give: [tgt.id], get: pkg, msg: `The ${G.teams[t].nick} called about ${tgt.n}.`});
   }
-  return offers;
+  // at most one offer that makes you worse this season: a seller hears from buyers, but not all day
+  let costly = 0;
+  const keep = offers.filter(o => o.kind !== 'want' || winsDelta(G.user, o.get, o.give) >= -.25 || ++costly <= 1);
+  // best for you first
+  return keep.sort((a, b) => evalTrade(b.from, b.give, b.get).fair - evalTrade(a.from, a.give, a.get).fair);
 }
-function refreshOffers() { G.offers = [...blockOffers(), ...genOffers(5, 3)]; return G.offers; }
+function refreshOffers() { G.offers = [...blockOffers(), ...genOffers(3, 1)]; return G.offers; }
 // ---------- your trade block ----------
 // Put players on the block, say what you want back, and teams send offers for them into your inbox.
 function blockOf() {
@@ -1096,7 +1114,8 @@ function genBox(t, opp, pts, tr, otr, oppPts) {
 function simGame(a, h, opts = {}) {
   const ta = teamRating(a), th = teamRating(h);
   const hfa = opts.neutral ? 0 : SIM.hfa, T = SIM.talent, A = ta.x || ta, H = th.x || th;
-  const ra = ((A.off - H.def) * .62 + (A.ovr - H.ovr) * .12) * T, rh = ((H.off - A.def) * .62 + (H.ovr - A.ovr) * .12) * T;
+  const ce = t => t === G.user ? chemEdge() : 0;
+  const ra = ((A.off - H.def) * .62 + (A.ovr - H.ovr) * .12) * T + ce(a), rh = ((H.off - A.def) * .62 + (H.ovr - A.ovr) * .12) * T + ce(h);
   // Any given Sunday: the edge from talent flattens out, so even a juggernaut loses now and then.
   const edge = softCap(rh - ra), mid = (ra + rh) / 2;
   const ea = 22.5 + mid - edge / 2 - hfa / 2, eh = 22.5 + mid + edge / 2 + hfa / 2;
@@ -1137,6 +1156,7 @@ function simWeek(w) {
     const g = simGame(a, h);
     g.wk = w;
     G.results[G.season].push(g);
+    chemGame(g);
     out.push(g);
   }
   for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
@@ -1239,6 +1259,7 @@ function beginOffseason() {
   G.history[prev] = G.history[prev] || {finish: userFinish(prev), champ: G.playoffs[prev].champ, ovr: teamRating(G.user).ovr};
   G.draftOrder = draftOrder(prev);
   G.phase = 'offseason'; G.step = 'progress'; G.season = next; G.week = 0; G.draftDone = false; G.draft = null;
+  if (G.chem != null) G.chem = Math.round(G.chem + (60 - G.chem) / 3);
   // the cap: real figures through 2027, then about 7% a year, the league's recent pace
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
@@ -1310,7 +1331,7 @@ function resignPlayer(id, yes, yrs) {
   const p = G.players[id], r = G.resign[id];
   if (!p || !r) return;
   if (yrs) { r.yrs = yrs; r.ask = resignPrice(p, yrs); }
-  if (yes) { p.cap = r.ask; p.end = G.season - 1 + r.yrs; r.done = 'signed'; }
+  if (yes) { p.cap = r.ask; p.end = G.season - 1 + r.yrs; r.done = 'signed'; if (p.ovr >= 78) chemShift(1, `Re-signed ${p.n}`); }
   else { p.fromTeam = p.tm; p.tm = 'FA'; p.cap = 0; r.done = 'released'; }
 }
 function finishResign() {
@@ -1323,6 +1344,7 @@ function cutPlayer(id) {
   const left = p.end - G.season + 1;
   const dead = left <= 0 ? 0 : Math.round(p.cap * (left >= 2 ? .5 : .25) * 10) / 10;
   G.dead[G.user] = (G.dead[G.user] || 0) + (G.season > 2026 ? dead : 0);
+  chemShift(chemCut(p), `Released ${p.n}`);
   p.fromTeam = p.tm; p.tm = 'FA'; p.cap = 0; p.end = G.season - 1;
   G.news.unshift(`Released ${p.n}. Dead money: $${dead.toFixed(1)}M.`);
   return dead;
@@ -2027,6 +2049,97 @@ function goalMet(season) {
   return {met, goal: e.goal, wins: r.w, proj: e.wins};
 }
 
+// ---------- locker room ----------
+// Chemistry runs 0-100. Winning builds it; trading away or cutting players the room trusts costs it.
+// It is worth up to about 2 points a game either way, a bit under a win a season at the extremes.
+const chemOf = () => G.chem == null ? 60 : G.chem;
+const chemLabel = c => c >= 75 ? 'Tight' : c >= 55 ? 'Solid' : c >= 35 ? 'Uneasy' : 'Fractured';
+const chemEdge = () => (chemOf() - 50) / 25;
+function chemShift(d, why) {
+  d = Math.round(d);
+  if (!d || !G.teams[G.user]) return 0;
+  const was = chemOf();
+  G.chem = clamp(was + d, 0, 100);
+  const real = G.chem - was;
+  if (real) (G.chemLog = G.chemLog || []).push({s: G.season, d: real, why, now: G.chem});
+  return real;
+}
+// What a trade does to the room, before you make it: losing respected players hurts, landing a star lifts everyone
+function chemTrade(give, get) {
+  let d = 0; const lost = [];
+  for (const id of give) {
+    const p = G.players[id]; if (!p || p.tm !== G.user) continue;
+    let hit = p.ovr >= 88 ? 5 : p.ovr >= 80 ? 3 : p.ovr >= 74 ? 1 : 0;
+    if (hit && ageAdj(p) >= 29) hit += 2;                         // a veteran leader
+    if (hit && p.how === 'Trade' && p.joined === G.season) hit = Math.min(hit, 1);   // he just got here
+    if (hit >= 3) lost.push(p.n);
+    d -= hit;
+  }
+  for (const id of get) { const p = G.players[id]; if (p && p.ovr >= 88) d += 2; }
+  d = Math.max(-10, d);
+  return {d, why: lost.length ? `Traded away ${lost.slice(0, 2).join(' and ')}` : d > 0 ? 'A star joined the team' : 'Trade'};
+}
+function chemCut(p) {
+  if (!p) return 0;
+  const vet = ageAdj(p) >= 28 && p.ovr >= 75, young = p.draftYr === G.season || p.rook;
+  return vet ? -3 : young && p.ovr >= 65 ? -2 : 0;
+}
+function chemGame(g) {
+  if (g.h !== G.user && g.a !== G.user) return;
+  const me = g.h === G.user ? g.hs : g.as, op = g.h === G.user ? g.as : g.hs;
+  const opp = g.h === G.user ? g.a : g.h;
+  if (me > op) chemShift(g.po ? 3 : 2, g.po ? 'Playoff win' : `Beat the ${G.teams[opp].nick}`);
+  else chemShift(-(op - me >= 17 ? 3 : 2), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}`);
+}
+
+// ---------- season goals ----------
+// Three goals a season on top of the owner's: hit them for owner confidence, and they count on your résumé.
+// Picked from your roster and schedule, the same way every time for the same team and season.
+function hashStr(x) { let h = 2166136261; for (const c of String(x)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+function seasonGoals(season) {
+  G.goals = G.goals || {};
+  if (G.goals[season]) return G.goals[season];
+  if (!G.teams[G.user] || !G.results[season]) return [];
+  const e = setExpectations(season), div = teamList().filter(t => t !== G.user && G.teams[t].div === G.teams[G.user].div);
+  const rival = div.slice().sort((a, b) => teamRating(b).ovr - teamRating(a).ovr)[0];
+  const wins = clamp(Math.round(e.wins + 1.5), 4, 15);
+  const pool = [
+    e.div >= .2 ? {k: 'div', t: 'Win the division'} : {k: 'divw', n: 4, t: 'Win 4 division games'},
+    {k: 'off', n: 10, t: 'Top-10 scoring offense'},
+    {k: 'def', n: 10, t: 'Top-10 scoring defense'},
+    rival ? {k: 'rival', opp: rival, t: `Sweep the ${G.teams[rival].nick}`} : null,
+    {k: 'streak', n: 4, t: 'Win 4 in a row'},
+  ].filter(Boolean);
+  let h = hashStr(G.user + season);
+  const pick = [];
+  while (pick.length < 2 && pool.length) { pick.push(pool.splice(h % pool.length, 1)[0]); h = Math.floor(h / 7) + 13; }
+  G.goals[season] = [{k: 'wins', n: wins, t: `Win ${wins} games`}, ...pick];
+  return G.goals[season];
+}
+// Live progress on each goal: done (locked in), failed (out of reach), or still open, with a short line
+function goalStatus(season) {
+  const L = seasonGoals(season); if (!L.length) return [];
+  const R = (G.results[season] || []).filter(g => !g.po), mine = R.filter(g => g.h === G.user || g.a === G.user);
+  const r = record(G.user, season), played = r.w + r.l, left = 17 - played, over = played >= 17 || season < G.season || ['playoffs', 'seasondone', 'final'].includes(G.phase);
+  const won = g => (g.h === G.user ? g.hs > g.as : g.as > g.hs);
+  const rankOf = k => {
+    const T = {};
+    for (const g of R) { for (const [t, me, op] of [[g.h, g.hs, g.as], [g.a, g.as, g.hs]]) { const x = T[t] = T[t] || {g: 0, pf: 0, pa: 0}; x.g++; x.pf += me; x.pa += op; } }
+    const v = t => T[t] ? T[t][k] / T[t].g : (k === 'pf' ? 0 : 99), my = v(G.user);
+    return teamList().filter(t => k === 'pf' ? v(t) > my : v(t) < my).length + 1;
+  };
+  return L.map(x => {
+    let done = false, fail = false, line = '';
+    if (x.k === 'wins') { done = r.w >= x.n; fail = !done && r.w + left < x.n; line = `${r.w} of ${x.n}`; }
+    else if (x.k === 'divw') { done = r.dw >= x.n; fail = !done && r.dw + Math.max(0, 6 - r.dw - r.dl) < x.n; line = `${r.dw} of ${x.n}`; }
+    else if (x.k === 'div') { const rk = teamList().filter(t => t !== G.user && G.teams[t].div === G.teams[G.user].div && record(t, season).w > r.w).length + 1; done = over && rk === 1; fail = over && rk > 1; line = played ? `${ordinal(rk)} in the division` : 'Not started'; }
+    else if (x.k === 'off' || x.k === 'def') { const rk = played ? rankOf(x.k === 'off' ? 'pf' : 'pa') : null; done = over && rk <= x.n; fail = over && rk > x.n; line = rk ? `${ordinal(rk)} so far` : 'Not started'; }
+    else if (x.k === 'rival') { const vs = mine.filter(g => g.h === x.opp || g.a === x.opp); const w = vs.filter(won).length; fail = vs.length > w; done = !fail && w >= 2; line = `${w} of 2`; }
+    else if (x.k === 'streak') { let best = 0, cur = 0; for (const g of mine.sort((a, b) => a.wk - b.wk)) { cur = won(g) ? cur + 1 : 0; best = Math.max(best, cur); } done = best >= x.n; fail = !done && over; line = `Best ${best} straight`; }
+    return {...x, done, fail, line};
+  });
+}
+
 // ---------- season awards ----------
 // Built from the simulated season's box scores, credited to the player's current team.
 function awards(season) {
@@ -2158,11 +2271,11 @@ function load(str) { const o = JSON.parse(str); G = o.G; R.set(o.rs); return G; 
 
 const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC = cached(marketBoard), valueRangeC = cached(valueRange), genOffersC = cached(genOffers), findPackagesC = cached(findPackages), shopPlayerC = cached(shopPlayer), draftOffersC = cached(draftOffers),
   cutPlanC = cached(cutPlan), teamNeedsC = cached(teamNeeds), projectC = cached(project), setExpectationsC = cached(setExpectations), balanceTradeC = cached(balanceTrade);
-function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; return G.offers; }
+function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return G.offers; }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
