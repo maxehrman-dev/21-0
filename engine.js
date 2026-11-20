@@ -932,36 +932,99 @@ function addStat(pid, k, v) {
   S[pid] = S[pid] || {};
   S[pid][k] = (S[pid][k] || 0) + v;
 }
-function genBox(t, opp, pts, tr, otr) {
-  const d = tr.d, od = otr.d;
-  const qb = d.QB[0], rb = d.RB[0], wrs = d.WR.slice(0, 3), te = d.TE[0];
+// One team's box score, built play-count first so the numbers hang together like a real stat sheet:
+// attempts and carries follow the game script, completion rate and yards per play follow the matchup,
+// targets and carries are shared out by role and talent with game-to-game swings, and the defense gets
+// tackles, sacks, interceptions and pass breakups. Season totals land in real NFL ranges.
+const ov = p => p ? p.ovr + formOf(p) * 1.5 : 60;
+const mean = L => { const v = L.filter(Boolean); return v.length ? v.reduce((a, p) => a + ov(p), 0) / v.length : 60; };
+function share(n, W) { // hand out n events by weight
+  const out = W.map(() => 0), tot = W.reduce((a, w) => a + w, 0);
+  if (tot <= 0) return out;
+  for (let i = 0; i < n; i++) { let x = rand() * tot, k = 0; for (; k < W.length - 1; k++) { x -= W[k]; if (x <= 0) break; } out[k]++; }
+  return out;
+}
+// Box scores are kept as short text, one letter per stat: "00-0012345:a31c22y268t2" is 22 of 31 for 268 yards and 2 TD
+const BOXK = {att: 'a', cmp: 'c', py: 'y', ptd: 't', int: 'i', sacked: 's', car: 'r', ry: 'R', rtd: 'T', tgt: 'g', rec: 'e', recy: 'Y', rectd: 'D', sk: 'k', dint: 'n', pd: 'p', tkl: 'l', fg: 'f', fga: 'F', xp: 'x', punts: 'u'};
+const BOXR = Object.fromEntries(Object.entries(BOXK).map(([k, v]) => [v, k]));
+function unpackBox(str) {
+  if (!str) return [];
+  return str.split(';').map(r => {
+    const c = r.lastIndexOf(':'), raw = r.slice(0, c), id = /^\d+$/.test(raw) ? '00-00' + raw : raw, st = {}, re = /([a-zA-Z])(\d+)/g; let x;
+    while ((x = re.exec(r.slice(c + 1)))) st[BOXR[x[1]]] = +x[2];
+    return {id, st};
+  });
+}
+function genBox(t, opp, pts, tr, otr, oppPts) {
+  const d = tr.d, od = otr.d, L = {};
+  const put = (p, k, v) => { if (!p || !v) return; (L[p.id] = L[p.id] || {})[k] = ((L[p.id] || {})[k] || 0) + v; };
+  const qb = d.QB[0], rbs = d.RB.slice(0, 2), wrs = d.WR.slice(0, 4), tes = d.TE.slice(0, 2), k = d.K[0], pn = d.P && d.P[0];
+  const ol = mean([...d.OT.slice(0, 2), ...d.IOL.slice(0, 3)]), rush = mean([...od.EDGE.slice(0, 2), ...od.DT.slice(0, 2)]);
+  const cov = mean([...od.CB.slice(0, 3), ...od.S.slice(0, 2)]), runD = mean([...od.DT.slice(0, 2), ...od.LB.slice(0, 2)]);
+  const recQ = mean([...wrs.slice(0, 3), tes[0]]), q = ov(qb), diff = pts - (oppPts == null ? 22 : oppPts);
+  // game script: teams that trail throw, teams that lead run
+  const att = clamp(Math.round(33 - diff * .28 + randn() * 4.5), 18, 58);
+  const car = clamp(Math.round(25 + diff * .3 + randn() * 3.5), 12, 42);
+  const sk = poisson(Math.max(.4, att * (.072 + (rush - ol) * .0022)));
+  const pct = clamp(.622 + (q - 75) * .0042 + (recQ - cov) * .0018 + randn() * .065, .4, .86);
+  const cmp = Math.round(att * pct);
+  const ypc = clamp(10.05 + (q - 75) * .045 + (recQ - cov) * .035 + (pts - 22) * .07 + randn() * 1.6, 5.5, 17);
+  const py = Math.round(cmp * ypc);
+  const ints = poisson(Math.max(.15, att * (.022 - (q - 75) * .0005 + (cov - 75) * .00025)));
+  const ypcR = clamp(4.3 + (ov(rbs[0]) - 75) * .018 + (ol - runD) * .028 + randn() * .85, 1.8, 8);
+  // scoring: field goals first, then touchdowns split 60/40 pass and run
+  const fg = clamp(Math.round(pts / 9 + randn() * .5), 0, Math.floor(pts / 3));
+  let tds = Math.max(0, Math.round((pts - fg * 3) / 7)), ptd = 0, rtd = 0;
+  for (let i = 0; i < tds; i++) rand() < .6 ? ptd++ : rtd++;
+  // the quarterback
+  if (qb) { put(qb, 'att', att); put(qb, 'cmp', cmp); put(qb, 'py', py); put(qb, 'ptd', ptd); put(qb, 'int', ints); put(qb, 'sacked', sk); }
+  // carries: the starter's share grows with the gap over his backup; the quarterback scrambles a few times
+  const qcar = qb ? poisson(2.6 + Math.max(0, diff) * .05) : 0;
+  const rcar = Math.max(0, car - qcar);
+  const s1 = rbs[1] ? clamp(.5 + (ov(rbs[0]) - ov(rbs[1])) * .01 + randn() * .06, .36, .78) : 1;
+  const c1 = Math.round(rcar * s1), c2 = rcar - c1;
+  const ry1 = Math.round(c1 * ypcR * (.8 + rand() * .4)), ry2 = Math.round(c2 * ypcR * (.75 + rand() * .4)), qry = Math.round(qcar * (4.4 + randn() * 2));
+  put(rbs[0], 'car', c1); put(rbs[0], 'ry', ry1); put(rbs[1], 'car', c2); put(rbs[1], 'ry', ry2);
+  if (qb) { put(qb, 'car', qcar); put(qb, 'ry', qry); }
+  const rtdTo = share(rtd, [rbs[0] ? .62 * c1 / Math.max(1, rcar) * 1.3 : 0, rbs[1] ? .3 * c2 / Math.max(1, rcar) * 1.3 : 0, qb ? .14 : 0]);
+  put(rbs[0], 'rtd', rtdTo[0]); put(rbs[1], 'rtd', rtdTo[1]); put(qb, 'rtd', rtdTo[2]);
+  // targets: role weight, bent toward the better players, with week-to-week swings
+  const R = [[wrs[0], .22, .64, 13], [wrs[1], .17, .63, 12.5], [wrs[2], .12, .62, 12], [wrs[3], .05, .6, 11.5], [tes[0], .15, .7, 10.2], [tes[1], .05, .68, 9.5], [rbs[0], .13, .78, 7.4], [rbs[1], .06, .77, 7]].filter(x => x[0]);
+  const tw = R.map(([p, w]) => w * Math.pow(ov(p) / 75, 1.25) * (.55 + rand() * .9));
+  const tg = share(att, tw);
+  const cw = R.map(([, , c], i) => tg[i] * c);
+  const rec = share(cmp, cw).map((c, i) => Math.min(c, tg[i]));
+  const raw = R.map(([p, , , y], i) => rec[i] * y * Math.pow(ov(p) / 75, .35) * (.6 + rand() * .8));
+  const rsum = raw.reduce((a, v) => a + v, 0) || 1;
+  R.forEach(([p], i) => { put(p, 'tgt', tg[i]); put(p, 'rec', rec[i]); put(p, 'recy', Math.round(py * raw[i] / rsum)); });
+  const tdTo = share(ptd, R.map(([p], i) => raw[i] * (p.pos === 'TE' ? 1.25 : 1) + .01));
+  R.forEach(([p], i) => put(p, 'rectd', tdTo[i]));
+  // the other defense: sacks to the pass rushers, picks and breakups to the secondary, tackles to everyone
+  const rushers = [[od.EDGE[0], .28], [od.EDGE[1], .23], [od.DT[0], .16], [od.DT[1], .1], [od.LB[0], .12], [od.LB[1], .06], [od.S[0], .05]].filter(x => x[0]);
+  const skTo = share(sk, rushers.map(([p, w]) => w * Math.pow(ov(p) / 75, 1.5)));
+  rushers.forEach(([p], i) => put(p, 'sk', skTo[i]));
+  const dbs = [[od.CB[0], .27], [od.CB[1], .23], [od.S[0], .17], [od.S[1], .14], [od.CB[2], .1], [od.LB[0], .06], [od.LB[1], .03]].filter(x => x[0]);
+  const dbw = dbs.map(([p, w]) => w * Math.pow(ov(p) / 75, 3));
+  share(ints, dbw).forEach((n, i) => put(dbs[i][0], 'dint', n));
+  share(Math.round((att - cmp) * .36), dbw).forEach((n, i) => put(dbs[i][0], 'pd', n));
+  const tk = [[od.LB[0], .12], [od.LB[1], .1], [od.S[0], .095], [od.S[1], .085], [od.CB[0], .07], [od.CB[1], .065], [od.CB[2], .045], [od.EDGE[0], .05], [od.EDGE[1], .045], [od.DT[0], .045], [od.DT[1], .04], [od.LB[2], .03]].filter(x => x[0]);
+  share(Math.round((car + cmp + sk) * 1.1 + randn() * 3), tk.map(([p, w]) => w * (.8 + rand() * .4))).forEach((n, i) => put(tk[i][0], 'tkl', n));
+  // kicking
+  const fga = fg + poisson(.28);
+  if (k) { put(k, 'fg', fg); put(k, 'fga', fga); put(k, 'xp', tds); }
+  if (pn) put(pn, 'punts', clamp(poisson(4.6 - pts / 11), 0, 10));
+  // season totals, games played, and the compact box kept on the game
   for (const pos of POS_ORDER) for (const p of d[pos].slice(0, STARTERS[pos])) addStat(p.id, 'gp', 1);
-  const tds = Math.max(0, Math.round((pts - 3 * Math.max(0, Math.round(pts / 9))) / 7));
-  let ptd = 0, rtd = 0;
-  for (let i = 0; i < tds; i++) rand() < .62 ? ptd++ : rtd++;
-  const qbo = qb ? qb.ovr + formOf(qb) * 1.5 : 50;
-  const py = Math.max(60, Math.round(118 + (qbo - 70) * 2.2 + pts * 2.0 + randn() * 38));
-  const ry = Math.max(20, Math.round(105 + (rb ? rb.ovr + formOf(rb) * 1.5 - 70 : -10) * 1.2 + randn() * 30));
-  const ints = poisson(.85 - (qbo - 70) / 70 + (otr.def - 75) / 60);
-  const sk = poisson(1.9 + (otr.def - tr.off) / 15);
-  if (qb) { addStat(qb.id, 'py', py); addStat(qb.id, 'ptd', ptd); addStat(qb.id, 'int', ints); addStat(qb.id, 'ry', Math.round(ry * .1)); }
-  if (rb) { addStat(rb.id, 'ry', Math.round(ry * .7)); addStat(rb.id, 'rtd', rtd); }
-  const tgt = [[wrs[0], .30], [wrs[1], .21], [wrs[2], .13], [te, .17], [rb, .11]].filter(x => x[0]).map(([q, w]) => [q, w * (1 + formOf(q) / 25)]);
-  const tw = tgt.reduce((s, x) => s + x[1], 0);
-  for (const [p, w] of tgt) {
-    const y = Math.round(py * (w / tw) * (.75 + rand() * .5) * .92);
-    addStat(p.id, 'recy', y); addStat(p.id, 'rec', Math.max(1, Math.round(y / (11 + rand() * 4))));
+  const starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
+  const box = [];
+  for (const id in L) {
+    if (!starters.has(id)) addStat(id, 'gp', 1);
+    let row = (id.startsWith('00-00') ? id.slice(5) : id) + ':';
+    for (const kk in L[id]) { addStat(id, kk, L[id][kk]); row += BOXK[kk] + L[id][kk]; }
+    box.push(row);
   }
-  for (let i = 0; i < ptd; i++) {
-    let x = rand() * tw, pick = tgt[0];
-    for (const tg of tgt) { x -= tg[1] * (tg[0].ovr / 80); if (x <= 0) { pick = tg; break; } }
-    if (pick) addStat(pick[0].id, 'rectd', 1);
-  }
-  const rushers = [[od.EDGE[0], .32], [od.EDGE[1], .24], [od.DT[0], .18], [od.DT[1], .1], [od.LB[0], .16]].filter(x => x[0]).map(([q, w]) => [q, w * Math.max(.3, 1 + formOf(q) / 12)]);
-  for (let i = 0; i < sk; i++) { let x = rand(), c = rushers[0]; for (const r of rushers) { x -= r[1]; if (x <= 0) { c = r; break; } } if (c) addStat(c[0].id, 'sk', 1); }
-  const dbs = [od.CB[0], od.CB[1], od.S[0], od.S[1], od.LB[0]].filter(Boolean);
-  for (let i = 0; i < ints; i++) { const p = dbs[rint(0, dbs.length - 1)]; if (p) addStat(p.id, 'dint', 1); }
-  return {py, ptd, rtd, ints, sk};
+  const ry = ry1 + ry2 + qry;
+  return {py, ptd, rtd, ints, sk, ry, att, cmp, car, box: box.join(';')};
 }
 function simGame(a, h, opts = {}) {
   const ta = teamRating(a), th = teamRating(h);
@@ -977,7 +1040,7 @@ function simGame(a, h, opts = {}) {
   as = snap(as); hs = snap(hs);
   let ot = false;
   if (as === hs) { ot = true; const pa = 1 / (1 + Math.exp(-(ta.ovr - th.ovr - hfa) / 6)); rand() < pa ? as += 3 : hs += 3; }
-  const ba = genBox(a, h, as, ta, th), bh = genBox(h, a, hs, th, ta);
+  const ba = genBox(a, h, as, ta, th, hs), bh = genBox(h, a, hs, th, ta, as);
   const hurt = [...injuries(a, ta), ...injuries(h, th)];
   return {a, h, as, hs, ot, ba, bh, hurt};
 }
@@ -1112,6 +1175,8 @@ function beginOffseason() {
   // the cap: real figures through 2027, then about 7% a year, the league's recent pace
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
+  // last season's box scores: keep your own games, drop the rest so the save stays small
+  for (const g of G.results[prev] || []) if (g.a !== G.user && g.h !== G.user) { if (g.ba) delete g.ba.box; if (g.bh) delete g.bh.box; }
   // picks: every team always holds its picks for the next two drafts
   for (const yr of [next, next + 1]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   // contracts that step up after this season (extensions, back-loaded deals) now pay their real average
@@ -1996,7 +2061,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, unpackBox, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

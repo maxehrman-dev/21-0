@@ -366,7 +366,9 @@ const HELP = {
     ['Waves', 'At the end of each wave rival teams bid. He picks the best mix of money, winning, role and loyalty. If a rival beats your offer, you can match.'],
     ['Prices', 'Asking prices drop about 12% each wave, but the best players go fast.']]],
   draft: ['The draft', [
+    ['On the clock', 'The bar up top shows who is picking and how far away your next pick is. The strip below it shows the picks just made and the ones coming up.'],
     ['Big board', 'Seven rounds. 2027 is the real class at the top. Scouts give a range, and the real rating shows the moment a player is drafted.'],
+    ['Draft order', 'Every pick, round by round, with who took whom. Gold rows are yours.'],
     ['Trades', 'Teams call to trade up into your pick. You can also trade up yourself.'],
     ['Auto', 'Auto-draft picks the best fit for your needs, handy for the late rounds.'],
     ['Next year', 'League › More shows the next class long before draft day.']]],
@@ -647,6 +649,16 @@ function renderHome() {
   if (p === 'offseason') return ({progress: homeProgress, resign: homeResign, fa: homeFA, draft: homeDraft, cutdown: homeCutdown})[G.step]();
   if (p === 'final') return homeFinal();
 }
+const poShort = r => /wild/i.test(r) ? 'WC' : /div/i.test(r) ? 'DIV' : /conf|champ/i.test(r) ? 'CONF' : /super/i.test(r) ? 'SB' : esc(r);
+// Your games so far as small tappable results; each opens the box score
+function resultsStrip(season) {
+  const L = userGames(season);
+  if (!L.length) return '';
+  return `<div class="card resstrip"><div class="cardh"><h3>Your games</h3><span class="small muted">Tap for the box score</span></div><div class="rstrip">${L.map(g => {
+    const home = g.h === G.user, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = home ? g.a : g.h, r = us > them ? 'w' : 'l';
+    return `<button class="rchip ${r}" data-act="box" data-k="${gameKey(g)}" data-s="${season}"><b>${r.toUpperCase()}</b><span class="num">${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}</em><em>${g.po ? poShort(g.po) : 'Wk ' + g.wk}</em></button>`;
+  }).join('')}</div></div>`;
+}
 function homePre() {
   const first = G.season === 2026;
   return `<section class="hero"><div><div class="kicker">${G.season} season · Week 1 ${modeTag(G.mode)}</div>
@@ -662,7 +674,7 @@ function homeDeadline() {
     <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2>
     <p class="lead">Your one trade window this season.</p></div>
     <div class="row"><button class="btn" data-tab="trade">Open trade center</button><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
-  <div class="grid g2">${inboxTeaser()}${injuryCard()}${outlookCard(G.season, 'live')}
+  ${resultsStrip(G.season)}<div class="grid g2">${inboxTeaser()}${injuryCard()}${outlookCard(G.season, 'live')}
     <div class="card homeneeds"><div class="cardh"><h3>Biggest needs</h3><button class="btn ghost sm" data-act="rview" data-k="needs">All positions</button></div>${needsList(3)}</div>
   </div>`;
 }
@@ -675,7 +687,7 @@ function homePlayoffs() {
     <h2>${alive ? `${f.w}-${f.l}. ${4 - P.round} wins from a title.` : esc(f.label) + '.'}${helpBtn('playoffs')}</h2>
     <p class="lead">${alive ? 'Play it one round at a time.' : 'Your season is over. Finish the bracket to see who wins it.'}</p></div>
     <div class="row"><button class="btn" data-act="poSkip">Skip to the end</button><button class="btn go lg" data-act="poNext">Play the ${esc(E.ROUND_NAMES[P.round])}</button></div></section>
-  ${injuryCard()}<div class="card">${bracket()}</div>`;
+  ${injuryCard()}${resultsStrip(G.season)}<div class="card">${bracket()}</div>`;
 }
 function homeSeasonDone() {
   const f = E.userFinish(G.season), P = G.playoffs[G.season], gm = E.goalMet(G.season);
@@ -685,7 +697,7 @@ function homeSeasonDone() {
     <p class="lead">${f.perfect ? 'You did it. 21-0.' : `${esc(G.teams[P.champ].nick)} won it all.`}${gm ? ` Goal <b class="${gm.met ? 'gold' : 'bad'}">${gm.met ? 'met' : 'missed'}</b>.` : ''}</p>${verdictLine(G.season)}</div>
     <button class="btn go lg" data-act="${G.season === 2027 && !G.reported ? 'final' : G.fired ? 'newgame' : 'offseason'}">${G.season === 2027 && !G.reported ? 'See final results' : G.fired ? 'Pick a new team' : `Start the ${G.season + 1} offseason`}</button></section>
   ${P.champ === G.user ? `<div class="champbanner"><span class="kicker">Super Bowl champions</span><b>${esc(G.teams[G.user].name)}</b><span class="small muted">${f.perfect ? 'And nobody beat them. 21-0.' : `${f.w}-${f.l}, ${G.season}`}</span></div>` : ''}
-  ${awardsCard(G.season)}
+  ${resultsStrip(G.season)}${awardsCard(G.season)}
   <details class="fold card" style="margin-top:14px" data-fold="bracket" ${foldOpen('bracket')}><summary>Playoff bracket</summary>${bracket()}</details>`;
 }
 function verdictLine(s) {
@@ -794,29 +806,48 @@ function draftRecap() {
   const avg = mine.length ? Math.round(mine.reduce((a, o) => a + o.sel.ovr, 0) / mine.length) : 0;
   popup('Draft complete', mine.length ? `Your class averages ${avg} OVR` : 'You had no picks', `${mine.length ? `<h4 class="sub">Your picks</h4>${mine.map(row).join('')}` : ''}${steals.length ? `<h4 class="sub">Steals of the draft</h4>${steals.map(row).join('')}` : ''}`);
 }
+// The draft: a bar that says who is on the clock and when you pick, a ticker of the picks around now,
+// and three tabs: the big board, the full draft order round by round, and your picks.
 function homeDraft() {
   G.draft.pool.forEach(p => { if (p.lo == null) E.scoutProspect(p); });
-  const D = G.draft, slot = D.order[D.at];
-  const onClock = slot && slot.owner === G.user;
-  const mine = D.order.filter(o => o.owner === G.user && !o.sel);
-  const recent = D.order.slice(Math.max(0, D.at - 5), D.at).reverse();
-  const tr = E.teamRating(G.user);
-  const offers = onClock && tradeOpen() ? E.draftOffers() : [];
-  const ahead = tradeOpen() && UI.tradeUpOpen ? D.order.slice(D.at, D.at + 8).filter(o => o.owner !== G.user && o.pickId) : [];
-  return `${stepper(3)}<section class="hero"><div><h2>${slot ? `Pick ${slot.no}: ${onClock ? 'you are on the clock' : esc(tname(slot.owner)) + ' are up'}` : 'Draft complete'}${helpBtn('draft')}</h2>
-    <p class="lead">Your picks: ${mine.map(o => '#' + o.no).join(', ') || 'none left'}.</p></div>
-    <div class="row">${slot && !onClock ? `<button class="btn" data-act="toMyPick">Sim to my pick</button>` : ''}<button class="btn ${slot ? '' : 'go lg'}" data-act="finishDraft">${slot ? 'Auto-draft the rest' : 'Next: final roster'}</button></div></section>
-  ${offers.length ? `<button class="mobonly inboxrow" data-act="draftCalls"><span class="count">${offers.length}</span><span><b>Teams want your pick</b><span class="small muted">${offers.map(o => esc(G.teams[o.from].nick)).join(', ')}</span></span><span class="chev" aria-hidden="true">›</span></button>` : ''}
-  <div class="mobonly card mboard">${D.pool.slice(0, 60).map(p => `<div class="mbrow"><span class="num pickno">${p.rank}</span><div class="pmain" data-act="prospect" data-rank="${p.rank}"><div class="pn">${esc(p.n)}</div><div class="psub">${p.pos} · ${esc(p.sch)} · <span class="${p.potGrade === 'High' ? 'good' : p.potGrade === 'Medium' ? 'gold' : ''}">${p.potGrade} potential</span></div></div><span class="projr">${p.lo}–${p.hi}</span>${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`).join('')}</div>
-  ${offers.length ? `<div class="card deskonly" style="margin-bottom:14px"><div class="cardh"><h3>Draft-day calls</h3><span class="small muted">Teams want your pick</span></div><div class="offers">${offers.filter(o => !(UI.declined || []).includes(o.id)).map(o => offerCard(o, true)).join('')}</div></div>` : ''}
-  <div class="grid fa-grid">
-  <div class="card deskonly"><div class="cardh"><h3>Big board</h3></div><div class="tw"><table class="tbl"><thead><tr><th>Rank</th><th>Player</th><th>Pos</th><th>Projected</th><th>Your starter</th><th></th></tr></thead><tbody>
-  ${D.pool.slice(0, 60).map(p => { const st = tr.d[p.pos] && tr.d[p.pos][Math.max(0, E.STARTERS[p.pos] - 1)]; const fits = !st || p.hi > st.ovr; return `<tr><td class="num">${p.rank}</td><td><button class="pname" data-act="prospect" data-rank="${p.rank}">${esc(p.n)}</button></td><td>${p.pos}</td>
-  <td class="num"><span class="projr ${fits ? 'gold' : ''}">${p.lo}–${p.hi}</span></td><td class="small">${st ? `<span class="${oc(st.ovr)}">${st.ovr}</span> ${esc(lastName(st.n))}` : '<span class="tag bad">Need</span>'}</td>
-  <td>${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div>
-  <div class="grid"><div class="card"><div class="cardh"><h3>On the clock next</h3>${tradeOpen() && !UI.tradeUpOpen ? '<button class="btn ghost sm" data-act="tradeUpOpen">Trade up</button>' : ''}</div>${ahead.map(o => `<div class="trow"><div class="prow"><span class="num pickno">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(tname(o.owner))}</div></div></div><button class="btn sm" data-act="tradeUp" data-id="${o.pickId}">Trade up</button></div>`).join('') || (UI.tradeUpOpen ? '<p class="muted small">No picks to trade for right now.</p>' : `<p class="small muted">${D.order.slice(D.at, D.at + 3).map(o => `#${o.no} ${esc(tname(o.owner))}`).join(' · ')}</p>`)}</div>
-  <div class="card"><h3>Latest picks</h3>${recent.map(o => `<div class="prow ${o.owner === G.user ? 'me' : ''}"><span class="num pickno">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(o.sel.n)}</div><div class="psub">${o.sel.pos} · ${esc(o.sel.sch)}${o.sel.lo != null ? ` · scouts ${o.sel.lo}–${o.sel.hi}` : ''}</div></div>${o.sel.ovr != null ? `<span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}` : ''}</div>`).join('') || '<p class="muted small">On the clock.</p>'}</div>
-  ${myClass().length ? `<div class="card"><h3>Your class</h3>${myClass().map(o => `<div class="prow"><span class="num pickno">#${o.no}</span>${face(G.players[o.sel.id] || {n: o.sel.n, id: o.sel.id}, 'sm')}<div class="pmain"><div class="pn">${G.players[o.sel.id] ? pname(G.players[o.sel.id]) : esc(o.sel.n)}</div><div class="psub">${o.sel.pos} · scouts ${o.sel.lo}–${o.sel.hi}</div></div><span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}</div>`).join('')}</div>` : ''}</div></div>`;
+  const D = G.draft, slot = D.order[D.at], onClock = slot && slot.owner === G.user;
+  const left = D.order.slice(D.at).filter(o => o.owner === G.user), next = left[0];
+  const tr = E.teamRating(G.user), trade = tradeOpen();
+  const calls = onClock && trade ? E.draftOffers().filter(o => !(UI.declined || []).includes(o.id)) : [];
+  const tab = slot ? UI.dtab || 'board' : 'mine';
+  // the bar
+  const away = next ? next.no - slot.no : 0;
+  const bar = `<section class="draftbar"><div class="dclock ${onClock ? 'me' : ''}">
+      ${slot ? `<div class="kicker">${G.season} draft · Round ${slot.rd}</div><div class="dpick"><span class="num">#${slot.no}</span>${badge(slot.owner)}<div><b>${onClock ? 'You are on the clock' : esc(tname(slot.owner)) + ' are up'}</b><span class="small muted">${onClock ? (calls.length ? `${calls.length} team${calls.length > 1 ? 's' : ''} calling about this pick` : 'Pick from the big board') : next ? `Your next pick: #${next.no}, ${away} pick${away === 1 ? '' : 's'} away` : 'You have no picks left'}</span></div></div>`
+        : `<div class="kicker">${G.season} draft</div><div class="dpick"><div><b>Draft complete</b><span class="small muted">${myClass().length} player${myClass().length === 1 ? '' : 's'} added</span></div></div>`}
+    </div><div class="row dbtns">${slot ? `${!onClock ? `<button class="btn" data-act="draftNext">Next pick</button>${next ? `<button class="btn go" data-act="toMyPick">Sim to my pick</button>` : ''}` : ''}${calls.length ? `<button class="btn" data-act="draftCalls">Calls · ${calls.length}</button>` : ''}<button class="btn ghost" data-act="finishDraft">Auto-draft the rest</button>` : `<button class="btn go lg" data-act="finishDraft">Next: final roster</button>`}${helpBtn('draft')}</div></section>`;
+  // the ticker: the last few picks, the pick on the clock, the next ten
+  const tick = D.order.slice(Math.max(0, D.at - 3), D.at + 11).map(o => {
+    const cur = slot && o.no === slot.no, mine = o.owner === G.user;
+    return `<div class="dtile ${cur ? 'cur' : ''} ${mine ? 'mine' : ''} ${o.sel ? 'done' : ''}"><div class="dtop"><span class="num">#${o.no}</span>${badge(o.owner, 1)}</div>${o.sel ? `<b>${esc(lastName(o.sel.n))}</b><span>${o.sel.pos}${o.sel.ovr != null ? ' · ' + o.sel.ovr : ''}</span>` : cur ? `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span class="gold">On the clock</span>` : `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span>${trade && !mine && o.pickId ? `<button class="linkbtn" data-act="tradeUp" data-id="${o.pickId}">Trade up</button>` : 'Rd ' + o.rd}</span>`}</div>`;
+  }).join('');
+  const tabs = `<div class="seg dtabs">${[['board', 'Big board'], ['order', 'Draft order'], ['mine', `My picks · ${left.length + myClass().length}`]].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="seg" data-seg="dtab" data-k="${k}">${l}</button>`).join('')}</div>`;
+  let body = '';
+  if (tab === 'board') {
+    const pos = UI.dboardPos || 'ALL', L = D.pool.filter(p => inGroup(p.pos, pos)).slice(0, 80);
+    body = `${posChips('dboardPos', pos)}<div class="card dboard">${L.map((p, k) => { const st = tr.d[p.pos] && tr.d[p.pos][Math.max(0, E.STARTERS[p.pos] - 1)]; const fits = !st || p.hi > st.ovr;
+      return `<div class="dkrow"><span class="num drank">${p.rank}</span><div class="pmain" data-act="prospect" data-rank="${p.rank}"><div class="pn">${esc(p.n)} ${k === 0 && pos === 'ALL' ? '<span class="tag gold">Best available</span>' : ''}</div><div class="psub">${p.pos} · ${esc(p.sch)} · <span class="${p.potGrade === 'High' ? 'good' : p.potGrade === 'Medium' ? 'gold' : ''}">${p.potGrade} potential</span></div></div>
+        <span class="dproj"><span class="projr ${fits ? 'gold' : ''}">${p.lo}–${p.hi}</span><span class="small muted">${fits ? (st ? 'Upgrade' : 'Fills a need') : 'Depth'}</span></span>
+        <span class="dstart small deskonly">${st ? `Your ${p.pos}: <span class="${oc(st.ovr)}">${st.ovr}</span> ${esc(lastName(st.n))}` : `<span class="tag bad">No ${p.pos}</span>`}</span>
+        ${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`; }).join('') || '<p class="muted">Nobody left at that position.</p>'}</div>`;
+  } else if (tab === 'order') {
+    const rd = +(UI.dround || (slot ? slot.rd : 1));
+    const R = D.order.filter(o => o.rd === rd);
+    body = `<div class="wkchips">${[1, 2, 3, 4, 5, 6, 7].map(r => `<button class="chip ${r === rd ? 'on' : ''}" data-act="seg" data-seg="dround" data-k="${r}">Round ${r}${D.order.some(o => o.rd === r && o.owner === G.user) ? ' ●' : ''}</button>`).join('')}</div>
+      <div class="card dorder">${R.map(o => { const cur = slot && o.no === slot.no, mine = o.owner === G.user, past = D.order.indexOf(o) < D.at;
+        return `<div class="dkrow ${mine ? 'me' : ''} ${cur ? 'cur' : ''}"><span class="num drank">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(tname(o.owner))}${o.orig !== o.owner ? ` <span class="small muted">via ${esc(G.teams[o.orig].nick)}</span>` : ''}</div>
+          <div class="psub">${o.sel ? `<b>${esc(o.sel.n)}</b> · ${o.sel.pos} · ${esc(o.sel.sch || '')}` : cur ? '<span class="gold">On the clock</span>' : past ? '' : mine ? 'Your pick' : 'Upcoming'}</div></div>
+          ${o.sel && o.sel.ovr != null ? `<span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}` : !o.sel && !cur && !mine && trade && o.pickId && !past ? `<button class="btn sm" data-act="tradeUp" data-id="${o.pickId}">Trade up</button>` : ''}</div>`; }).join('')}</div>`;
+  } else {
+    body = `<div class="grid g2"><div class="card"><h3>Picks left</h3>${left.map(o => `<div class="dkrow me"><span class="num drank">#${o.no}</span><div class="pmain"><div class="pn">Round ${o.rd}${o.orig !== G.user ? ` <span class="small muted">via ${esc(G.teams[o.orig].nick)}</span>` : ''}</div><div class="psub">${slot && o.no === slot.no ? '<span class="gold">On the clock</span>' : slot ? `${o.no - slot.no} picks away` : ''}</div></div></div>`).join('') || '<p class="muted small">No picks left.</p>'}</div>
+      <div class="card"><h3>Your class</h3>${myClass().map(o => `<div class="dkrow"><span class="num drank">#${o.no}</span>${face(G.players[o.sel.id] || {n: o.sel.n, id: o.sel.id}, 'sm')}<div class="pmain"><div class="pn">${G.players[o.sel.id] ? pname(G.players[o.sel.id]) : esc(o.sel.n)}</div><div class="psub">${o.sel.pos} · scouts ${o.sel.lo}–${o.sel.hi}</div></div><span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}</div>`).join('') || '<p class="muted small">Nobody drafted yet.</p>'}</div></div>`;
+  }
+  return `${stepper(3)}${bar}<div class="dticker" role="list" aria-label="Draft order">${tick}</div>${slot ? tabs : ''}${body}`;
 }
 function homeCutdown() {
   const issues = E.userReady();
@@ -1088,12 +1119,13 @@ function classView() {
     </div>`;
 }
 function renderLeague() {
-  const more = [['schedule', 'Schedule'], ['leaders', 'Leaders'], ['awards', 'Awards'], ['moves', 'Your moves'], ['classview', `${E.nextDraftYear()} draft class`], ['resume', 'Résumé']];
+  const more = [['scores', 'Scores'], ['schedule', 'Schedule'], ['leaders', 'Leaders'], ['awards', 'Awards'], ['moves', 'Your moves'], ['classview', `${E.nextDraftYear()} draft class`], ['resume', 'Résumé']];
   const cur = more.find(([k]) => k === UI.league);
   const nav = `<div class="lgnav"><button class="btn ${!cur ? 'go' : ''} sm" data-act="seg" data-seg="league" data-k="standings">Standings</button><span class="moremenu"><button class="btn sm ${cur ? 'go' : 'ghost'}" data-act="lgMore" aria-expanded="${!!UI.lgMore}">${cur ? esc(cur[1]) : 'More'} ▾</button>${UI.lgMore ? `<span class="morepop down">${more.map(([k, l]) => `<button class="btn sm ${k === UI.league ? 'go' : 'ghost'}" data-act="seg" data-seg="league" data-k="${k}">${esc(l)}</button>`).join('')}</span>` : ''}</span></div>`;
   let body;
   if (UI.league === 'resume') return `<section class="hero tight"><div><h2>League</h2></div>${nav}</section>` + renderResume();
   if (UI.league === 'schedule') body = renderSchedule();
+  else if (UI.league === 'scores') body = renderScores();
   else if (UI.league === 'leaders') body = renderLeaders();
   else if (UI.league === 'awards') { const yrs = Object.keys(G.awards || {}).map(Number).sort((a, b) => b - a); body = yrs.length ? `<div class="grid g2">${yrs.map(y => awardsCard(y)).join('')}</div>` : '<div class="card"><p class="muted">Awards are handed out when the season ends.</p></div>'; }
   else if (UI.league === 'classview') body = classView();
@@ -1173,14 +1205,82 @@ function renderResume() {
   ${G ? '<p style="margin-top:20px"><button class="btn danger" data-act="askReset">Start over with a new team</button></p>' : ''}`;
 }
 
-function scoreCard(g, label) {
+function scoreCard(g, label, season) {
   const mine = g.a === G.user || g.h === G.user;
   const aw = g.as > g.hs;
-  return `<div class="score ${mine ? 'mine' : ''}">
+  return `<button class="score ${mine ? 'mine' : ''}" data-act="box" data-k="${gameKey(g)}" data-s="${season || G.season}" aria-label="Box score: ${esc(tname(g.a))} ${g.as}, ${esc(tname(g.h))} ${g.hs}">
     ${label ? `<div class="tag">${esc(label)}</div>` : ''}
     <div class="t ${aw ? '' : 'l'}">${badge(g.a, 1)} ${esc(tname(g.a))}</div><div class="p num ${aw ? '' : 'l'}">${g.as}</div>
     <div class="t ${aw ? 'l' : ''}">${badge(g.h, 1)} ${esc(tname(g.h))}</div><div class="p num ${aw ? 'l' : ''}">${g.hs}${g.ot ? '<span class="small muted"> OT</span>' : ''}</div>
-  </div>`;
+  </button>`;
+}
+
+// ---------- box scores ----------
+const gameKey = g => `${g.a}-${g.h}-${g.wk || g.po || 0}`;
+const findGame = (s, k) => (G.results[s] || []).find(g => gameKey(g) === k);
+function boxLines(side) { return side && side.box ? E.unpackBox(side.box).filter(r => G.players[r.id]) : null; }
+// One number per player for "player of the game"
+const gameScore = st => (st.py || 0) / 25 + (st.ptd || 0) * 4 - (st.int || 0) * 2 + ((st.ry || 0) + (st.recy || 0)) / 10 + ((st.rtd || 0) + (st.rectd || 0)) * 6 + (st.sk || 0) * 4 + (st.dint || 0) * 5 + (st.tkl || 0) * .4;
+function perfLine(st) {
+  const n = v => (v || 0).toLocaleString(), out = [];
+  if (st.att) out.push(`${st.cmp}/${st.att}, ${n(st.py)} yds${st.ptd ? `, ${st.ptd} TD` : ''}${st.int ? `, ${st.int} INT` : ''}`);
+  if (st.car && (st.ry || 0) >= 20) out.push(`${st.car} car, ${n(st.ry)} yds${st.rtd ? `, ${st.rtd} TD` : ''}`);
+  if (st.rec) out.push(`${st.rec} rec, ${n(st.recy)} yds${st.rectd ? `, ${st.rectd} TD` : ''}`);
+  if (st.sk || st.dint || st.tkl) out.push([st.tkl ? `${st.tkl} tkl` : '', st.sk ? `${st.sk} sack${st.sk > 1 ? 's' : ''}` : '', st.dint ? `${st.dint} INT` : ''].filter(Boolean).join(', '));
+  return out.filter(Boolean).join(' · ');
+}
+function boxSheet(s, k, side) {
+  const g = findGame(s, k);
+  if (!g) return;
+  UI.boxAt = {s, k};
+  const me = g.h === G.user ? 'h' : 'a';
+  side = side || (UI.boxSide && UI.boxSide.k === k ? UI.boxSide.v : (g.a === G.user || g.h === G.user ? me : (g.as > g.hs ? 'a' : 'h')));
+  UI.boxSide = {k, v: side};
+  const A = g.ba || {}, H = g.bh || {}, la = boxLines(g.ba), lh = boxLines(g.bh);
+  const when = g.po ? esc(g.po) : `Week ${g.wk}`;
+  const n = v => v == null ? '–' : Math.round(v).toLocaleString();
+  const ry = (B, L) => B.ry != null ? B.ry : L ? L.reduce((a, r) => a + (r.st.ry || 0), 0) : null;
+  const tot = (B, L) => B.py != null && ry(B, L) != null ? B.py + ry(B, L) : null;
+  const cmpRow = (lab, a, h) => `<tr><td class="num">${a}</td><td class="lbl2">${lab}</td><td class="num">${h}</td></tr>`;
+  const team = `<table class="tbl boxcmp"><tbody>
+    ${cmpRow('Total yards', n(tot(A, la)), n(tot(H, lh)))}
+    ${cmpRow('Passing', A.att ? `${A.cmp}/${A.att} · ${n(A.py)}` : n(A.py), H.att ? `${H.cmp}/${H.att} · ${n(H.py)}` : n(H.py))}
+    ${cmpRow('Rushing', A.car ? `${A.car} · ${n(ry(A, la))}` : n(ry(A, la)), H.car ? `${H.car} · ${n(ry(H, lh))}` : n(ry(H, lh)))}
+    ${cmpRow('Turnovers', n(A.ints), n(H.ints))}
+    ${cmpRow('Sacks taken', n(A.sk), n(H.sk))}</tbody></table>`;
+  const all = [...(la || []).map(r => ({...r, t: g.a})), ...(lh || []).map(r => ({...r, t: g.h}))];
+  const win = g.as > g.hs ? g.a : g.h, gs = r => gameScore(r.st) + (r.t === win ? 4 : 0);
+  const star = all.slice().sort((x, y) => gs(y) - gs(x))[0];
+  const L = side === 'a' ? la : lh, t = side === 'a' ? g.a : g.h;
+  const nm = r => `<button class="pname" data-act="player" data-id="${esc(r.id)}">${esc(G.players[r.id].n)}</button> <span class="muted small">${G.players[r.id].pos}</span>`;
+  const sect = (title, head, rows) => rows.length ? `<h4 class="sub">${title}</h4><div class="tw"><table class="tbl boxt"><thead><tr><th></th>${head.map(h => `<th class="num">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>` : '';
+  const tr = (r, cells) => `<tr><td>${nm(r)}</td>${cells.map(c => `<td class="num">${c}</td>`).join('')}</tr>`;
+  const players = L ? [
+    sect('Passing', ['C/Att', 'Yds', 'TD', 'INT'], L.filter(r => r.st.att).map(r => tr(r, [`${r.st.cmp || 0}/${r.st.att}`, n(r.st.py), r.st.ptd || 0, r.st.int || 0]))),
+    sect('Rushing', ['Car', 'Yds', 'Avg', 'TD'], L.filter(r => r.st.car).sort((x, y) => (y.st.ry || 0) - (x.st.ry || 0)).map(r => tr(r, [r.st.car, n(r.st.ry), ((r.st.ry || 0) / r.st.car).toFixed(1), r.st.rtd || 0]))),
+    sect('Receiving', ['Rec', 'Tgt', 'Yds', 'TD'], L.filter(r => r.st.tgt).sort((x, y) => (y.st.recy || 0) - (x.st.recy || 0)).map(r => tr(r, [r.st.rec || 0, r.st.tgt, n(r.st.recy), r.st.rectd || 0]))),
+    sect('Defense', ['Tkl', 'Sk', 'INT', 'PD'], L.filter(r => r.st.tkl || r.st.sk || r.st.dint || r.st.pd).sort((x, y) => ((y.st.tkl || 0) + (y.st.sk || 0) * 3 + (y.st.dint || 0) * 4) - ((x.st.tkl || 0) + (x.st.sk || 0) * 3 + (x.st.dint || 0) * 4)).slice(0, 8).map(r => tr(r, [r.st.tkl || 0, r.st.sk || 0, r.st.dint || 0, r.st.pd || 0]))),
+    sect('Kicking', ['FG', 'XP', 'Punts'], L.filter(r => r.st.fga || r.st.xp || r.st.punts).map(r => tr(r, [r.st.fga ? `${r.st.fg || 0}/${r.st.fga}` : '–', r.st.xp || '–', r.st.punts || '–']))),
+  ].join('') : '<p class="muted small">Player stats are only kept for your own games from past seasons.</p>';
+  const aw = g.as > g.hs;
+  modal(`<div class="sheeth"><div><div class="kicker">${s} · ${when}${g.ot ? ' · OT' : ''}</div><h3>Box score</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="boxhead"><div class="bt ${aw ? '' : 'l'}">${badge(g.a, 1)}<span>${esc(G.teams[g.a].nick)}</span><b class="num">${g.as}</b></div><span class="muted">at</span><div class="bt ${aw ? 'l' : ''}"><b class="num">${g.hs}</b><span>${esc(G.teams[g.h].nick)}</span>${badge(g.h, 1)}</div></div>
+    ${star && gameScore(star.st) > 0 ? `<div class="potg">${face(G.players[star.id], 'sm')}<div><div class="kicker">Player of the game</div><b>${esc(G.players[star.id].n)}</b> <span class="small muted">${G.players[star.id].pos} · ${esc(G.teams[star.t].nick)}</span><div class="small">${perfLine(star.st)}</div></div></div>` : ''}
+    ${team}
+    <div class="seg boxseg"><button class="${side === 'a' ? 'on' : ''}" data-act="boxSide" data-k="a">${esc(G.teams[g.a].nick)}</button><button class="${side === 'h' ? 'on' : ''}" data-act="boxSide" data-k="h">${esc(G.teams[g.h].nick)}</button></div>
+    ${players}`, true);
+}
+// Every game of one week, newest week first
+function renderScores() {
+  const s = G.phase === 'offseason' ? G.season - 1 : G.season;
+  const R = G.results[s] || [];
+  if (!R.length) return '<div class="card"><p class="muted">No games played yet this season.</p></div>';
+  const weeks = [...new Set(R.map(g => g.po || g.wk))];
+  const cur = weeks.includes(UI.scoreWk) ? UI.scoreWk : weeks[weeks.length - 1];
+  const games = R.filter(g => (g.po || g.wk) === cur).sort((x, y) => (y.a === G.user || y.h === G.user) - (x.a === G.user || x.h === G.user));
+  return `<div class="card"><div class="cardh"><h3>${s} scores</h3><span class="small muted">Tap a game for the box score</span></div>
+    <div class="wkchips">${weeks.slice().reverse().map(w => `<button class="chip ${w === cur ? 'on' : ''}" data-act="scoreWk" data-k="${esc(String(w))}">${typeof w === 'number' ? 'Wk ' + w : poShort(w)}</button>`).join('')}</div>
+    <div class="scoregrid">${games.map(g => scoreCard(g, '', s)).join('')}</div></div>`;
 }
 
 function divStandings(conf) {
@@ -1325,12 +1425,12 @@ function homeFinal() {
 
 // ---------- stats: one set of columns per position ----------
 const COLS = {
-  QB: [['g', 'G'], ['py', 'Pass yds'], ['ptd', 'Pass TD'], ['int', 'INT'], ['ry', 'Rush yds']],
-  RB: [['g', 'G'], ['ry', 'Rush yds'], ['rtd', 'Rush TD'], ['rec', 'Rec'], ['recy', 'Rec yds']],
-  REC: [['g', 'G'], ['rec', 'Rec'], ['recy', 'Yds'], ['rectd', 'TD']],
+  QB: [['g', 'G'], ['ca', 'C/Att'], ['pct', 'Pct'], ['py', 'Pass yds'], ['ptd', 'Pass TD'], ['int', 'INT'], ['ry', 'Rush yds']],
+  RB: [['g', 'G'], ['car', 'Car'], ['ry', 'Rush yds'], ['ypc', 'Avg'], ['rtd', 'Rush TD'], ['rec', 'Rec'], ['recy', 'Rec yds']],
+  REC: [['g', 'G'], ['tgt', 'Tgt'], ['rec', 'Rec'], ['recy', 'Yds'], ['avg', 'Avg'], ['rectd', 'TD']],
   OL: [['g', 'G']],
   DEF: [['g', 'G'], ['tkl', 'Tkl'], ['sk', 'Sacks'], ['dint', 'INT'], ['pd', 'PD']],
-  K: [['g', 'G'], ['fg', 'FG']],
+  K: [['g', 'G'], ['fg', 'FG'], ['xp', 'XP']],
   P: [['g', 'G'], ['punts', 'Punts']],
 };
 const SCHEMA = {QB: 'QB', RB: 'RB', WR: 'REC', TE: 'REC', OT: 'OL', IOL: 'OL', EDGE: 'DEF', DT: 'DEF', LB: 'DEF', CB: 'DEF', S: 'DEF', K: 'K', P: 'P'};
@@ -1360,8 +1460,12 @@ function parseReal(str, pos) {
 function simStats(p, season) {
   const s = (G.stats[season] || {})[p.id];
   if (!s) return null;
-  const o = {...s, g: s.gp};
+  const o = {...s, g: s.gp}, r1 = v => Math.round(v * 10) / 10;
   if (SCHEMA[p.pos] !== 'QB' && SCHEMA[p.pos] !== 'RB') delete o.ry;
+  if (s.att) { o.ca = `${s.cmp || 0}/${s.att}`; o.pct = r1((s.cmp || 0) / s.att * 100); }
+  if (s.car) o.ypc = r1((s.ry || 0) / s.car);
+  if (s.rec) o.avg = r1((s.recy || 0) / s.rec);
+  if (s.fga) o.fg = `${s.fg || 0}/${s.fga}`;
   return o;
 }
 // Every season we have for a player, newest first
@@ -1398,15 +1502,15 @@ function renderSchedule() {
   <div class="card tw"><table class="tbl"><tr><th>Week</th><th>Opponent</th><th>Result</th></tr>
   ${games.map(([w, a, h]) => { const g = played.find(x => x.wk === w && !x.po); const home = h === G.user, opp = home ? a : h;
     let res = '<span class="muted">-</span>';
-    if (g) { const my = home ? g.hs : g.as, op = home ? g.as : g.hs; res = `<span class="pill ${my > op ? 'good' : 'bad'}">${my > op ? 'W' : 'L'}</span> <span class="num">${my}-${op}${g.ot ? ' OT' : ''}</span>`; }
+    if (g) { const my = home ? g.hs : g.as, op = home ? g.as : g.hs; res = `<button class="boxlink" data-act="box" data-k="${gameKey(g)}" data-s="${s}"><span class="pill ${my > op ? 'good' : 'bad'}">${my > op ? 'W' : 'L'}</span> <span class="num">${my}-${op}${g.ot ? ' OT' : ''}</span> <span class="chev">›</span></button>`; }
     return `<tr><td class="num">${w}</td><td><div class="row" style="gap:8px">${home ? 'vs' : '@'} ${badge(opp, 1)} ${esc(tname(opp))} <span class="muted small">${rec(opp, s)}</span></div></td><td>${res}</td></tr>`; }).join('')}
-  ${played.filter(g => g.po).map(g => { const home = g.h === G.user, opp = home ? g.a : g.h, my = home ? g.hs : g.as, op = home ? g.as : g.hs; return `<tr><td>${esc(g.po)}</td><td><div class="row" style="gap:8px">${home ? 'vs' : '@'} ${badge(opp, 1)} ${esc(tname(opp))}</div></td><td><span class="pill ${my > op ? 'good' : 'bad'}">${my > op ? 'W' : 'L'}</span> <span class="num">${my}-${op}</span></td></tr>`; }).join('')}
+  ${played.filter(g => g.po).map(g => { const home = g.h === G.user, opp = home ? g.a : g.h, my = home ? g.hs : g.as, op = home ? g.as : g.hs; return `<tr><td>${esc(g.po)}</td><td><div class="row" style="gap:8px">${home ? 'vs' : '@'} ${badge(opp, 1)} ${esc(tname(opp))}</div></td><td><button class="boxlink" data-act="box" data-k="${gameKey(g)}" data-s="${s}"><span class="pill ${my > op ? 'good' : 'bad'}">${my > op ? 'W' : 'L'}</span> <span class="num">${my}-${op}</span> <span class="chev">›</span></button></td></tr>`; }).join('')}
   </table></div>`;
 }
 function renderLeaders() {
   const s = G.phase === 'offseason' ? 2026 : G.season;
   const st = G.stats[s] || {};
-  const cats = [['py', 'Passing yards'], ['ptd', 'Passing TD'], ['ry', 'Rushing yards'], ['recy', 'Receiving yards'], ['sk', 'Sacks'], ['dint', 'Interceptions']];
+  const cats = [['py', 'Passing yards'], ['ptd', 'Passing TD'], ['ry', 'Rushing yards'], ['recy', 'Receiving yards'], ['rec', 'Receptions'], ['tkl', 'Tackles'], ['sk', 'Sacks'], ['dint', 'Interceptions'], ['rtd', 'Rushing TD']];
   const nameOf = id => G.players[id] ? G.players[id] : null;
   return `
   <div class="grid g3">${cats.map(([k, l]) => { const top = Object.entries(st).filter(([id, v]) => v[k] && nameOf(id)).sort((a, b) => b[1][k] - a[1][k]).slice(0, 8);
@@ -1832,6 +1936,8 @@ function render() {
   if (UI.hdrVals && !reducedMotion()) $$('#hdr .hstats .num').forEach((x, i) => { if (UI.hdrVals[i] !== undefined && UI.hdrVals[i] !== hv[i]) x.classList.add('bump'); });
   UI.hdrVals = hv;
   if (UI.celebrate && !UI.reel) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 150); }
+  // keep the pick on the clock in view in the draft ticker
+  const cur = $('.dticker .dtile.cur'); if (cur) cur.parentNode.scrollLeft = Math.max(0, cur.offsetLeft - cur.parentNode.offsetLeft - 8 - cur.offsetWidth);
 }
 const foldOpen = k => (UI.folds || {})[k] ? 'open' : '';
 document.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.fold) (UI.folds = UI.folds || {})[d.dataset.fold] = d.open; }, true);
@@ -1923,6 +2029,9 @@ document.addEventListener('click', e => {
     case 'tradeUpOpen': UI.tradeUpOpen = true; break;
     case 'dockMore': UI.dockMore = !UI.dockMore; break;
     case 'lgMore': UI.lgMore = !UI.lgMore; break;
+    case 'box': boxSheet(+el.dataset.s, el.dataset.k); return;
+    case 'boxSide': if (UI.boxAt) boxSheet(UI.boxAt.s, UI.boxAt.k, el.dataset.k); return;
+    case 'scoreWk': UI.scoreWk = isNaN(+el.dataset.k) ? el.dataset.k : +el.dataset.k; break;
     case 'modeSheet': modal(`<div class="sheeth"><div><div class="kicker">Optional</div><h3>Pick a mode</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div><div class="helplist">${Object.entries(MODES).map(([k, v]) => `<button class="modeopt ${(UI.mode || 'standard') === k ? 'on' : ''}" data-act="setMode" data-k="${k}"><b>${esc(v[0])}</b><span>${esc(v[1])}</span></button>`).join('')}</div>`, true); return;
     case 'setMode': UI.mode = el.dataset.k; closeModal(); renderPicker(); renderHeader(); return;
     case 'tAll': UI[el.dataset.k] = !UI[el.dataset.k]; break;
@@ -2035,6 +2144,7 @@ document.addEventListener('click', e => {
       closeModal(); E.finishFA(); E.refreshOffers(); break;
     }
     case 'toMyPick': E.simDraftToUser(); break;
+    case 'draftNext': if (G.draft.order[G.draft.at] && G.draft.order[G.draft.at].owner !== G.user) E.aiPick(); persist(); break;
     case 'draftP': {
       const p = G.draft.pool.find(x => x.rank === +el.dataset.rank); if (!p) return;
       const slot = G.draft.order[G.draft.at];

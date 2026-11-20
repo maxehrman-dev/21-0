@@ -32,6 +32,8 @@
 - **Real contracts.** Lengths and salaries come from OverTheCap: this season's cap hit now, then each deal's real average from next season. The cap is the real $301.2M for 2026 and $327M for 2027, then grows about 7% a year.
 - **Keep playing.** The scored run is 2026 and 2027, but after the final report you can keep going: a new offseason, a new draft class and a new season every year. Players age, retire and get replaced by drafted and undrafted rookies, so the league stays near the real average age of about 26.
 - **Scout ahead.** The next draft class is in League › More, well before draft day.
+- **Box scores for every game.** Tap any result for passing, rushing, receiving, defense and kicking lines and a player of the game. Season stats (completions, carries, targets, tackles, pass breakups, field goals) are built play by play and land in real NFL ranges.
+- **A draft you can follow.** The draft shows who is on the clock, a ticker of the picks around now, the big board, and the full order round by round.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
 ## Controls

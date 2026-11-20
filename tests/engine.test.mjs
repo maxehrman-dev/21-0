@@ -239,3 +239,25 @@ test('contracts match real lengths', () => {
   assert.equal(byName('Joe Burrow').end, 2029);
   assert.equal(byName('Trevor Lawrence').end, 2030);
 });
+
+test('season stats land in real NFL ranges and every game keeps a box score', () => {
+  E.newGame(DATA, 'DET', 11);
+  E.simTo(18);
+  const S = E.G.stats[E.G.season], rows = Object.entries(S).map(([id, s]) => ({p: E.G.players[id], s})).filter(x => x.p);
+  const top = (pos, k) => Math.max(...rows.filter(x => pos.includes(x.p.pos)).map(x => x.s[k] || 0));
+  const per = k => rows.reduce((a, x) => a + (x.s[k] || 0), 0) / 32;
+  assert.ok(top(['QB'], 'py') > 4000 && top(['QB'], 'py') < 5600, 'top passer');
+  assert.ok(top(['RB'], 'ry') > 1100 && top(['RB'], 'ry') < 2200, 'top rusher');
+  assert.ok(top(['WR', 'TE'], 'recy') > 1300 && top(['WR', 'TE'], 'recy') < 2400, 'top receiver');
+  assert.ok(top(['EDGE', 'DT', 'LB'], 'sk') >= 12 && top(['EDGE', 'DT', 'LB'], 'sk') <= 27, 'top pass rusher');
+  assert.ok(top(['LB', 'S', 'CB'], 'tkl') > 110 && top(['LB', 'S', 'CB'], 'tkl') < 210, 'top tackler');
+  const pct = per('cmp') / per('att');
+  assert.ok(pct > .6 && pct < .7, `completion rate ${pct}`);
+  assert.ok(per('sk') > 30 && per('sk') < 50, 'sacks per team');
+  assert.ok(per('py') > 3300 && per('py') < 4300, 'pass yards per team');
+  // the box score adds up to the team line and decodes back to players
+  const g = E.G.results[E.G.season][0], L = E.unpackBox(g.ba.box);
+  assert.ok(L.length >= 8 && L.every(r => E.G.players[r.id]));
+  assert.equal(L.reduce((a, r) => a + (r.st.recy || 0), 0) <= g.ba.py + 2, true);
+  assert.equal(L.reduce((a, r) => a + (r.st.att || 0), 0), g.ba.att);
+});
