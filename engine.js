@@ -1049,7 +1049,7 @@ function simGame(a, h, opts = {}) {
 // Every injury to your team goes in G.injLog so the game can tell you the moment you get control back.
 function injuries(t, tr) {
   const out = [];
-  if (G.season === 2026 && G.phase === 'preseason') return out;
+  if (G.season === 2026 && (G.phase === 'preseason' || (G.phase === 'season' && G.week < DEADLINE_WEEK))) return out;
   for (const pos of POS_ORDER) for (const p of tr.d[pos].slice(0, STARTERS[pos])) {
     if (pos === 'K' || pos === 'P') continue;
     if (rand() > .0045 * (pos === 'QB' ? .5 : 1)) continue;

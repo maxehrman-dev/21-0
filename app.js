@@ -342,7 +342,8 @@ const HELP = {
     ['4 · 2027 season', 'One more trade deadline, then one more shot at 21-0.'],
     ['The gold Next button', 'It always does the next step. On a computer, N does the same.']]],
   pre: ['Before the deadline', [
-    ['What happens now', 'Trades are open until kickoff. Then Weeks 1 to 8 play out, and the next window is the Week 9 deadline.'],
+    ['What happens now', 'Trades are open until kickoff. The next window opens after Week 9.'],
+    ['One game at a time', 'Play Week N plays just your next game and shows how it went. Or sim straight to the deadline.'],
     ['Team needs', 'Letter grades rank each position against the league. F and D spots are what to buy at the deadline.'],
     ['Outlook', 'Projected wins and odds come from hundreds of simulated seasons with the current rosters.']]],
   deadline: ['Trades', [
@@ -448,7 +449,7 @@ const TAB_ICON = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 
 function nextAction() {
   if (!G) return null;
   const P = G.phase, S = G.step;
-  if (P === 'preseason' || P === 'season') return {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `${G.season} · Week 1`};
+  if (P === 'preseason' || P === 'season') return G.week < E.DEADLINE_WEEK ? {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `${G.season} · Week ${G.week + 1}`} : {label: 'Sim rest of season', act: 'simRest', sub: `${G.season} · Week ${G.week + 1}`};
   if (P === 'deadline') { const n = offerCount(); return {label: 'Sim rest of season', act: 'simRest', sub: n ? `${n} trade offer${n > 1 ? 's' : ''} waiting` : 'Trade deadline'}; }
   if (P === 'playoffs') { const R = G.playoffs[G.season]; return {label: `Play the ${E.ROUND_NAMES[R.round]}`, act: 'poNext', sub: `${G.season} playoffs`, alt: {label: 'Skip', act: 'poSkip'}}; }
   if (P === 'seasondone' && G.fired && !(G.season === 2027 && !G.reported)) return {label: 'Pick a new team', act: 'newgame', sub: 'You were fired'};
@@ -507,7 +508,7 @@ function renderHeader() {
   const a = nextAction();
   $('#hdr').innerHTML = `<div class="hbar">
     <button class="logo" data-tab="home" aria-label="Home" title="Shortcuts: N for the next step, 1 to 5 for sections">21<span>-</span>0</button>
-    <div class="hteam">${badge(G.user)}<div class="hmeta"><b>${esc(G.teams[G.user].name)}${perfectNow() ? ' <i class="perfect" title="Still unbeaten">Perfect</i>' : ''}</b><span>${esc(phaseLabel())}</span></div></div>
+    <div class="hteam">${badge(G.user)}<div class="hmeta"><b><em class="tfull">${esc(G.teams[G.user].name)}</em><em class="tnick">${esc(G.teams[G.user].nick)}</em>${perfectNow() ? ' <i class="perfect" title="Still unbeaten">Perfect</i>' : ''}</b><span>${esc(phaseLabel())}</span></div></div>
     <div class="hstats">
       <div class="stat"><b class="num">${rec(G.user)}</b><span>${(() => { const k = E.streak(G.user, G.season); return k && G.phase !== 'offseason' ? `<em class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n}</em> streak` : 'Record'; })()}</span></div>
       <div class="stat"><b class="num ${oc(tr.ovr)}">${tr.ovr}</b><span>OVR · #${rank}</span></div>
@@ -634,9 +635,11 @@ function hurtStarters() {
   const d = E.depth(G.user), wouldStart = p => { const L = d[p.pos], last = L[E.STARTERS[p.pos] - 1]; return !last || p.ovr > last.ovr; };
   return E.roster(G.user).filter(p => p.inj).filter(wouldStart);
 }
+// The goal in as few words as possible: "Reach the conference title game" becomes "Conference title game"
+const shortGoal = g => ({'Win the Super Bowl': 'Super Bowl', 'Reach the conference title game': 'Conference title game', 'Make the playoffs': 'Playoffs', 'Finish with a winning record': 'Winning record', 'Win at least 6 games': '6+ wins'})[g] || g;
 function homeRows(season) {
   const e = E.setExpectations(season), rows = [];
-  rows.push(srow('flag', 'Owner expects', esc(e.goal), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
+  rows.push(srow('flag', 'Owner expects', esc(shortGoal(e.goal)), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
   if (tradeOpen()) { const n = (G.offers || []).length; rows.push(srow('trade', 'Trade offers', n ? `${n} waiting` : 'None yet', 'data-act="openInbox"', n ? 'hot' : '')); }
   const hurt = hurtStarters();
   if (hurt.length) rows.push(srow('hurt', 'Injured starters', `${hurt.length} out`, 'data-act="injurySheet"', 'bad'));
@@ -663,7 +666,7 @@ function injurySheet() {
 // ---------- home by phase ----------
 function renderHome() {
   const p = G.phase;
-  if (p === 'preseason' || p === 'season') return homePre();
+  if (p === 'preseason' || p === 'season') return G.week > 0 ? homeSeason() : homePre();
   if (p === 'deadline') return homeDeadline();
   if (p === 'playoffs') return homePlayoffs();
   if (p === 'seasondone') return homeSeasonDone();
@@ -680,21 +683,81 @@ function resultsStrip(season) {
     return `<button class="rchip ${r}" data-act="box" data-k="${gameKey(g)}" data-s="${season}"><b>${r.toUpperCase()}</b><span class="num">${us}-${them}</span><em>${home ? 'vs' : 'at'} ${esc(opp)}</em><em>${g.po ? poShort(g.po) : 'Wk ' + g.wk}</em></button>`;
   }).join('')}</div></div>`;
 }
+// ---------- one game at a time ----------
+// Optional: instead of simming to the deadline or the end, play the next game and see how it went.
+const playBtn = title => `<button class="btn playbtn" data-act="playWeek" ${title ? `title="${title}"` : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Play Week ${G.week + 1}</button>`;
+// Your next opponent and your division, for following the season one game at a time
+function nextGameCard() {
+  const s = G.season, games = E.seasonGames(s).filter(([w, a, h]) => w > G.week && (a === G.user || h === G.user));
+  const g = games[0];
+  if (!g || G.phase === 'playoffs' || G.phase === 'seasondone') return '';
+  const [w, a, h] = g, home = h === G.user, opp = home ? a : h, bye = w > G.week + 1;
+  const tr = E.teamRating(opp).ovr, mine = E.teamRating(G.user).ovr;
+  return `<div class="card nextgame"><div class="cardh"><h3>Next game</h3><span class="small muted">Week ${w}${bye ? ` · bye in Week ${G.week + 1}` : ''}</span></div>
+    <div class="ngrow">${badge(opp)}<span class="ngmain"><b>${home ? 'vs' : 'at'} ${esc(G.teams[opp].nick)}</b><span class="small muted">${rec(opp)} · ${tr} OVR</span></span><span class="tag ${mine > tr + 1 ? 'good' : mine < tr - 1 ? 'bad' : ''}">${mine > tr + 1 ? 'Favored' : mine < tr - 1 ? 'Underdog' : 'Toss-up'}</span></div></div>`;
+}
+function divisionCard() {
+  const dv = E.divisions(), k = Object.keys(dv).find(x => dv[x].includes(G.user));
+  if (!k) return '';
+  return `<div class="card divcard"><div class="cardh"><h3>${k}</h3><button class="linkbtn" data-act="seg" data-seg="league" data-k="standings" data-go="league">All standings</button></div>
+    ${dv[k].map((t, i) => { const r = E.record(t, G.season); return `<div class="divrow ${t === G.user ? 'me' : ''}"><span class="num muted">${i + 1}</span>${badge(t, 1)}<span class="dn">${esc(G.teams[t].nick)}</span><b class="num">${r.w}-${r.l}</b></div>`; }).join('')}</div>`;
+}
+const sideCards = () => { const a = nextGameCard(), b = divisionCard(); return a || b ? `<div class="homeside">${a}${b}</div>` : ''; };
+const userGameIn = (s, w) => (G.results[s] || []).find(g => !g.po && g.wk === w && (g.a === G.user || g.h === G.user));
+function playWeek() {
+  const s = G.season, w = G.week + 1, mark = (G.injLog || []).length, wasDeadline = G.phase === 'deadline';
+  closeModal();
+  E.simWeek(w);
+  G.phase = 'season';
+  if (wasDeadline || w === 1) { G.offers = []; UI.give = []; UI.get = []; }
+  if (wasDeadline) toast('The trade window is closed until the offseason.');
+  if (w === E.DEADLINE_WEEK) { G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.tview = null; }
+  UI.proj = null;
+  const last = w >= 18;
+  if (last) finishRegular();
+  persist(); render();
+  gameCard(s, w, mark, last);
+}
+function gameCard(s, w, mark, last) {
+  const g = userGameIn(s, w), r = E.record(G.user, s), k = E.streak(G.user, s);
+  const hurt = (G.injLog || []).slice(mark).filter(x => G.players[x.id] && G.players[x.id].tm === G.user);
+  const more = !last && G.phase === 'season';
+  const next = more ? `<button class="btn go" data-act="playWeek"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Week ${w + 1}</button>` : `<button class="btn go" data-act="closeModal">${G.phase === 'deadline' ? 'To the deadline' : 'Continue'}</button>`;
+  if (!g) { modal(`<div class="sheeth"><div><div class="kicker">${s} · Week ${w}</div><h3>Bye week</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">Rest week. Still ${r.w}-${r.l}.</p><div class="row end">${next}</div>`); return; }
+  const home = g.h === G.user, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = home ? g.a : g.h, win = us > them;
+  sfx(win ? 'win' : 'loss'); if (win) buzz(25);
+  const all = [...(boxLines(g.ba) || []).map(x => ({...x, t: g.a})), ...(boxLines(g.bh) || []).map(x => ({...x, t: g.h}))];
+  const mine = all.filter(x => x.t === G.user).sort((a, b) => gameScore(b.st) - gameScore(a.st))[0];
+  modal(`<div class="sheeth"><div><div class="kicker">${s} · Week ${w}</div><h3>${win ? 'Win' : 'Loss'}${g.ot ? ' in overtime' : ''}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="gameres ${win ? 'w' : 'l'}"><div class="gteam">${badge(G.user)}<b class="num">${us}</b></div><span class="gvs">${home ? 'vs' : 'at'}</span><div class="gteam"><b class="num">${them}</b>${badge(opp)}</div></div>
+    <div class="grec"><span><b class="num">${r.w}-${r.l}</b> record</span>${k ? `<span class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n} streak</span>` : ''}</div>
+    ${mine && gameScore(mine.st) > 0 ? `<div class="potg">${face(G.players[mine.id], 'sm')}<div><div class="kicker">Your star</div><b>${esc(G.players[mine.id].n)}</b><div class="small">${perfLine(mine.st)}</div></div></div>` : ''}
+    ${hurt.length ? `<button class="srow bad" data-act="injurySheet"><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO.hurt}</svg></span><span class="slabel">${esc(G.players[hurt[0].id].n)} hurt</span><span class="sval">${hurt.length > 1 ? `+${hurt.length - 1} more` : hurt[0].wk === 99 ? 'Season' : hurt[0].wk + ' wk'}</span><span class="chev" aria-hidden="true">›</span></button>` : ''}
+    <div class="row end"><button class="btn" data-act="box" data-k="${gameKey(g)}" data-s="${s}">Box score</button>${next}</div>`);
+}
+function homeSeason() {
+  const r = E.record(G.user, G.season), k = E.streak(G.user, G.season), pre = G.week < E.DEADLINE_WEEK;
+  return `<section class="hero"><div><div class="kicker">${G.season} · after Week ${G.week}</div>
+    <h2>${r.w}-${r.l}${k && k.n >= 2 ? ` · ${k.win ? 'won' : 'lost'} ${k.n} straight` : ''}${helpBtn('pre')}</h2>
+    <p class="lead">${pre ? `Trade deadline after Week ${E.DEADLINE_WEEK}.` : 'The trade window is closed.'}</p></div>
+    <div class="row">${playBtn()}<button class="btn go lg" data-act="${pre ? 'toDeadline' : 'simRest'}">${pre ? 'Sim to the trade deadline' : 'Sim rest of season'}</button></div></section>
+  ${kpiStrip(G.season, true)}<div class="homegrid"><div>${resultsStrip(G.season)}${homeRows(G.season)}</div>${sideCards()}</div>`;
+}
 function homePre() {
   const first = G.season === 2026;
   return `<section class="hero"><div><div class="kicker">${G.season} · Week 1 ${modeTag(G.mode)}</div>
     <h2>${first ? 'Week 1. Make a move?' : `Your ${G.season} roster is set`}${helpBtn('pre')}</h2>
     <p class="lead">Trades are open until kickoff, then at the Week 9 deadline.</p></div>
-    <div class="row"><button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></div></section>
-  ${kpiStrip(G.season)}${homeRows(G.season)}`;
+    <div class="row">${playBtn()}<button class="btn go lg" data-act="toDeadline">Sim to the trade deadline</button></div></section>
+  ${kpiStrip(G.season)}<div class="homegrid"><div>${homeRows(G.season)}</div>${sideCards()}</div>`;
 }
 function homeDeadline() {
   const r = E.record(G.user, G.season);
   return `<section class="hero"><div><div class="kicker">${G.season} trade deadline · after Week ${G.week}</div>
     <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2>
     <p class="lead">Your one trade window this season.</p></div>
-    <div class="row"><button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
-  ${kpiStrip(G.season, true)}${resultsStrip(G.season)}${homeRows(G.season)}`;
+    <div class="row">${playBtn('Closes the trade window')}<button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
+  ${kpiStrip(G.season, true)}<div class="homegrid"><div>${resultsStrip(G.season)}${homeRows(G.season)}</div>${sideCards()}</div>`;
 }
 function homePlayoffs() {
   const P = G.playoffs[G.season];
@@ -1071,7 +1134,7 @@ function renderTrade() {
   const draftOffers = G.step === 'draft' ? E.draftOffers().filter(o => !(UI.declined || []).includes(o.id)) : [];
   const n = (G.offers || []).length + draftOffers.length;
   if (!UI.tview) UI.tview = n ? 'inbox' : 'make';
-  const head = `<section class="hero tight"><div><div class="kicker">Trade center · ${G.phase === 'deadline' ? G.season + ' deadline' : G.step === 'draft' ? 'Draft day' : G.season + ' offseason'}</div><h2>Trades</h2></div>
+  const head = `<section class="hero tight"><div><div class="kicker">Trade center · ${G.phase === 'deadline' ? G.season + ' deadline' : G.phase !== 'offseason' ? G.season + ' · before kickoff' : G.step === 'draft' ? 'Draft day' : G.season + ' offseason'}</div><h2>Trades</h2></div>
     ${seg('tview', [['inbox', `Offers${n ? ' · ' + n : ''}`], ['block', 'Trade block'], ['make', 'Build a trade']], UI.tview)}</section>`;
   if (UI.tview === 'inbox') {
     const all = [...(G.offers || []).map(o => offerCard(o)), ...draftOffers.map(o => offerCard(o, true))];
@@ -1093,7 +1156,7 @@ function renderTrade() {
   const ev = E.evalTrade(P, UI.give, UI.get);
   const ready = UI.give.length && UI.get.length;
   const mood = !UI.get.length ? 'Pick what you want from them.' : !UI.give.length ? 'Now pick what you send, or tap Ask what they want.' : ev.fleece ? 'They know that deal is too good for you.' : ev.ok ? 'They would take this deal.' : ev.issues.length && ev.ratio >= 1 ? ev.issues[0] : ev.ratio >= .85 ? 'Close. Add a little more.' : 'Not close yet.';
-  const row = (id, side) => { const w = side === 'give' && want.get(id); return assetRow(id, side, P, w ? '<span class="gold">They want him</span>' : '').replace('class="asset ', `class="asset ${w ? 'wanted ' : ''}`); };
+  const row = (id, side) => { const w = side === 'give' && want.get(id); return assetRow(id, side, P, w ? '<span class="tag gold">Wanted</span>' : '').replace('class="asset ', `class="asset ${w ? 'wanted ' : ''}`); };
   const side = (key, list, pk, tposKey) => `${seg(key, [['players', 'Players'], ['picks', `Picks · ${pk.length}`]], UI[key] || 'players')}${(UI[key] || 'players') === 'players' ? posChips(tposKey, UI[tposKey]) : ''}<div class="alist">${(UI[key] || 'players') === 'players' ? list.map(p => row(p.id, key === 'tsGive' ? 'give' : 'get')).join('') || '<p class="small muted">Nobody at that position.</p>' : pk.map(x => row(x.id, key === 'tsGive' ? 'give' : 'get')).join('') || '<p class="small muted">No picks left.</p>'}</div>`;
   return head + `<div class="tradetop"><button class="btn ghost sm" data-act="tPartner" data-t="">‹ Teams</button>${badge(P)}<div><b>${esc(G.teams[P].name)}</b><div class="small muted">${rec(P)} · ${S[P].status} · ${money(E.capSpace(P))} cap space</div></div></div>
   <div class="mobonly tmobseg">${seg('tmob', [['give', 'Your team' + (UI.give.length ? ' · ' + UI.give.length : '')], ['get', esc(G.teams[P].nick) + (UI.get.length ? ' · ' + UI.get.length : '')], ['panel', 'Needs']], UI.tmob || 'give')}</div>
@@ -1126,8 +1189,8 @@ function blockTab() {
   return `<div class="grid g2">
     <div class="card"><div class="cardh"><h3>Your trade block</h3>${wantPicker('blockWant', B.want)}</div>
       ${yours || '<p class="small muted">Tap + to shop a player.</p>'}
-      <div class="lbl" style="margin-top:12px">Your players</div>${posChips('tposBlock', UI.tposBlock)}
-      <div class="alist">${mine.map(p => `<div class="trow">${pRow(p)}<button class="btn sm" data-act="blockToggle" data-id="${p.id}">+ Block</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div></div>
+      ${(() => { const pick = `${posChips('tposBlock', UI.tposBlock)}<div class="alist">${mine.map(p => `<div class="trow">${pRow(p)}<button class="btn sm" data-act="blockToggle" data-id="${p.id}">+ Block</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div>`;
+        return B.ids.length ? `<details class="fold" data-fold="blockadd" ${foldOpen('blockadd')}><summary>Add players</summary>${pick}</details>` : `<div class="lbl" style="margin-top:12px">Your players</div>${pick}`; })()}</div>
     <div class="card"><h3>On other teams' blocks</h3><div class="alist">${league.map(x => `<div class="trow" title="${esc(x.why)}">${pRow(x.p, esc(G.teams[x.t].nick))}<button class="btn sm" data-act="findFor" data-id="${x.p.id}">Find a deal</button></div>`).join('') || '<p class="small muted">Nobody is being shopped right now.</p>'}</div></div>
   </div>`;
 }
@@ -1216,12 +1279,10 @@ function renderResume() {
     <div><b class="num">${T.goalsSet ? T.goalsMet + '/' + T.goalsSet : '–'}</b><span>Goals met</span></div>
     <div><b class="num">${T.avg == null ? '–' : T.avg}</b><span>Avg rebuild score</span></div>
   </div>
-  <div class="grid g2" style="margin-top:14px">
-    <div class="card"><h3>Trophy case</h3>${T.titles.length ? `<div class="rings">${T.titles.map(s => `<div class="ring">${badge(s.team)}<div><b>${s.yr} ${esc(DATA.teams[s.team].name)}</b><div class="small muted">${s.w}-${s.l}${s.perfect ? ' · perfect' : ''}</div></div></div>`).join('')}</div>` : `<p class="muted">No rings yet. ${T.sb ? `You have reached ${T.sb} Super Bowl${T.sb > 1 ? 's' : ''}.` : 'Every title starts at the deadline.'}</p>`}</div>
-    <div class="card"><h3>Achievements</h3><div class="ach">${T.ach.map(([n, d, ok, prog]) => `<div class="a ${ok ? 'on' : ''}"><b>${n}</b><span class="small muted">${d}</span><span class="tag ${ok ? 'good' : ''}">${ok ? 'Unlocked' : esc(prog)}</span></div>`).join('')}</div></div>
-  </div>
-  <div class="card" style="margin-top:14px"><div class="cardh"><h3>Every team</h3><span class="small muted">${Object.keys(T.teams).length} of 32 run</span></div>
-    <div class="allteams">${order.map(dv => `<div><div class="kicker muted">${dv}</div>${Object.keys(DATA.teams).filter(t => DATA.teams[t].div === dv).sort().map(t => { const c = T.teams[t]; return `<div class="tline ${c ? 'on' : ''}">${badge(t, 1)}<span>${esc(DATA.teams[t].nick)}</span><span class="small ${c ? '' : 'muted'}">${c ? `${c.w}-${c.l}${c.titles ? ' · <b class="gold">' + c.titles + '×</b>' : ''}${c.best ? ' · ' + c.best : ''}` : 'Not yet'}</span></div>`; }).join('')}</div>`).join('')}</div></div>
+    <div class="card" style="margin-top:14px"><h3>Trophy case</h3>${T.titles.length ? `<div class="rings">${T.titles.map(s => `<div class="ring">${badge(s.team)}<div><b>${s.yr} ${esc(DATA.teams[s.team].name)}</b><div class="small muted">${s.w}-${s.l}${s.perfect ? ' · perfect' : ''}</div></div></div>`).join('')}</div>` : `<p class="muted">No rings yet. ${T.sb ? `You have reached ${T.sb} Super Bowl${T.sb > 1 ? 's' : ''}.` : 'Every title starts at the deadline.'}</p>`}</div>
+    <details class="fold card" style="margin-top:14px" data-fold="ach" ${foldOpen('ach')}><summary>Achievements <span class="small muted">${T.ach.filter(a => a[2]).length} of ${T.ach.length} unlocked</span></summary><div class="ach">${T.ach.map(([n, d, ok, prog]) => `<div class="a ${ok ? 'on' : ''}"><b>${n}</b><span class="small muted">${d}</span><span class="tag ${ok ? 'good' : ''}">${ok ? 'Unlocked' : esc(prog)}</span></div>`).join('')}</div></details>
+  <details class="fold card" style="margin-top:14px" data-fold="allteams" ${foldOpen('allteams')}><summary>Every team <span class="small muted">${Object.keys(T.teams).length} of 32 run</span></summary>
+    <div class="allteams">${order.map(dv => `<div><div class="kicker muted">${dv}</div>${Object.keys(DATA.teams).filter(t => DATA.teams[t].div === dv).sort().map(t => { const c = T.teams[t]; return `<div class="tline ${c ? 'on' : ''}">${badge(t, 1)}<span>${esc(DATA.teams[t].nick)}</span><span class="small ${c ? '' : 'muted'}">${c ? `${c.w}-${c.l}${c.titles ? ' · <b class="gold">' + c.titles + '×</b>' : ''}${c.best ? ' · ' + c.best : ''}` : 'Not yet'}</span></div>`; }).join('')}</div>`).join('')}</div></details>
   ${leaderboardCard()}
   <div class="card" style="margin-top:14px"><h3>Run history</h3>${T.runs.length ? `<div class="tw"><table class="tbl"><thead><tr><th>Team</th><th>2026</th><th>2027</th><th>Later</th><th>OVR</th><th>Grade</th><th>Style</th></tr></thead><tbody>
     ${T.runs.map(r => { const a = (r.seasons || {})[2026], b = (r.seasons || {})[2027]; const cell = s => s ? `<b class="num">${s.w}-${s.l}</b> <span class="small muted">${esc(s.label)}</span>${s.champ ? ' <span class="tag good">Champs</span>' : ''}` : '<span class="muted">In progress</span>'; return `<tr><td><div class="row nowrap">${badge(r.team, 1)} ${esc(DATA.teams[r.team].nick)} ${modeTag(r.mode)}${r.fired ? ' <span class="tag bad">Fired</span>' : ''}${r.extended ? ' <span class="tag good">Extended</span>' : ''}</div></td><td>${cell(a)}</td><td>${cell(b)}</td><td class="small">${Object.entries(r.seasons || {}).filter(([y]) => +y > 2027).map(([y, x]) => `${y}: <b class="num">${x.w}-${x.l}</b>${x.champ ? ' <span class="tag good">Champs</span>' : ''}`).join('<br>') || '<span class="muted">–</span>'}</td><td class="num">${r.startOvr || ''}${r.endOvr ? ' → ' + r.endOvr : ''}</td><td>${r.grade ? `<span class="tag ${gclass(r.grade)}">${r.grade}</span>` : ''}</td><td class="small">${esc(r.style || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Finish a season and it shows up here.</p>'}</div>
@@ -1964,6 +2025,8 @@ function render() {
   if (UI.hdrVals && !reducedMotion()) $$('#hdr .hstats .num').forEach((x, i) => { if (UI.hdrVals[i] !== undefined && UI.hdrVals[i] !== hv[i]) x.classList.add('bump'); });
   UI.hdrVals = hv;
   if (UI.celebrate && !UI.reel) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 150); }
+  // the latest game in view in the results strip
+  $$('.rstrip').forEach(rs => { if (rs.scrollWidth > rs.clientWidth) rs.scrollLeft = rs.scrollWidth; });
   // keep the pick on the clock in view in the draft ticker
   const cur = $('.dticker .dtile.cur'); if (cur) cur.parentNode.scrollLeft = Math.max(0, cur.offsetLeft - cur.parentNode.offsetLeft - 8 - cur.offsetWidth);
 }
@@ -2082,7 +2145,7 @@ document.addEventListener('click', e => {
     case 'shopWant': { UI.shopWant = el.dataset.k; const fid = UI.found && UI.found.id; if (fid) openFound(fid, E.shopPlayer(fid, UI.shopWant)); return; }
     case 'help': helpSheet(el.dataset.k || helpKey()); return;
     case 'sound': SND.on = !SND.on; try { localStorage.setItem('21-0-sound', SND.on ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } if (SND.on) sfx('tap'); if ($('.helpfoot')) helpSheet(helpKey()); return;
-    case 'seg': UI[el.dataset.seg] = el.dataset.k; if (el.dataset.seg === 'league') UI.lgMore = false; render(); return;
+    case 'seg': UI[el.dataset.seg] = el.dataset.k; if (el.dataset.seg === 'league') UI.lgMore = false; if (el.dataset.go) { go(el.dataset.go); return; } render(); return;
     case 'rview': UI.rview = el.dataset.k; go('roster'); return;
     case 'rpos': UI.rosterPos = el.dataset.k; render(); return;
     case 'player': e.stopPropagation(); UI.found = null; openPlayer(id); return;
@@ -2094,8 +2157,9 @@ document.addEventListener('click', e => {
       [L[i], L[j]] = [L[j], L[i]]; E.setDepth(pos, L); persist(); depthModal(pos); render(); return;
     }
     case 'depthReset': E.setDepth(el.dataset.pos, []); persist(); depthModal(el.dataset.pos); render(); return;
-    case 'toDeadline': UI.tview = null; simWithReel(`${G.season} · Weeks 1-${E.DEADLINE_WEEK - 1}`, () => { E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; }); return;
-    case 'simRest': UI.give = []; UI.get = []; G.offers = []; simWithReel(`${G.season} · Weeks ${E.DEADLINE_WEEK}-18`, () => { finishRegular(); UI.tab = 'home'; }); return;
+    case 'playWeek': playWeek(); return;
+    case 'toDeadline': UI.tview = null; simWithReel(`${G.season} · Weeks ${G.week + 1}-${E.DEADLINE_WEEK}`, () => { E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; }); return;
+    case 'simRest': UI.give = []; UI.get = []; G.offers = []; simWithReel(`${G.season} · Weeks ${G.week + 1}-18`, () => { finishRegular(); UI.tab = 'home'; }); return;
     case 'poNext': simWithReel(`${G.season} playoffs`, () => { E.simPlayoffRound(); endSeasonIfDone(); }); return;
     case 'poSkip': simWithReel(`${G.season} playoffs`, () => { while (E.simPlayoffRound()); endSeasonIfDone(); }); return;
     case 'keepGoing': G.reported = true; G.phase = 'seasondone'; UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; G.dead[G.user] = 0; E.refreshOffers(); toast(`On to ${G.season}. Your run's score is saved; this is a bonus season.`); break;
@@ -2218,12 +2282,12 @@ document.addEventListener('click', e => {
     case 'counterEdit': { const x = UI.counter.list[+el.dataset.i]; UI.give = x.give.slice(); UI.get = x.get.slice(); closeModal(); break; }
     case 'pickPartner': UI.partner = el.dataset.t; UI.give = [id]; UI.get = []; UI.tq = ''; { const pkg = E.cached(() => E.buildPackage(UI.partner, id) || E.buildPackage(UI.partner, id, true))(); if (pkg) { UI.get = pkg; toast(`The ${tname(UI.partner)} would give this for ${G.players[id].n}.`); } } break;
     case 'askOffer': { const pid = UI.give[0]; const pkg = E.cached(() => E.buildPackage(UI.partner, pid) || E.buildPackage(UI.partner, pid, true))(); if (pkg) { UI.get = pkg; toast(`Their offer for ${G.players[pid].n}. Review it, then propose.`); } else toast(`The ${tname(UI.partner)} do not have a fit for ${G.players[pid].n}.`); break; }
-    case 'balance': { closeModal();
+    case 'balance': { closeModal(); if (!UI.partner || !G.teams[UI.partner]) return;
       const g = E.balanceTrade(UI.partner, UI.give, UI.get);
       if (g) { UI.give = g; toast('They added what they want from you. Review it before proposing.'); } else toast('They do not see a deal here. Try asking for less.');
       break;
     }
-    case 'propose': { closeModal();
+    case 'propose': { closeModal(); if (!UI.partner || !G.teams[UI.partner]) return;
       const r = E.doTrade(UI.partner, UI.give, UI.get);
       if (r.ok) { const g = UI.give.slice(), t = UI.get.slice(); UI.give = []; UI.get = []; persist(); render(); tradePopup(UI.partner, g, t); return; }
       const c = !r.issues.length || r.issues.every(i => i.startsWith('Both')) ? E.counterTrade(UI.partner, UI.give, UI.get) : null;
@@ -2232,7 +2296,7 @@ document.addEventListener('click', e => {
       popup('Trade rejected', `The ${esc(tname(UI.partner))} said no`, `<p class="muted">${esc(r.issues[0] || (r.fleece ? 'They know that deal is too good for you.' : 'Not close enough to counter. They value what you offered well below what you asked for.'))}</p>`, 'loss');
       return;
     }
-    case 'callTeam': { closeModal();
+    case 'callTeam': { closeModal(); if (!UI.partner || !G.teams[UI.partner]) return;
       const P = UI.partner; UI.talkPick = null;
       E.proposeTrade(P, UI.give.slice(), UI.get.slice());
       talkSheet(P, true); return;
