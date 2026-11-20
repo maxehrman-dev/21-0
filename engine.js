@@ -483,7 +483,7 @@ function evalTrade(partner, give, get) {
   if (pAfter > cap && capGive > capGet) issues.push(`${G.teams[partner].nick} would be over the cap. Take back more salary.`);
   const pc = ids => ids.filter(id => G.players[id]).length;
   const uRoster = roster(G.user).length - pc(give) + pc(get);
-  if (uRoster < 40) issues.push('Your roster would drop under 40 players.');
+  if (uRoster < 40 && pc(give) > pc(get)) issues.push('Your roster would drop under 40 players.');
   if (uRoster > rosterLimit()) issues.push(`Your roster would go over ${rosterLimit()}. Release someone first.`);
   if (!give.length || !get.length) issues.push('Both sides need at least one asset.');
   // they will not hand over a star for spare parts, however the values add up
@@ -1005,6 +1005,51 @@ function draftOffers() {
   }
   return out;
 }
+
+// ---------- draft-day trades, pick for pick ----------
+// Priced on the draft chart like real draft-day deals: moving up costs your later pick plus a little more.
+// Picks already used this draft are gone; picks in later years count at their projected spot.
+function draftSlotOf(id) { const D = G.draft; if (!D) return null; const i = D.order.findIndex(o => o.pickId === id); return i >= D.at ? D.order[i] : null; }
+function livePick(id) { const k = pickById(id); if (!k) return false; if (!G.draft || k.yr !== G.season) return true; return !!draftSlotOf(id); }
+function chartValue(id) { const sl = draftSlotOf(id); if (sl) return pickPts(sl.no); const k = pickById(id); return k ? pickValue(k) : 0; }
+function pickTag(id) { const sl = draftSlotOf(id); return sl ? `#${sl.no} (round ${sl.rd})` : assetName(id); }
+// What it takes to move up to one of their picks, from your picks only
+function moveUpPrice(pickId) {
+  const target = pickById(pickId); if (!target || target.owner === G.user || !livePick(pickId)) return null;
+  const want = chartValue(pickId) * 1.08 + .4;
+  const mine = G.picks.filter(k => k.owner === G.user && livePick(k.id)).map(k => ({id: k.id, v: chartValue(k.id)}));
+  // start from your best pick that comes after theirs, then add the smallest picks that close the gap
+  const tSlot = draftSlotOf(pickId), after = mine.filter(x => { const sl = draftSlotOf(x.id); return !tSlot || !sl || sl.no > tSlot.no; }).sort((a, b) => b.v - a.v);
+  if (!after.length) return {give: null, want, have: 0};
+  const pkg = [after[0]]; let sum = after[0].v;
+  // never a pick that comes before theirs: that would be moving down, not up
+  const rest = after.filter(x => x.id !== after[0].id).sort((a, b) => a.v - b.v);
+  while (sum < want && pkg.length < 4) {
+    const fit = rest.find(x => !pkg.includes(x) && sum + x.v >= want) || rest.filter(x => !pkg.includes(x)).pop();
+    if (!fit) break; pkg.push(fit); sum += fit.v;
+  }
+  const total = after.reduce((a, x) => a + x.v, 0);
+  return sum >= want ? {give: pkg.map(x => x.id), get: [pickId], partner: target.owner, want, have: sum} : {give: null, want, have: Math.min(sum, total)};
+}
+// Teams behind you that would move up into one of your picks, each paying with their own picks
+function moveDownOffers(pickId) {
+  const mine = pickById(pickId); if (!mine || mine.owner !== G.user || !livePick(pickId)) return [];
+  const mySlot = draftSlotOf(pickId), want = chartValue(pickId) * 1.04;
+  const out = [];
+  for (const t of teamList().filter(x => x !== G.user)) {
+    const theirs = G.picks.filter(k => k.owner === t && livePick(k.id)).map(k => ({id: k.id, v: chartValue(k.id), sl: draftSlotOf(k.id)}));
+    const behind = theirs.filter(x => mySlot ? x.sl && x.sl.no > mySlot.no : x.v < chartValue(pickId)).sort((a, b) => b.v - a.v)[0];
+    if (!behind) continue;
+    const pkg = [behind]; let sum = behind.v;
+    // no filler: every extra pick has to be worth something on its own
+    const extras = theirs.filter(x => x !== behind && x.v >= 1.5).sort((a, b) => a.v - b.v);
+    for (const e of extras) { if (sum >= want * .97 || pkg.length >= 3) break; if (sum + e.v >= want * .97 || e === extras[extras.length - 1]) { pkg.push(e); sum += e.v; } }
+    if (sum >= want * .95 && sum <= want * 1.35) out.push({from: t, give: [pickId], get: pkg.map(x => x.id), gain: sum / chartValue(pickId), first: behind.sl ? behind.sl.no : null});
+  }
+  return out.sort((a, b) => (a.first || 999) - (b.first || 999)).slice(0, 5);
+}
+// Make a draft-chart deal; the price already has their premium built in
+function draftDeal(partner, give, get) { return doTrade(partner, give, get, 'offer'); }
 
 // ---------- season sim ----------
 function seasonGames(season) {
@@ -1755,7 +1800,7 @@ function makePick(prospect) {
   if (prospect.ovr == null) scoutProspect(prospect);
   const verdict = draftVerdict(prospect.ovr, prospect.lo, prospect.hi);
   G.players[id] = {id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
-    proj: [prospect.lo, prospect.hi], verdict, prod: -1, hype: Math.max(10, Math.round(70 - slot.no * .5)), hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
+    proj: [prospect.lo, prospect.hi], camp: 1, verdict, prod: -1, hype: Math.max(10, Math.round(70 - slot.no * .5)), hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
   D.pool = D.pool.filter(x => x !== prospect);
   if (slot.pickId) G.picks = G.picks.filter(x => x.id !== slot.pickId);
@@ -1783,6 +1828,9 @@ function finishDraft() {
   G.picks = G.picks.filter(k => k.yr > G.season);   // used picks are spent
   for (const yr of [G.season + 1, G.season + 2]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   addUndrafted();
+  // training camp and the preseason are over: the rookies' real ratings are known at final cuts
+  G.campReveal = Object.values(G.players).filter(p => p.camp && p.tm === G.user).map(p => p.id);
+  for (const p of Object.values(G.players)) delete p.camp;
   G.step = 'cutdown';
   aiCleanup();
 }
@@ -2350,7 +2398,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

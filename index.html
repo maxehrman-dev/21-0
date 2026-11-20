@@ -1270,6 +1270,25 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 .homefoot { display: flex; justify-content: center; gap: 10px; margin: 26px 0 0; }
 .homefoot .dangertxt { margin-right: 0; }
 .col-get .needline, .col-give .needline { margin: 0 0 12px; }
+
+/* draft-day trades */
+.dtile.tap { cursor: pointer; } .dtile.tap:hover { border-color: var(--gold); }
+.pkchip { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--line2); background: var(--panel2); font-size: 13px; color: var(--chalk); white-space: nowrap; }
+.pkchip b { font-family: var(--display); font-size: 15px; } .pkchip.r1 { border-color: rgba(243,181,47,.5); } .pkchip.r1 b { color: var(--gold); }
+.pkplus { color: var(--muted); margin: 0 4px; font-size: 13px; }
+.tradepick .psub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.dtrades .card > .dkrow { padding: 10px 0; }
+.pkdeal { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; padding: 14px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); margin: 6px 0 12px; }
+.pkdeal .lbl { margin-bottom: 6px; } .pkarrow { font-size: 22px; color: var(--gold); }
+.teamstrip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 12px; scrollbar-width: thin; }
+.tchip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 6px 6px; border-radius: 10px; border: 1px solid var(--line2); background: var(--panel); color: var(--chalk); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; flex: none; }
+.tchip.on { border-color: var(--gold); background: rgba(243,181,47,.08); }
+.dtrades .cardh h3 { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 640px) { .pkdeal { grid-template-columns: 1fr; } .pkarrow { transform: rotate(90deg); justify-self: center; } }
+
+/* rookies still in camp: a range, not a rating */
+.ovrb.proj { width: auto; min-width: 44px; padding: 0 6px; font-size: 13px; color: var(--muted); border-style: dashed; }
+.pcovr.proj b { font-size: 34px; color: var(--muted); } .sovr.proj { color: var(--muted); }
 </style>
 </head>
 <body>

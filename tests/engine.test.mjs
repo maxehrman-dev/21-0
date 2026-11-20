@@ -125,6 +125,31 @@ test('drafted rookies reveal a real rating and a verdict', () => {
   assert.ok(slot.sel.lo < slot.sel.hi);
 });
 
+test('draft day: move up or down by pick, and rookie ratings stay hidden until final cuts', () => {
+  E.newGame(DATA, 'SEA', 7);
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  E.beginOffseason(); E.G.phase = 'offseason'; E.finishResign(); E.finishFA();
+  const D = E.G.draft;
+  const mine = D.order.find(o => o.owner === 'SEA' && o.pickId);
+  // moving up costs only picks that come after the one you get
+  const target = D.order.find(o => o.owner !== 'SEA' && o.pickId && o.no > mine.no);
+  const price = E.moveUpPrice(target.pickId);
+  assert.ok(price && price.give && price.give.length, 'a pick behind your first one has a price');
+  for (const id of price.give) { const sl = E.draftSlotOf(id); assert.ok(!sl || sl.no > target.no, 'never pay with an earlier pick'); }
+  assert.ok(E.draftDeal(price.partner, price.give, price.get).ok, 'the priced deal goes through');
+  assert.equal(E.G.picks.find(k => k.id === target.pickId).owner, 'SEA');
+  // moving down: offers come from teams behind you, in their own picks
+  const own = D.order.find(o => o.owner === 'SEA' && o.pickId && o.rd === 2);
+  for (const x of E.moveDownOffers(own.pickId)) { const first = E.draftSlotOf(x.get[0]); assert.ok(!first || first.no > own.no); }
+  // a drafted rookie keeps only the scouts' range until camp is over
+  while (D.order[D.at].owner !== 'SEA') E.aiPick();
+  const pros = D.pool[0]; E.makePick(pros);
+  const rookie = Object.values(E.G.players).find(p => p.n === pros.n && p.tm === 'SEA');
+  assert.ok(rookie.camp && rookie.proj[0] < rookie.proj[1], 'hidden during the draft');
+  E.finishDraft();
+  assert.ok(!rookie.camp && E.G.campReveal.includes(rookie.id), 'revealed at final cuts');
+});
+
 test('no new injuries before the first deadline, and Week 1 injuries heal', () => {
   E.newGame(DATA, 'BUF', 8);
   const hurt = Object.values(E.G.players).filter(p => p.inj);

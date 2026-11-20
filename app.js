@@ -44,9 +44,13 @@ const ordinalJ = n => { const r = n % 100, t = n % 10; return n + (r >= 11 && r 
 // Rough pick equivalent for a value, using the same scale as draft picks
 function pickEquiv(v) { if (v >= 65) return 'a top-5 pick'; if (v >= 45) return 'a top-12 pick'; if (v >= 26) return 'a 1st-round pick'; if (v >= 15) return 'an early 2nd'; if (v >= 8) return 'a 2nd-round pick'; if (v >= 4) return 'a 3rd-round pick'; if (v >= 1.8) return 'a 4th or 5th'; return 'a late-round pick'; }
 const lastName = n => { const w = n.split(' '); return w.length > 1 ? w.slice(1).join(' ') : n; };
+// Rookies show the scouts' range until training camp is over, at final cuts
+const inCamp = p => p && p.camp && p.proj;
+const ovrBadge = (p, cls) => inCamp(p) ? `<span class="ovrb proj ${cls || ''}" title="Scouts' range. The real rating shows after training camp.">${p.proj[0]}–${p.proj[1]}</span>` : `<span class="ovrb ${cls || ''} ${oc(p.ovr)}">${p.ovr}</span>`;
+const ovrNum = p => inCamp(p) ? `${p.proj[0]}–${p.proj[1]}` : p.ovr;
 function pRow(p, extra) {
   const deal = p.tm === 'FA' ? '' : ` · ${money(p.cap)} thru ${p.end}`;
-  return `<div class="prow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)}</div><div class="psub">${p.pos} · ${Math.floor(p.age)}${deal}${extra ? ' · ' + extra : ''}</div></div><span class="ovrb ${oc(p.ovr)}">${p.ovr}</span></div>`;
+  return `<div class="prow">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)}</div><div class="psub">${p.pos} · ${Math.floor(p.age)}${deal}${extra ? ' · ' + extra : ''}</div></div>${ovrBadge(p)}</div>`;
 }
 // One side of a counter, compared with what you offered: what they kept, added, and took out
 function diffSide(ids, base) {
@@ -1088,18 +1092,19 @@ function fillPopup(list, kicker) {
 }
 function revealPopup(sel, no) {
   const p = G.players[sel.id];
-  setTimeout(() => { const b = $('.sheet .reveal b'); if (b) countUp(b, sel.lo, sel.ovr, 950, v => { sfx('tick'); return v + ' OVR'; }); }, 60);
-  setTimeout(() => sfx('stamp'), 1050);
-  popup(`Pick #${no}`, `${esc(sel.n)} is a ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p || {n: sel.n, id: sel.id}, 'xl')}<div><div class="kicker">${sel.pos} · ${esc(sel.sch)}</div>
-    <div class="reveal"><span class="small muted">Scouts said ${sel.lo}–${sel.hi}</span><b class="${oc(sel.ovr)}">${sel.ovr} OVR</b></div>${verdictTag(sel.verdict)}
-    <div class="small muted" style="margin-top:6px">${sel.verdict === 'Steal' ? 'Better than anyone projected.' : sel.verdict === 'Bust' ? 'Below what the scouts saw. Potential can still bring him along.' : 'Right where the scouts had him.'}</div></div></div>`, sel.verdict === 'Bust' ? 'loss' : 'win');
+  setTimeout(() => sfx('stamp'), 300);
+  popup(`Pick #${no}`, `${esc(sel.n)} joins the ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p || {n: sel.n, id: sel.id}, 'xl')}<div><div class="kicker">${sel.pos} · ${esc(sel.sch)}</div>
+    <div class="reveal"><span class="small muted">Scouts project</span><b>${sel.lo}–${sel.hi}</b></div>
+    <div class="small muted" style="margin-top:6px">His real rating shows after training camp and the preseason, at final cuts.</div></div></div>`, 'win');
 }
+// Training camp is over: every rookie's real rating against what the scouts said
 function draftRecap() {
   const mine = myClass(), all = G.draft.order.filter(o => o.sel && o.sel.ovr != null);
-  const steals = all.filter(o => o.sel.verdict === 'Steal').sort((a, b) => (b.sel.ovr - b.sel.hi) - (a.sel.ovr - a.sel.hi)).slice(0, 5);
+  const steals = all.filter(o => o.sel.verdict === 'Steal' && o.owner !== G.user).sort((a, b) => (b.sel.ovr - b.sel.hi) - (a.sel.ovr - a.sel.hi)).slice(0, 3);
   const row = o => `<div class="prow resrow"><span class="num pickno">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(o.sel.n)} <span class="muted small">${o.sel.pos}</span></div><div class="psub">Scouts ${o.sel.lo}–${o.sel.hi}</div></div><span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}</div>`;
   const avg = mine.length ? Math.round(mine.reduce((a, o) => a + o.sel.ovr, 0) / mine.length) : 0;
-  popup('Draft complete', mine.length ? `Your class averages ${avg} OVR` : 'You had no picks', `${mine.length ? `<h4 class="sub">Your picks</h4>${mine.map(row).join('')}` : ''}${steals.length ? `<h4 class="sub">Steals of the draft</h4>${steals.map(row).join('')}` : ''}`);
+  const n = k => mine.filter(o => o.sel.verdict === k).length;
+  popup('Training camp is over', mine.length ? `Your rookies came in at ${avg} OVR` : 'Final cuts', `${mine.length ? `<p class="small muted">${[n('Steal') ? `${n('Steal')} steal${n('Steal') > 1 ? 's' : ''}` : '', n('Bust') ? `${n('Bust')} bust${n('Bust') > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ') || 'Right about where the scouts had them.'}</p><h4 class="sub">Your rookies</h4>${mine.map(row).join('')}` : ''}${steals.length ? `<h4 class="sub">Steals around the league</h4>${steals.map(row).join('')}` : ''}`);
 }
 // The draft: a bar that says who is on the clock and when you pick, a ticker of the picks around now,
 // and three tabs: the big board, the full draft order round by round, and your picks.
@@ -1119,9 +1124,10 @@ function homeDraft() {
   // the ticker: the last few picks, the pick on the clock, the next ten
   const tick = D.order.slice(Math.max(0, D.at - 3), D.at + 11).map(o => {
     const cur = slot && o.no === slot.no, mine = o.owner === G.user;
-    return `<div class="dtile ${cur ? 'cur' : ''} ${mine ? 'mine' : ''} ${o.sel ? 'done' : ''}"><div class="dtop"><span class="num">#${o.no}</span>${badge(o.owner, 1)}</div>${o.sel ? `<b>${esc(lastName(o.sel.n))}</b><span>${o.sel.pos}${o.sel.ovr != null ? ' · ' + o.sel.ovr : ''}</span>` : cur ? `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span class="gold">On the clock</span>` : `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span>${trade && !mine && o.pickId ? `<button class="linkbtn" data-act="tradeUp" data-id="${o.pickId}">Trade up</button>` : 'Rd ' + o.rd}</span>`}</div>`;
+    const tappable = trade && !o.sel && !mine && o.pickId && !cur;
+    return `<div class="dtile ${cur ? 'cur' : ''} ${mine ? 'mine' : ''} ${o.sel ? 'done' : ''} ${tappable ? 'tap' : ''}" ${tappable ? `data-act="draftUp" data-id="${o.pickId}" role="button" tabindex="0" title="Trade for #${o.no}"` : ''}><div class="dtop"><span class="num">#${o.no}</span>${badge(o.owner, 1)}</div>${o.sel ? `<b>${esc(lastName(o.sel.n))}</b><span>${o.sel.pos}${o.sel.lo != null ? ` · ${o.sel.lo}–${o.sel.hi}` : ''}</span>` : cur ? `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span class="gold">On the clock</span>` : `<b>${mine ? 'You' : esc(G.teams[o.owner].nick)}</b><span>${trade && !mine && o.pickId ? `<button class="linkbtn" data-act="tradeUp" data-id="${o.pickId}">Trade up</button>` : 'Rd ' + o.rd}</span>`}</div>`;
   }).join('');
-  const tabs = `<div class="seg dtabs">${[['board', 'Big board'], ['order', 'Draft order'], ['mine', `My picks · ${left.length + myClass().length}`]].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="seg" data-seg="dtab" data-k="${k}">${l}</button>`).join('')}</div>`;
+  const tabs = `<div class="seg dtabs">${[['board', 'Big board'], ['order', 'Draft order'], ...(trade ? [['trades', 'Trades']] : []), ['mine', `My picks · ${left.length + myClass().length}`]].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="seg" data-seg="dtab" data-k="${k}">${l}</button>`).join('')}</div>`;
   let body = '';
   if (tab === 'board') {
     const pos = UI.dboardPos || 'ALL', L = D.pool.filter(p => inGroup(p.pos, pos)).slice(0, 80);
@@ -1130,6 +1136,8 @@ function homeDraft() {
         <span class="dproj"><span class="projr ${fits ? 'gold' : ''}">${p.lo}–${p.hi}</span><span class="small muted">${fits ? (st ? 'Upgrade' : 'Fills a need') : 'Depth'}</span></span>
         <span class="dstart small deskonly">${st ? `Your ${p.pos}: <span class="${oc(st.ovr)}">${st.ovr}</span> ${esc(lastName(st.n))}` : `<span class="tag bad">No ${p.pos}</span>`}</span>
         ${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`; }).join('') || '<p class="muted">Nobody left at that position.</p>'}</div>`;
+  } else if (tab === 'trades') {
+    body = draftTradesTab(D, slot);
   } else if (tab === 'order') {
     const rd = +(UI.dround || (slot ? slot.rd : 1));
     const R = D.order.filter(o => o.rd === rd);
@@ -1137,12 +1145,77 @@ function homeDraft() {
       <div class="card dorder">${R.map(o => { const cur = slot && o.no === slot.no, mine = o.owner === G.user, past = D.order.indexOf(o) < D.at;
         return `<div class="dkrow ${mine ? 'me' : ''} ${cur ? 'cur' : ''}"><span class="num drank">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(tname(o.owner))}${o.orig !== o.owner ? ` <span class="small muted">via ${esc(G.teams[o.orig].nick)}</span>` : ''}</div>
           <div class="psub">${o.sel ? `<b>${esc(o.sel.n)}</b> · ${o.sel.pos} · ${esc(o.sel.sch || '')}` : cur ? '<span class="gold">On the clock</span>' : past ? '' : mine ? 'Your pick' : 'Upcoming'}</div></div>
-          ${o.sel && o.sel.ovr != null ? `<span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}` : !o.sel && !cur && !mine && trade && o.pickId && !past ? `<button class="btn sm" data-act="tradeUp" data-id="${o.pickId}">Trade up</button>` : ''}</div>`; }).join('')}</div>`;
+          ${o.sel && o.sel.ovr != null ? (G.draftDone ? `<span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}` : `<span class="ovrb sm proj">${o.sel.lo}–${o.sel.hi}</span>`) : !o.sel && !cur && !mine && trade && o.pickId && !past ? `<button class="btn sm" data-act="draftUp" data-id="${o.pickId}">Trade up</button>` : ''}</div>`; }).join('')}</div>`;
   } else {
     body = `<div class="grid g2"><div class="card"><h3>Picks left</h3>${left.map(o => `<div class="dkrow me"><span class="num drank">#${o.no}</span><div class="pmain"><div class="pn">Round ${o.rd}${o.orig !== G.user ? ` <span class="small muted">via ${esc(G.teams[o.orig].nick)}</span>` : ''}</div><div class="psub">${slot && o.no === slot.no ? '<span class="gold">On the clock</span>' : slot ? `${o.no - slot.no} picks away` : ''}</div></div></div>`).join('') || '<p class="muted small">No picks left.</p>'}</div>
-      <div class="card"><h3>Your class</h3>${myClass().map(o => `<div class="dkrow"><span class="num drank">#${o.no}</span>${face(G.players[o.sel.id] || {n: o.sel.n, id: o.sel.id}, 'sm')}<div class="pmain"><div class="pn">${G.players[o.sel.id] ? pname(G.players[o.sel.id]) : esc(o.sel.n)}</div><div class="psub">${o.sel.pos} · scouts ${o.sel.lo}–${o.sel.hi}</div></div><span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}</div>`).join('') || '<p class="muted small">Nobody drafted yet.</p>'}</div></div>`;
+      <div class="card"><h3>Your class</h3>${myClass().map(o => `<div class="dkrow"><span class="num drank">#${o.no}</span>${face(G.players[o.sel.id] || {n: o.sel.n, id: o.sel.id}, 'sm')}<div class="pmain"><div class="pn">${G.players[o.sel.id] ? pname(G.players[o.sel.id]) : esc(o.sel.n)}</div><div class="psub">${o.sel.pos} · ${G.draftDone ? `scouts ${o.sel.lo}–${o.sel.hi}` : 'real rating after training camp'}</div></div>${G.draftDone ? `<span class="ovrb sm ${oc(o.sel.ovr)}">${o.sel.ovr}</span>${verdictTag(o.sel.verdict)}` : `<span class="ovrb sm proj">${o.sel.lo}–${o.sel.hi}</span>`}</div>`).join('') || '<p class="muted small">Nobody drafted yet.</p>'}</div></div>`;
   }
   return `${stepper(3)}${bar}<div class="dticker" role="list" aria-label="Draft order">${tick}</div>${slot ? tabs : ''}${body}`;
+}
+// ---------- draft-day trades ----------
+// Trade by pick (every upcoming pick, priced on the spot) or by team (their picks and what they would give for yours)
+const pickChip = id => { const sl = E.draftSlotOf(id); return `<span class="pkchip ${sl && sl.rd === 1 ? 'r1' : ''}">${sl ? `<b>#${sl.no}</b> R${sl.rd}` : esc(E.assetName(id).replace(' Round ', ' R'))}</span>`; };
+const pickChips = ids => ids.map(pickChip).join('<span class="pkplus">+</span>');
+function upRow(o) {
+  const r = E.moveUpPrice(o.pickId);
+  return `<div class="dkrow tradepick"><span class="num drank">#${o.no}</span>${badge(o.owner, 1)}<div class="pmain"><div class="pn">${esc(tname(o.owner))} <span class="small muted">Round ${o.rd}${o.orig !== o.owner ? ` · via ${esc(G.teams[o.orig].nick)}` : ''}</span></div>
+    <div class="psub">${r && r.give ? `<span class="small muted">Costs</span> ${pickChips(r.give)}` : `<span class="small muted">Out of reach: your picks after it add up to ${Math.round((r ? r.have / r.want : 0) * 100)}% of its value</span>`}</div></div>
+    ${r && r.give ? `<button class="btn sm go" data-act="draftUp" data-id="${o.pickId}">Trade up</button>` : ''}</div>`;
+}
+function downRow(o) {
+  const L = E.moveDownOffers(o.pickId), top = L[0];
+  return `<div class="dkrow me tradepick"><span class="num drank">#${o.no}</span>${badge(G.user, 1)}<div class="pmain"><div class="pn">Your pick <span class="small muted">Round ${o.rd}</span></div>
+    <div class="psub">${top ? `<span class="small muted">Best: ${esc(G.teams[top.from].nick)} gives</span> ${pickChips(top.get)}` : '<span class="small muted">Nobody behind you wants to move up right now</span>'}</div></div>
+    ${L.length ? `<button class="btn sm" data-act="draftDown" data-id="${o.pickId}">Trade down · ${L.length}</button>` : ''}</div>`;
+}
+function draftTradesTab(D, slot) {
+  const view = UI.dtrview || 'pick';
+  const upcoming = D.order.slice(D.at).filter(o => o.pickId && !o.sel);
+  const seg2 = `<div class="tfind-seg">${seg('dtrview', [['pick', 'By pick'], ['team', 'By team']], view)}</div>`;
+  if (view === 'pick') {
+    const rd = +(UI.dtround || (slot ? slot.rd : 1));
+    const theirs = upcoming.filter(o => o.owner !== G.user && o.rd === rd && !(slot && o.no === slot.no && slot.owner !== G.user && false));
+    const mine = upcoming.filter(o => o.owner === G.user);
+    return `${seg2}<div class="grid g2 dtrades">
+      <div class="card"><div class="cardh"><h3>Move up</h3><span class="small muted">Priced on the draft chart</span></div>
+        <div class="wkchips">${[1, 2, 3, 4, 5, 6, 7].filter(r => upcoming.some(o => o.rd === r)).map(r => `<button class="chip ${r === rd ? 'on' : ''}" data-act="seg" data-seg="dtround" data-k="${r}">Round ${r}</button>`).join('')}</div>
+        ${theirs.map(upRow).join('') || '<p class="small muted">No other team picks left in this round.</p>'}</div>
+      <div class="card"><div class="cardh"><h3>Move down</h3><span class="small muted">Teams behind you that want your pick</span></div>
+        ${mine.map(downRow).join('') || '<p class="small muted">You have no picks left in this draft.</p>'}</div></div>`;
+  }
+  // by team: every team with picks left, then that team's picks and what they would give for yours
+  const teams = E.teamList().filter(t => t !== G.user && upcoming.some(o => o.owner === t)).sort((a, b) => upcoming.find(o => o.owner === a).no - upcoming.find(o => o.owner === b).no);
+  const T = teams.includes(UI.dteam) ? UI.dteam : teams[0];
+  if (!T) return seg2 + '<p class="muted">No other team has picks left.</p>';
+  const needs = E.teamNeeds(T).filter(n => n.level !== 'Low' && n.pos !== 'K').slice(0, 3).map(n => n.pos);
+  const theirPicks = upcoming.filter(o => o.owner === T);
+  const offers = upcoming.filter(o => o.owner === G.user).flatMap(o => E.moveDownOffers(o.pickId).filter(x => x.from === T).map(x => ({...x, no: o.no})));
+  return `${seg2}<div class="teamstrip">${teams.map(t => `<button class="tchip ${t === T ? 'on' : ''}" data-act="seg" data-seg="dteam" data-k="${t}">${badge(t, 1)}<span>#${upcoming.find(o => o.owner === t).no}</span></button>`).join('')}</div>
+    <div class="grid g2 dtrades">
+      <div class="card"><div class="cardh"><h3>${badge(T, 1)} ${esc(G.teams[T].name)}</h3><span class="small muted">${needs.length ? `Need ${needs.join(', ')}` : ''}</span></div>
+        <div class="lbl">Their picks</div>${theirPicks.map(upRow).join('')}</div>
+      <div class="card"><div class="cardh"><h3>For your picks</h3><span class="small muted">What the ${esc(G.teams[T].nick)} would give</span></div>
+        ${offers.map((x, i) => { UI.dteamOffers = offers; return `<div class="dkrow tradepick"><span class="num drank">#${x.no}</span><div class="pmain"><div class="pn">Move down from #${x.no}</div><div class="psub"><span class="small muted">You get</span> ${pickChips(x.get)}</div></div><button class="btn sm go" data-act="draftTake" data-i="${i}">Take it</button></div>`; }).join('') || `<p class="small muted">The ${esc(G.teams[T].nick)} have nothing behind your picks to offer.</p>`}</div></div>`;
+}
+// One deal on one sheet, without leaving the draft
+function draftUpSheet(pickId) {
+  const r = E.moveUpPrice(pickId), sl = E.draftSlotOf(pickId), k = G.picks.find(x => x.id === pickId);
+  if (!k) return;
+  const who = k.owner, best = G.draft.pool[0];
+  if (!r || !r.give) { popup('Draft day', `#${sl ? sl.no : ''} is out of reach`, `<p class="lead">The ${esc(G.teams[who].nick)} want about ${Math.round(r ? r.want : 0)} points on the draft chart for it. Your picks after it add up to ${Math.round(r ? r.have : 0)}.</p><p class="small muted">Picks in later years count too. You can still offer players in Build a trade.</p>`); return; }
+  UI.dealX = {partner: who, give: r.give, get: r.get};
+  const vg = r.give.reduce((a, id) => a + E.chartValue(id), 0), vt = E.chartValue(pickId);
+  modal(`<div class="sheeth"><div><div class="kicker">Draft day · move up${sl ? ` to #${sl.no}` : ''}</div><h3>Trade with the ${esc(G.teams[who].nick)}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="pkdeal"><div><div class="lbl">You send</div>${pickChips(r.give)}</div><div class="pkarrow" aria-hidden="true">→</div><div><div class="lbl">You get</div>${pickChips(r.get)}</div></div>
+    <p class="small muted">Draft chart: you give ${Math.round(vg)} points for ${Math.round(vt)}. Moving up always costs a little extra.${best && sl ? ` Best player on the board right now: ${esc(best.n)} (${best.pos}).` : ''}</p>
+    <div class="row end"><button class="btn" data-act="draftHaggle">Haggle on the phone</button><button class="btn go" data-act="draftDo">Make the trade</button></div>`, true);
+}
+function draftDownSheet(pickId) {
+  const L = E.moveDownOffers(pickId), sl = E.draftSlotOf(pickId);
+  UI.dteamOffers = L;
+  modal(`<div class="sheeth"><div><div class="kicker">Draft day · your pick${sl ? ` #${sl.no}` : ''}</div><h3>Trade down</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    ${L.map((x, i) => `<div class="dkrow tradepick">${badge(x.from, 1)}<div class="pmain"><div class="pn">${esc(G.teams[x.from].name)}</div><div class="psub"><span class="small muted">You get</span> ${pickChips(x.get)}</div></div><button class="btn sm go" data-act="draftTake" data-i="${i}">Take it</button></div>`).join('') || '<p class="muted">Nobody behind you wants to move up right now.</p>'}
+    <div class="row end"><button class="btn" data-act="closeModal">Keep the pick</button></div>`, true);
 }
 function homeCutdown() {
   const issues = E.userReady();
@@ -1177,7 +1250,7 @@ function slotChip(d, pos, i, needs) {
   const n = needs.find(x => x.pos === pos);
   const lab = E.STARTERS[pos] > 1 ? pos + (i + 1) : pos;
   if (!p) return `<button class="slot empty" data-act="depthPos" data-pos="${pos}"><span class="slab">${lab}</span><span class="sname">Empty</span></button>`;
-  return `<button class="slot ${n && n.level === 'High' ? 'weak' : ''}" data-act="depthPos" data-pos="${pos}" aria-label="${lab}: ${esc(p.n)}, ${p.ovr} overall">${face(p)}<span class="sovr ${oc(p.ovr)}">${p.ovr}</span>${E.formLabel(p) ? `<span class="sform ${E.formOf(p) > 0 ? 'up' : 'down'}" title="${E.formLabel(p)}">${E.formOf(p) > 0 ? '▲' : '▼'}</span>` : ''}<span class="sname">${esc(lastName(p.n))}</span><span class="slab">${lab}</span></button>`;
+  return `<button class="slot ${n && n.level === 'High' ? 'weak' : ''}" data-act="depthPos" data-pos="${pos}" aria-label="${lab}: ${esc(p.n)}, ${p.ovr} overall">${face(p)}<span class="sovr ${inCamp(p) ? 'proj' : oc(p.ovr)}">${inCamp(p) ? '?' : p.ovr}</span>${E.formLabel(p) ? `<span class="sform ${E.formOf(p) > 0 ? 'up' : 'down'}" title="${E.formLabel(p)}">${E.formOf(p) > 0 ? '▲' : '▼'}</span>` : ''}<span class="sname">${esc(lastName(p.n))}</span><span class="slab">${lab}</span></button>`;
 }
 function lineupView() {
   const d = E.depth(G.user), needs = E.teamNeeds(), tr = E.teamRating(G.user);
@@ -1186,10 +1259,10 @@ function lineupView() {
   const order = ['QB', 'RB', 'WR', 'TE', 'OT', 'IOL', 'EDGE', 'DT', 'LB', 'CB', 'S', 'K', 'P'];
   const bench = pos => d[pos].slice(E.STARTERS[pos]);
   const hurt = pos => E.roster(G.user).filter(p => p.inj && p.pos === pos);
-  const mob = `<div class="mobonly card mdepth">${order.map(pos => { const L = d[pos], n = E.STARTERS[pos], nd = needs.find(x => x.pos === pos), B = bench(pos), H = hurt(pos); return `<button class="mrow" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}${nd ? `<i class="g${RANK_LETTER(nd.rank)}">${RANK_LETTER(nd.rank)}</i>` : ''}</span><span class="mcol"><span class="mfaces">${L.slice(0, n).map(p => `<span class="mp">${face(p, 'sm')}<span><b class="${oc(p.ovr)}">${p.ovr}</b> ${esc(lastName(p.n))}</span></span>`).join('') || '<span class="bad small">Empty</span>'}</span>${B.length || H.length ? `<span class="mbench">${B.map(p => `${esc(lastName(p.n))} <b>${p.ovr}</b>`).join(' · ')}${H.length ? `${B.length ? ' · ' : ''}<span class="bad">${H.map(p => `${esc(lastName(p.n))} (hurt)`).join(' · ')}</span>` : ''}</span>` : ''}</span><span class="chev" aria-hidden="true">›</span></button>`; }).join('')}</div>`;
+  const mob = `<div class="mobonly card mdepth">${order.map(pos => { const L = d[pos], n = E.STARTERS[pos], nd = needs.find(x => x.pos === pos), B = bench(pos), H = hurt(pos); return `<button class="mrow" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}${nd ? `<i class="g${RANK_LETTER(nd.rank)}">${RANK_LETTER(nd.rank)}</i>` : ''}</span><span class="mcol"><span class="mfaces">${L.slice(0, n).map(p => `<span class="mp">${face(p, 'sm')}<span><b class="${inCamp(p) ? '' : oc(p.ovr)}">${ovrNum(p)}</b> ${esc(lastName(p.n))}</span></span>`).join('') || '<span class="bad small">Empty</span>'}</span>${B.length || H.length ? `<span class="mbench">${B.map(p => `${esc(lastName(p.n))} <b>${ovrNum(p)}</b>`).join(' · ')}${H.length ? `${B.length ? ' · ' : ''}<span class="bad">${H.map(p => `${esc(lastName(p.n))} (hurt)`).join(' · ')}</span>` : ''}</span>` : ''}</span><span class="chev" aria-hidden="true">›</span></button>`; }).join('')}</div>`;
   // everyone who is not starting, by position, so nobody disappears off the depth chart
   const benchCard = `<div class="card benchcard"><div class="cardh"><h3>Bench</h3><span class="small muted">${order.reduce((a, pos) => a + bench(pos).length, 0)} backups · tap to change the depth chart</span></div>
-    <div class="benchgrid">${order.filter(pos => bench(pos).length || hurt(pos).length).map(pos => `<button class="benchpos" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}</span><span class="benchlist">${bench(pos).map(p => `<span class="bp">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><b class="${oc(p.ovr)}">${p.ovr}</b>${p.pos !== pos ? `<span class="small muted">${p.pos}</span>` : ''}</span>`).join('')}${hurt(pos).map(p => `<span class="bp hurt">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><span class="tag bad">Hurt</span></span>`).join('')}</span></button>`).join('')}</div></div>`;
+    <div class="benchgrid">${order.filter(pos => bench(pos).length || hurt(pos).length).map(pos => `<button class="benchpos" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}</span><span class="benchlist">${bench(pos).map(p => `<span class="bp">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><b class="${inCamp(p) ? '' : oc(p.ovr)}">${ovrNum(p)}</b>${p.pos !== pos ? `<span class="small muted">${p.pos}</span>` : ''}</span>`).join('')}${hurt(pos).map(p => `<span class="bp hurt">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><span class="tag bad">Hurt</span></span>`).join('')}</span></button>`).join('')}</div></div>`;
   return `${mob}<div class="deskonly"><p class="hint">Tap a player to change the depth chart. Red ring: a big need.</p>
     <div class="grid">${field('Offense', OFF_ROWS, `${tr.off} OVR`)}${field('Defense', DEF_ROWS, `${tr.def} OVR`)}</div>
     <div class="card" style="margin-top:14px"><div class="cardh"><h3>Specialists</h3></div><div class="frow left">${slotChip(d, 'K', 0, needs)}${slotChip(d, 'P', 0, needs)}</div></div>
@@ -1260,7 +1333,7 @@ function playerCard(id) {
   return `<div class="pchead">${face(p, 'xl')}<div class="pcmid"><div class="kicker">${p.pos} · ${tm ? esc(tm.name) : 'Free agent'}</div><h3>${esc(p.n)}</h3>
       <div class="pchips">${p.why ? '' : p.prod >= 0 ? `<span class="tag ${p.prod >= 75 ? 'good' : p.prod <= 30 ? 'bad' : ''}">Production ${ordinalJ(p.prod)} pct</span>` : p.rook ? '<span class="tag">No NFL stats yet</span>' : ''}<span class="tag ${p.hype >= 70 ? 'gold' : ''}">Hype ${p.hype}</span>${E.FLEX[p.pos] ? `<span class="tag">Also plays ${Object.keys(E.FLEX[p.pos]).join(', ')}</span>` : ''}${cf ? `<span class="tag">${esc(cf.note.split('.')[0])}</span>` : ''}</div>
       <div class="small muted">Age ${Math.floor(p.age)} · ${p.tm === 'FA' ? `asks ${money(p.ask || E.market(p))}` : `${money(p.cap)} per year through ${p.end} (${yrsLeft} yr left)`}${p.draft ? ` · drafted #${p.draft}` : ''}</div></div>
-      <div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+      ${inCamp(p) ? `<div class="pcovr proj"><b>${p.proj[0]}–${p.proj[1]}</b><span>Scouts</span></div>` : `<div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div>`}<button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="ratingrow">
       ${(p.hist || []).map((h, i) => `<div class="rh"><span class="kicker" style="color:var(--muted)">${h[0]}${i === 0 ? ' start' : ''}</span><b class="${oc(h[1])}">${h[1]}</b><span class="small muted">${esc(i ? h[2] : 'Week 1')}</span></div>`).join('<span class="rarrow">→</span>')}
       ${winsBlock(p)}<div class="rh"><span class="kicker" style="color:var(--muted)">Track record</span><b class="${oc(p.prior || p.ovr)}">${p.prior || p.ovr}</b><span class="small muted">Last 4 seasons</span></div>
@@ -2265,7 +2338,7 @@ function faModal(id, msg) {
   const {w} = E.priorities(p), pri = [['Money', w.money], ['Winning', w.win], ['Role', w.role], ['Loyalty', w.loyal]].sort((a, b) => b[1] - a[1]);
   modal(`<div class="pchead">${face(p, 'xl')}<div class="pcmid"><div class="kicker">${p.pos} · ${Math.floor(p.age)} · ${p.fromTeam ? 'last ' + esc(tname(p.fromTeam)) : 'free agent'}</div><h3>${esc(p.n)}</h3>
       <div class="pchips"><span class="tag ${ic}">${il} · ${it.score}</span><span class="tag ${up > 0 ? 'gold' : ''}">${!st ? 'Fills an empty spot' : up > 0 ? '+' + up + ' over your starter' : 'Depth'}</span><span class="tag">Wants ${E.yearsFor(p)} yr</span></div></div>
-      <div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+      ${inCamp(p) ? `<div class="pcovr proj"><b>${p.proj[0]}–${p.proj[1]}</b><span>Scouts</span></div>` : `<div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div>`}<button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     ${msg ? `<div class="agent">${esc(msg)}</div>` : ''}
     ${c && !walked ? `<div class="counterbar"><div><b>He will sign for ${money(c.apy)} × ${c.yrs} yr</b><span class="small muted">Accept now, before another team does</span></div><button class="btn go" data-act="faTake" data-id="${id}" ${c.apy > space ? 'disabled' : ''}>Accept</button></div>` : ''}
     ${walked ? '<div class="agent">He stopped taking your calls. Try again next wave.</div>' : ''}
@@ -2634,6 +2707,11 @@ document.addEventListener('click', e => {
     }
     case 'accept': { const o = (G.offers || []).find(x => x.id === id); const r = E.acceptOffer(id); if (r.ok && o) { persist(); render(); tradePopup(o.from, o.give, o.get, 'Offer accepted'); return; } toast(r.msg); break; }
     case 'decline': G.offers = (G.offers || []).filter(o => o.id !== id); break;
+    case 'draftUp': draftUpSheet(id); return;
+    case 'draftDown': draftDownSheet(id); return;
+    case 'draftDo': { const x = UI.dealX; if (!x) return; const r = E.draftDeal(x.partner, x.give, x.get); closeModal(); if (r.ok) { persist(); render(); tradePopup(x.partner, x.give, x.get, 'Moved up'); return; } popup('Draft day', 'That deal fell apart', `<p class="lead">${esc(r.issues[0] || 'They changed their mind.')}</p>`); return; }
+    case 'draftHaggle': { const x = UI.dealX; if (!x) return; closeModal(); UI.partner = x.partner; UI.give = x.give.slice(); UI.get = x.get.slice(); UI.tview = 'make'; persist(); go('trade'); return; }
+    case 'draftTake': { const x = (UI.dteamOffers || [])[+el.dataset.i]; if (!x) return; const r = E.draftDeal(x.from, x.give, x.get); closeModal(); if (r.ok) { persist(); render(); tradePopup(x.from, x.give, x.get, 'Traded down'); return; } popup('Draft day', 'That deal fell apart', `<p class="lead">${esc(r.issues[0] || 'They changed their mind.')}</p>`); return; }
     case 'acceptDraft': { const o = E.draftOffers().find(x => x.id === id); if (!o) return; const r = E.doTrade(o.from, o.give, o.get, 'offer'); closeModal(); if (r.ok) { persist(); render(); tradePopup(o.from, o.give, o.get, 'Traded down'); return; } toast(r.issues[0] || 'That deal fell apart.'); break; }
     case 'declineDraft': UI.declined = (UI.declined || []).concat(id); closeModal(); break;
     case 'offerDrop': {
