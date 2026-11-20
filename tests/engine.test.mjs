@@ -261,3 +261,32 @@ test('season stats land in real NFL ranges and every game keeps a box score', ()
   assert.equal(L.reduce((a, r) => a + (r.st.recy || 0), 0) <= g.ba.py + 2, true);
   assert.equal(L.reduce((a, r) => a + (r.st.att || 0), 0), g.ba.att);
 });
+
+test('free agents answer right away: a fair offer signs, a near miss gets a counter, lowballs end the talks', () => {
+  E.newGame(DATA, 'NYJ', 21);
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound()); E.G.phase = 'seasondone';
+  E.beginOffseason(); E.G.phase = 'offseason'; E.finishResign();
+  const pool = E.faPool().filter(p => E.faPrice(p) * 1.1 < E.capSpace(E.G.user)).slice(0, 3);
+  const [a, b, c] = pool, y = p => E.yearsFor(p);
+  assert.equal(E.faBid(a.id, E.faPrice(a, y(a)), y(a)).result, 'signed');
+  const r = E.faBid(b.id, E.faPrice(b, y(b)) * .85, y(b));
+  assert.equal(r.result, 'counter');
+  assert.equal(E.faBid(b.id, r.counter, y(b)).result, 'signed');
+  for (let i = 0; i < 2; i++) assert.equal(E.faBid(c.id, 1, y(c)).result, 'no');
+  assert.equal(E.faBid(c.id, 1, y(c)).result, 'walked');
+  assert.equal(E.faBid(c.id, E.faPrice(c, y(c)), y(c)).result, 'walked');
+});
+
+test('the cut plan never suggests this year’s early draft picks, and players can cover a neighbouring position', () => {
+  E.newGame(DATA, 'DAL', 22);
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound()); E.G.phase = 'seasondone';
+  E.beginOffseason(); E.G.phase = 'offseason'; E.finishResign(); E.finishFA(); E.finishDraft();
+  const plan = E.cutPlan().map(id => E.G.players[id]);
+  assert.ok(!plan.some(p => p.draft && p.draft <= 128 && p.end === E.G.season + 3), 'an early-round rookie was suggested');
+  const ot = E.cached(() => E.depth('DAL').OT[2])();
+  E.setFlex(ot.id, 'IOL');
+  assert.ok(E.cached(() => E.depth('DAL').IOL.includes(ot))());
+  assert.equal(E.flexPen(ot, 'IOL'), 2);
+  E.setFlex(ot.id, null);
+  assert.ok(E.cached(() => E.depth('DAL').OT.includes(ot))());
+});

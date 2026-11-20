@@ -170,6 +170,12 @@ function depthOf(list) {
 function depth(t) {
   if (CACHE && CACHE.d[t]) return CACHE.d[t];
   const d = depthOf(activeRoster(t));
+  if (t === G.user && G.flex) for (const id of Object.keys(G.flex)) {
+    const p = G.players[id], pos = G.flex[id];
+    if (!p || p.tm !== t || !canFlex(p, pos)) { delete G.flex[id]; continue; }
+    const i = d[p.pos].indexOf(p); if (i < 0) continue;
+    d[p.pos].splice(i, 1); d[pos].push(p); d[pos].sort((a, b) => (b.ovr - flexPen(b, pos)) - (a.ovr - flexPen(a, pos)));
+  }
   if (CACHE) CACHE.d[t] = d;
   const o = t === G.user && G.depthOrder;
   if (o) for (const pos of POS_ORDER) {
@@ -181,6 +187,16 @@ function depth(t) {
   return d;
 }
 // Your own depth chart order: move a player up or down at his position
+// Position flexibility: some players can cover a neighbouring spot, a few points worse than at their own
+const FLEX = {OT: {IOL: 2}, IOL: {OT: 4}, CB: {S: 3}, S: {CB: 4, LB: 5}, EDGE: {LB: 4, DT: 5}, DT: {EDGE: 5}, LB: {EDGE: 5, S: 6}, WR: {TE: 7, RB: 8}, TE: {WR: 5}, RB: {WR: 6}};
+const flexPen = (p, pos) => p.pos === pos ? 0 : ((FLEX[p.pos] || {})[pos] || 0);
+const canFlex = (p, pos) => p.pos === pos || !!(FLEX[p.pos] && FLEX[p.pos][pos] != null);
+function setFlex(id, pos) {
+  G.flex = G.flex || {}; const p = G.players[id];
+  if (!p) return;
+  if (!pos || pos === p.pos) delete G.flex[id]; else if (canFlex(p, pos)) G.flex[id] = pos;
+  if (G.depthOrder) for (const k in G.depthOrder) G.depthOrder[k] = G.depthOrder[k].filter(x => x !== id);
+}
 function setDepth(pos, ids) { G.depthOrder = G.depthOrder || {}; G.depthOrder[pos] = ids.slice(); }
 
 function teamRating(t) { if (CACHE && CACHE.tr[t]) return CACHE.tr[t]; const r = ratingOf(null, depth(t)); if (CACHE) CACHE.tr[t] = r; return r; }
@@ -188,7 +204,7 @@ function ratingOf(list, dd) {
   const d = dd || depthOf(list);
   const avg = (pos) => {
     const n = STARTERS[pos], L = d[pos];
-    let s = 0; for (let i = 0; i < n; i++) s += L[i] ? L[i].ovr : SIM.rep;
+    let s = 0; for (let i = 0; i < n; i++) s += L[i] ? L[i].ovr - flexPen(L[i], pos) : SIM.rep;
     return s / n;
   };
   let off = 0, def = 0;
@@ -1460,7 +1476,7 @@ function signFA(p, t, apy, yrs) {
   p.tm = t; p.cap = Math.round(apy * 10) / 10; p.end = G.season - 1 + yrs;
   if (t === G.user) {
     p.how = 'Free agent';
-    (G.signings = G.signings || []).push({id: p.id, n: p.n, pos: p.pos, ovr: p.ovr, apy: p.cap, yrs, from: p.fromTeam || ''});
+    (G.signings = G.signings || []).push({id: p.id, n: p.n, pos: p.pos, ovr: p.ovr, apy: p.cap, yrs, from: p.fromTeam || '', season: G.season});
     G.fa.log.unshift(`${p.n} signed with you: ${yrs} yr, $${p.cap}M per year.`);
   } else if (p.ovr >= 74) G.fa.log.unshift(`${p.n} (${p.pos} ${p.ovr}) signed with the ${G.teams[t].nick}: $${p.cap}M per year.`);
 }
@@ -1480,6 +1496,37 @@ function faOffer(id, apy, yrs) {
   return {ok: true, msg: `Offer in at ${Math.round(apy / price * 100)}% of his ask. ${p.n} will compare it with other teams when wave ${F.wave} ends. Pay $${price}M to sign him now.`};
 }
 function faCancel(id) { delete G.fa.offers[id]; }
+// Free agency talks: every offer gets an answer right away. He signs, he names his number, or he says no.
+// His floor sits a little under his ask, lower in later waves, higher when other teams want him.
+// Three misses and he is done talking to you until the next wave.
+function faFloor(p, yrs) {
+  const F = G.fa, base = F.wave === 1 ? .88 : F.wave === 2 ? .85 : .8;
+  return faPrice(p, yrs) * (base + Math.min(.04, faSuitors(p) * .008));
+}
+function faOdds(p, apy, yrs) {
+  const price = faPrice(p, yrs), floor = faFloor(p, yrs);
+  return apy + .001 >= floor ? (apy + .001 >= price ? 'Signs now' : 'Likely yes') : apy >= floor * .9 ? 'He may counter' : 'Long shot';
+}
+function faBid(id, apy, yrs) {
+  const p = G.players[id], F = G.fa;
+  F.tries = F.tries || {}; F.counter = F.counter || {}; F.walked = F.walked || {};
+  if (!p || p.tm !== 'FA') return {ok: false, result: 'gone', msg: 'He already signed somewhere else.'};
+  apy = Math.round(apy * 10) / 10; yrs = yrs || yearsFor(p);
+  if (F.walked[id]) return {ok: false, result: 'walked', msg: `${p.n} is done talking until the next wave.`};
+  if (apy > capSpace(G.user) + .001) return {ok: false, result: 'cap', msg: `That is more than your $${capSpace(G.user).toFixed(1)}M of cap space.`};
+  if (roster(G.user).length >= 90) return {ok: false, result: 'full', msg: 'Your offseason roster is full (90). Release someone first.'};
+  const price = faPrice(p, yrs), floor = faFloor(p, yrs);
+  if (apy + .001 >= floor) { delete F.counter[id]; delete F.offers[id]; signFA(p, G.user, apy, yrs); return {ok: true, result: 'signed', apy, yrs, msg: `${p.n} signed: ${yrs} yr at $${apy}M per year.`}; }
+  F.tries[id] = (F.tries[id] || 0) + 1;
+  if (apy >= floor * .9) {
+    const c = Math.ceil((floor + (price - floor) * .35) * 10) / 10;
+    F.counter[id] = {apy: c, yrs};
+    if (F.tries[id] >= 3) F.walked[id] = true;
+    return {ok: true, result: 'counter', counter: c, yrs, msg: `Close. He will sign for $${c}M per year over ${yrs} years.`};
+  }
+  if (F.tries[id] >= 3) { F.walked[id] = true; return {ok: false, result: 'walked', msg: `${p.n} is insulted and stops taking your calls this wave.`}; }
+  return {ok: false, result: 'no', msg: `Not close. He is looking for about $${price}M per year.`};
+}
 // End the wave: rival teams bid, players choose, and close calls come back to you to match.
 function faEndWave() {
   const F = G.fa;
@@ -1511,7 +1558,7 @@ function faEndWave() {
     }
     if (best && (mine || rand() < .85)) {
       signFA(p, best.t, best.apy, best.yrs); signedBy[best.t] = (signedBy[best.t] || 0) + 1;
-      if (mine || F.met[p.id]) { res.lost.push({id: p.id, t: best.t, apy: best.apy, yrs: best.yrs, offered: !!mine}); if (mine) G.fa.log.unshift(`${p.n} chose the ${G.teams[best.t].nick} over you.`); }
+      if (mine || F.met[p.id] || (F.tries && F.tries[p.id])) { res.lost.push({id: p.id, t: best.t, apy: best.apy, yrs: best.yrs, offered: !!mine}); if (mine) G.fa.log.unshift(`${p.n} chose the ${G.teams[best.t].nick} over you.`); }
       else if (p.ovr >= 80) res.notable.push({id: p.id, t: best.t, apy: best.apy, yrs: best.yrs});
     }
   }
@@ -1521,7 +1568,7 @@ function faEndWave() {
 }
 function faNextWave() {
   const F = G.fa;
-  F.wave++; F.met = {}; F.meetings = 0; F.offers = {};
+  F.wave++; F.met = {}; F.meetings = 0; F.offers = {}; F.tries = {}; F.counter = {}; F.walked = {};
   for (const p of faPool()) p.ask = Math.max(1.1, Math.round(askOf(p) * .88 * 10) / 10);
 }
 // Match the rival offer (at the price that wins him) or let him go
@@ -1779,7 +1826,10 @@ function cutPlan() {
   const counts = {}; for (const p of roster(G.user)) counts[p.pos] = (counts[p.pos] || 0) + 1;
   let n = roster(G.user).length, pay = payroll(G.user);
   const cap = G.cap[G.season], plan = [];
-  const cands = roster(G.user).filter(p => !starters.has(p.id)).sort((a, b) => playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
+  // this year's draft picks get a season before anyone judges them: rounds 1-4 are never suggested, late-rounders go last
+  const freshPick = p => p.draft && p.end === G.season + 3;
+  const cands = roster(G.user).filter(p => !starters.has(p.id) && !(freshPick(p) && p.draft <= 128))
+    .sort((a, b) => (freshPick(a) - freshPick(b)) || playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
   for (const p of cands) {
     if (n <= ROSTER_MAX && pay <= cap) break;
     if (counts[p.pos] <= MIN_DEPTH[p.pos]) continue;
@@ -2061,7 +2111,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(5, 3)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, unpackBox, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade, talkWith, talkMove, talkAssets, talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

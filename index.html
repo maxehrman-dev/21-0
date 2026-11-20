@@ -164,6 +164,7 @@ nav.tabs .sidenext { display: none; }
   body.ingame header#hdr nav.tabs > button:hover:not(.on) { background: rgba(255,255,255,.03); }
   body.ingame header#hdr nav.tabs > button .count, header#hdr nav.tabs > button .dot { margin-left: auto; }
   body.ingame header#hdr nav.tabs > button.minor { margin-top: auto; height: 38px; font-size: 14px; }
+  body.ingame header#hdr nav.tabs > .sidenext { height: auto; min-height: 56px; }
   body.ingame header#hdr .sidenext { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 10px; text-align: left; margin: 0 0 12px; padding: 12px 14px 14px; border: 0; border-radius: 14px; background: linear-gradient(180deg, #ffd36a, var(--gold)); color: #1b1203; box-shadow: 0 10px 24px -10px rgba(243,181,47,.6); }
   body.ingame header#hdr .sidenext .kicker { color: rgba(27,18,3,.7); grid-column: 1; white-space: normal; line-height: 1.3; }
   body.ingame header#hdr .sidenext b { grid-column: 1; font-size: 15px; line-height: 1.2; }
@@ -172,7 +173,7 @@ nav.tabs .sidenext { display: none; }
   body.ingame header#hdr .tabtools { margin: 8px 0 0; display: flex; justify-content: flex-start; }
   body.ingame header#hdr .tabtools .tabnext { display: none; }
   /* the next step lives in the sidebar, so the page does not repeat it */
-  body.ingame .hero .btn.go.lg, body.ingame .hero .btn[data-act=toDeadline], body.ingame .hero .btn[data-act=simRest], body.ingame .hero .btn[data-act=startS2], body.ingame .hero .btn[data-act=faWave] { display: none; }
+  body.ingame .hero .btn.go.lg, body.ingame .hero .btn[data-act=toDeadline]:not(.keep), body.ingame .hero .btn[data-act=simRest], body.ingame .hero .btn[data-act=startS2], body.ingame .hero .btn[data-act=faWave] { display: none; }
   body.ingame .hero .lead { display: none; }
 }
 
@@ -662,7 +663,7 @@ a.btn { text-decoration: none; }
   #abar .abar-txt .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #abar .btn { height: 46px; padding: 0 14px; flex: none; }
   #abar .btn.go { max-width: 62%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .hero .btn.go.lg, .hero .btn[data-act=toDeadline], .hero .btn[data-act=simRest], .hero .btn[data-act=startS2] { display: none; }
+  .hero .btn.go.lg, .hero .btn[data-act=toDeadline]:not(.keep), .hero .btn[data-act=simRest], .hero .btn[data-act=startS2] { display: none; }
   .hero .lead { display: none; }
   .picker-hero .lead { display: block; }
   .mobcap { display: flex; }
@@ -1086,6 +1087,37 @@ button.kpi { cursor: pointer; } button.kpi:hover { border-color: var(--line2); b
   .psub { white-space: normal; overflow: visible; }
   .dkrow .pn, .dkrow .psub { white-space: normal; }
 }
+
+/* x to take an asset out of a deal */
+.xitem { display: flex; align-items: center; gap: 6px; } .xitem .amini { flex: 1; min-width: 0; }
+.xitem .xs { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line2); background: var(--panel2); color: var(--muted); font-size: 15px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; }
+.xitem .xs:hover { color: var(--bad); border-color: rgba(239,91,81,.5); }
+.talktable { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); }
+@media (max-width: 760px) { .talktable { grid-template-columns: 1fr; gap: 6px; } }
+.asset.on::after { content: "×"; flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; color: var(--muted); border: 1px solid var(--line2); margin-left: 4px; }
+
+.sback { flex: none; align-self: flex-start; height: 32px; padding: 0 12px; margin-right: 8px; border-radius: 99px; border: 1px solid var(--line2); background: var(--panel2); color: var(--chalk); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.sback:hover { border-color: var(--gold); }
+.sbackbar { margin: -4px 0 10px; }
+
+/* free agency, redesigned */
+.falist { padding: 4px 8px; }
+.farow2 { display: flex; align-items: center; gap: 12px; padding: 10px 6px; border-bottom: 1px solid rgba(33,48,73,.6); cursor: pointer; border-radius: 10px; }
+.farow2:last-child { border-bottom: 0; } .farow2:hover { background: rgba(255,255,255,.03); }
+.farow2 .pmain { flex: 1; min-width: 0; }
+.faprice { display: flex; flex-direction: column; align-items: flex-end; min-width: 76px; } .faprice b { font-size: 15px; }
+.offerbtns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 6px 0 12px; }
+.offerbtn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel2); color: var(--chalk); font: inherit; text-align: left; cursor: pointer; }
+.offerbtn b { font-family: var(--display); font-size: 24px; font-weight: 800; line-height: 1; } .offerbtn span { font-size: 13px; color: var(--muted); } .offerbtn em { font-style: normal; font-size: 12px; font-weight: 700; }
+.offerbtn em.good { color: var(--good); } .offerbtn em.warn { color: var(--warn); } .offerbtn em.bad { color: var(--bad); }
+.offerbtn.main { border-color: rgba(243,181,47,.6); background: rgba(243,181,47,.08); }
+.offerbtn:hover:not([disabled]) { border-color: var(--gold); } .offerbtn[disabled] { opacity: .45; cursor: not-allowed; }
+.counterbar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin: 8px 0 12px; border-radius: 12px; background: rgba(63,192,127,.08); border: 1px solid rgba(63,192,127,.4); }
+.counterbar > div { flex: 1; display: flex; flex-direction: column; }
+@media (max-width: 760px) { .faprice { min-width: 0; } .farow2 { flex-wrap: wrap; } .farow2 .pmain { flex: 1 1 60%; } .offerbtns { grid-template-columns: 1fr; } .offerbtn { flex-direction: row; align-items: center; gap: 10px; } .offerbtn em { margin-left: auto; } }
+
+.tfind-seg { margin-bottom: 12px; }
+.farow2.nohover { cursor: default; } .farow2.nohover:hover { background: none; }
 </style>
 </head>
 <body>
