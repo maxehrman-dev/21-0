@@ -454,6 +454,22 @@ const stacked = vals => vals.slice().sort((a, b) => b - a).reduce((s, v, i) => s
 // ---------- trades ----------
 function tradeOpenNow() { return G.phase === 'deadline' || G.phase === 'offseason' || ((G.phase === 'preseason' || G.phase === 'season') && G.week === 0); }
 function rosterLimit() { return G.phase === 'offseason' && G.step !== 'cutdown' ? 90 : 75; }
+// How a deal looks, not just what it is worth. Real teams do not move a star for role players, even when the
+// numbers add up: the best piece coming back has to be close to his level, or two strong pieces have to come back.
+// Picks count by where they land: an early first is a star's worth, a third is a solid starter.
+function assetLook(id) {
+  const p = G.players[id]; if (p) return p.ovr;
+  const k = pickById(id); if (!k) return 0;
+  if (k.rd === 1) { const sl = pickSlot(k); return sl <= 10 ? 90 : sl <= 20 ? 87 : 85; }
+  return k.rd === 2 ? 79 : k.rd === 3 ? 75 : 70;
+}
+function looksOk(out, back) {
+  const star = out.map(id => G.players[id]).filter(Boolean).sort((a, b) => b.ovr - a.ovr)[0];
+  if (!star || star.ovr < 85) return {ok: true};
+  const L = back.map(assetLook).sort((a, b) => b - a), S = star.ovr;
+  const ok = (L[0] || 0) >= S - 6 || ((L[0] || 0) >= S - 10 && (L[1] || 0) >= S - 14);
+  return {ok, star};
+}
 function evalTrade(partner, give, get) {
   // give = assets the user sends, get = assets the user receives. Scored from the partner's side.
   const vIn = stacked(give.map(id => assetValue(id, partner)));
@@ -470,6 +486,10 @@ function evalTrade(partner, give, get) {
   if (uRoster < 40) issues.push('Your roster would drop under 40 players.');
   if (uRoster > rosterLimit()) issues.push(`Your roster would go over ${rosterLimit()}. Release someone first.`);
   if (!give.length || !get.length) issues.push('Both sides need at least one asset.');
+  // they will not hand over a star for spare parts, however the values add up
+  const look = give.length ? looksOk(get, give) : {ok: true};
+  if (!look.ok) issues.push(`The ${G.teams[partner].nick} will not move ${look.star.n} for that. A star needs a player close to his level back, or a first-round pick and a strong second piece.`);
+  const lookMine = get.length ? looksOk(give, get) : {ok: true};
   const rival = G.teams[partner].div === G.teams[G.user].div;
   // teams want a little extra to say yes; the premium scales with the deal, so a late-pick swap is not priced like a blockbuster
   const need = vOut * (rival ? 1.15 : 1.05) + Math.min(1.5, .1 + vOut * .12);
@@ -479,7 +499,7 @@ function evalTrade(partner, give, get) {
   const st = G.teams[partner] ? situation(partner).status : '';
   const dump = (st === 'Seller' || st === 'Rebuilding') && get.every(id => { const q = G.players[id]; return q && ageAdj(q) >= 28; });
   const fleece = give.length > 0 && get.length > 0 && fair > (dump ? 1.4 : 1.25);
-  return {rival, vIn, vOut, need, ratio, fair, fleece, ok: ratio >= 1 && !issues.length && !fleece, issues, capGive, capGet};
+  return {rival, vIn, vOut, need, ratio, fair, fleece, ok: ratio >= 1 && !issues.length && !fleece, issues, capGive, capGet, badLook: lookMine.ok ? null : lookMine.star.n};
 }
 function doTrade(partner, give, get, how) {
   const ev = evalTrade(partner, give, get);
@@ -510,6 +530,13 @@ function fillSide(partner, give, get, pool) {
     for (const c of cands) { const e = evalTrade(partner, [...g, c.id], get); if (e.ratio >= 1) { best = c.id; break; } }
     g.push(best || cands[cands.length - 1].id);
     ev = evalTrade(partner, g, get);
+  }
+  for (let step = 0; step < 2 && ev.issues.some(i => i.includes('will not move')); step++) {
+    // the cheapest piece that makes it look right, not the best thing you own
+    const fix = pool.filter(id => !g.includes(id) && looksOk(get, [...g, id]).ok).sort((a, b) => assetValue(a, partner) - assetValue(b, partner));
+    const c = fix[0] || pool.filter(id => !g.includes(id)).sort((a, b) => assetLook(b) - assetLook(a))[0];
+    if (!c) break;
+    g.push(c); ev = evalTrade(partner, g, get);
   }
   for (let step = 0; step < 4 && ev.ratio >= 1 && ev.issues.some(i => i.startsWith('You would be')); step++) {
     const short = payroll(G.user) - ev.capGive + ev.capGet - G.cap[G.season];
@@ -795,7 +822,7 @@ function buildPackage(t, pid, loose, kind, pos) {
     const pkg = tryPool(pool);
     if (!pkg || !pkg.length) continue;
     const ev = evalTrade(t, [pid], pkg);
-    if (!ev.issues.length && ev.ratio >= (loose ? .9 : .95)) return pkg;
+    if (!ev.issues.length && !ev.badLook && ev.ratio >= (loose ? .9 : .95)) return pkg;
   }
   return null;
 }
@@ -951,7 +978,7 @@ function shopPlayer(pid, kind, pos) {
     // role players move for a single pick, often a late one: the most common trade in the league
     if (!pkg && kind !== 'players') {
       const pk = G.picks.filter(k => k.owner === t).map(k => ({id: k.id, v: assetValue(k.id)})).filter(x => x.v >= want * .6 && x.v <= want * 1.5).sort((a, b) => a.v - b.v)[0];
-      if (pk) { const ev = evalTrade(t, [pid], [pk.id]); if (!ev.issues.length && ev.ratio >= .9) pkg = [pk.id]; }
+      if (pk) { const ev = evalTrade(t, [pid], [pk.id]); if (!ev.issues.length && !ev.badLook && ev.ratio >= .9) pkg = [pk.id]; }
     }
     if (pkg) out.push({partner: t, give: [pid], get: pkg, ev: evalTrade(t, [pid], pkg)});
     if (out.length >= 8) break;
@@ -2049,6 +2076,54 @@ function goalMet(season) {
   return {met, goal: e.goal, wins: r.w, proj: e.wins};
 }
 
+// ---------- next game ----------
+// How you match up, unit against unit, with the one thing to fix and the one thing to lean on
+const UNITS = {
+  pass: {name: 'passing game', pos: {QB: 2, WR: 1.4, TE: .6, OT: 1}}, run: {name: 'run game', pos: {RB: 1, IOL: 1.4, OT: .8}},
+  pd: {name: 'pass defense', pos: {CB: 1.4, S: 1, EDGE: 1.2}}, rd: {name: 'run defense', pos: {DT: 1.3, LB: 1.2, EDGE: .5}},
+};
+function unitRating(t, k) {
+  const d = depth(t); let s = 0, w = 0;
+  for (const [pos, wt] of Object.entries(UNITS[k].pos)) { const L = d[pos], n = STARTERS[pos]; for (let i = 0; i < n; i++) { s += (L[i] ? L[i].ovr : 45) * wt; w += wt; } }
+  return Math.round(s / w);
+}
+function matchup(opp, home) {
+  const me = teamRating(G.user), th = teamRating(opp);
+  const p = home ? 1 - winProbR(th, me) : winProbR(me, th);
+  const U = k => unitRating(G.user, k), V = k => unitRating(opp, k);
+  const fights = [
+    {k: 'pass', mine: U('pass'), theirs: V('pd'), label: 'Your passing game vs their pass defense'},
+    {k: 'run', mine: U('run'), theirs: V('rd'), label: 'Your run game vs their run defense'},
+    {k: 'pd', mine: U('pd'), theirs: V('pass'), label: 'Your pass defense vs their passing game'},
+    {k: 'rd', mine: U('rd'), theirs: V('run'), label: 'Your run defense vs their run game'},
+  ].map(f => ({...f, name: UNITS[f.k].name, edge: f.mine - f.theirs}));
+  const worst = fights.slice().sort((a, b) => a.edge - b.edge)[0], best = fights.slice().sort((a, b) => b.edge - a.edge)[0];
+  // the weakest starter in your worst matchup is the spot to fix
+  const d = depth(G.user);
+  const weakPos = Object.keys(UNITS[worst.k].pos).map(pos => ({pos, ovr: d[pos][STARTERS[pos] - 1] ? d[pos][STARTERS[pos] - 1].ovr : 40})).sort((a, b) => a.ovr - b.ovr)[0];
+  const star = roster(opp).filter(x => !x.inj).sort((a, b) => b.ovr - a.ovr)[0];
+  const theirHurt = roster(opp).filter(x => x.inj && x.ovr >= 75).sort((a, b) => b.ovr - a.ovr).slice(0, 3);
+  const last = (G.results[G.season] || []).filter(g => (g.h === opp && g.a === G.user) || (g.a === opp && g.h === G.user)).pop();
+  return {p, fights, worst, best, weakPos, star, theirHurt, last, me: me.ovr, them: th.ovr};
+}
+// Why no deal for one of their players comes together, in plain words
+function whyNoDeal(pid) {
+  const p = G.players[pid]; if (!p || !G.teams[p.tm]) return 'He is not on a team you can trade with.';
+  const t = p.tm, nick = G.teams[t].nick;
+  const need = evalTrade(t, [], [pid]).need;
+  const pool = userPool('all', [pid]).map(id => ({id, v: assetValue(id, t)})).sort((a, b) => b.v - a.v);
+  const best = stacked(pool.slice(0, 3).map(x => x.v));
+  const sendable = roster(G.user).filter(x => x.pos !== 'K' && x.pos !== 'P').map(x => x.cap).sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0);
+  const money = v => '$' + v.toFixed(1) + 'M';
+  if (p.cap > capSpace(G.user) + sendable) return `His ${money(p.cap)} salary will not fit under your cap, even if you send big contracts back.`;
+  if (best < need) {
+    const sit = situation(t).status;
+    return `The ${nick} value him at about ${Math.round(need)}. Your best three assets add up to ${Math.round(best)}${sit === 'Contender' ? ', and a contender does not sell a starter cheap' : ''}.`;
+  }
+  if (p.cap > capSpace(G.user)) return `You can only afford him by sending salary back, and no mix of your players both clears the cap and gets the ${nick} to yes. Free up cap space first.`;
+  return `No mix of three of your assets gets the ${nick} to yes without breaking the cap or roster limits. Try a bigger package in Build a trade.`;
+}
+
 // ---------- locker room ----------
 // Chemistry runs 0-100. Winning builds it; trading away or cutting players the room trusts costs it.
 // It is worth up to about 2 points a game either way, a bit under a win a season at the extremes.
@@ -2275,7 +2350,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

@@ -125,6 +125,7 @@ function seg(id, opts, cur) {
 }
 const SHEET_NAV = new Set(['box', 'player', 'injurySheet', 'needPos', 'faSheet', 'prospect', 'depthSheet', 'ownerSheet', 'faOpen', 'depthPos', 'findTrades', 'findFor']);
 function modal(html, wide) {
+  NEEDSET = null;
   if (UI.pushSheet) { (UI.sheetStack = UI.sheetStack || []).push(UI.pushSheet); UI.pushSheet = null; }
   else if (!$('#layer .modal:not(.closing)')) UI.sheetStack = [];
   UI.backing = false;
@@ -409,7 +410,7 @@ function helpSheet(k) {
   modal(`<div class="sheeth"><div><div class="kicker">How it works</div><h3>${title}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="helplist">${rows.map(([h, t]) => `<div class="helprow"><b>${h}</b><span>${t}</span></div>`).join('')}</div>
     <p class="small muted soundline">Sound effects are ${SND.on ? 'on' : 'off'}. <button class="linkbtn" data-act="sound">Turn ${SND.on ? 'off' : 'on'}</button></p>
-    <div class="row helpfoot">${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : G ? '<button class="btn ghost" data-act="guide">Show me around</button>' : ''}<button class="btn go" data-act="closeModal">Got it</button></div>`, true);
+    <div class="row helpfoot">${G ? '<button class="btn ghost dangertxt" data-act="askReset">Start over</button>' : ''}${k !== 'run' ? '<button class="btn ghost" data-act="help" data-k="run">How a run works</button>' : G ? '<button class="btn ghost" data-act="guide">Show me around</button>' : ''}<button class="btn go" data-act="closeModal">Got it</button></div>`, true);
 }
 // ---------- first-time guide ----------
 // Four stops, one thing lit up at a time: the goal, the button that moves the season, trades, and your roster.
@@ -487,7 +488,21 @@ function phaseLabel() {
   return '';
 }
 // Trades are open before Week 1, at the Week 9 deadline and all offseason
-function tradeOpen() { return G && (G.phase === 'deadline' || G.phase === 'offseason' || ((G.phase === 'preseason' || G.phase === 'season') && G.week === 0)); }
+function tradeOpen() { return G && (G.phase === 'deadline' || G.phase === 'offseason' || ((G.phase === 'preseason' || G.phase === 'season') && G.week < E.DEADLINE_WEEK)); }
+// Weeks until the deadline, in words: "3 weeks left", "Deadline is now", or null once it has passed
+function deadlineLine() {
+  if (!G || G.phase === 'offseason') return null;
+  if (G.phase === 'deadline') return 'Deadline day: last chance to trade until the offseason';
+  if ((G.phase === 'preseason' || G.phase === 'season') && G.week < E.DEADLINE_WEEK) { const n = E.DEADLINE_WEEK - G.week; return `Trade deadline after Week ${E.DEADLINE_WEEK} · ${n} week${n > 1 ? 's' : ''} left`; }
+  return null;
+}
+function deadlineBanner() {
+  if (!G || G.phase !== 'deadline') return '';
+  const n = (G.offers || []).length;
+  return `<button class="dlbanner" data-act="openInbox"><span class="dlclock" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2.5h6"/></svg></span>
+    <span class="dlmain"><span class="kicker">Trade deadline</span><b>Last chance to trade this season</b><span class="small">Trades close when you play Week ${E.DEADLINE_WEEK + 1}. They reopen in the offseason. Free agents can still be signed.</span></span>
+    <span class="dlgo">${n ? `${n} offer${n > 1 ? 's' : ''} waiting` : 'Make a trade'} ›</span></button>`;
+}
 const offerCount = () => tradeOpen() ? ((G.offers || []).length + (G.step === 'draft' ? E.draftOffers().length : 0)) : 0;
 
 const TAB_ICON = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>', roster: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-6 6.5-6s5.9 2.4 6.5 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.8 14.2c2.8.1 5 2.2 5.7 5.8"/>',
@@ -496,8 +511,8 @@ function nextAction() {
   if (!G) return null;
   const P = G.phase, S = G.step;
   if ((P === 'preseason' || P === 'season') && G.week === 0) return {label: 'Play Week 1', act: 'playWeek', sub: `${G.season} season preview`, alt: {label: 'Sim to deadline', act: 'toDeadline'}};
-  if (P === 'preseason' || P === 'season') return G.week < E.DEADLINE_WEEK ? {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `${G.season} · Week ${G.week + 1}`} : {label: 'Sim rest of season', act: 'simRest', sub: `${G.season} · Week ${G.week + 1}`};
-  if (P === 'deadline') { const n = offerCount(); return {label: 'Sim rest of season', act: 'simRest', sub: n ? `${n} trade offer${n > 1 ? 's' : ''} waiting` : 'Trade deadline'}; }
+  if (P === 'preseason' || P === 'season') return G.week < E.DEADLINE_WEEK ? {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `Week ${G.week + 1} · deadline in ${E.DEADLINE_WEEK - G.week} wk${E.DEADLINE_WEEK - G.week > 1 ? 's' : ''}`} : {label: 'Sim rest of season', act: 'simRest', sub: `${G.season} · Week ${G.week + 1}`};
+  if (P === 'deadline') { const n = offerCount(); return {label: 'Sim rest of season', act: 'simRest', sub: `Trade deadline${n ? ` · ${n} offer${n > 1 ? 's' : ''} waiting` : ': last chance'}`}; }
   if (P === 'playoffs') { const R = G.playoffs[G.season]; return {label: `Play the ${E.ROUND_NAMES[R.round]}`, act: 'poNext', sub: `${G.season} playoffs`, alt: {label: 'Skip', act: 'poSkip'}}; }
   if (P === 'seasondone' && G.fired && !(G.season === 2027 && !G.reported)) return {label: 'Pick a new team', act: 'newgame', sub: 'You were fired'};
   if (P === 'seasondone') return G.season === 2027 && !G.reported ? {label: 'See final results', act: 'final', sub: '2027 is over'} : {label: `Start the ${G.season + 1} offseason`, act: 'offseason', sub: `${G.season} is over`};
@@ -567,11 +582,33 @@ function renderHeader() {
   <nav class="tabs" aria-label="Sections">
     ${a ? `<button class="sidenext" data-act="${a.act}" ${a.k ? `data-k="${a.k}"` : ''} title="Shortcut: N"><span class="kicker">${esc(a.sub || 'Next')}</span><b>${esc(a.label)}</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>` : ''}
     ${tabs.map(([k, l]) => `<button data-tab="${k}" class="${UI.tab === k || (k === 'league' && UI.tab === 'league') ? 'on' : ''} ${k === 'resume' ? 'minor' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}"><svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICON[k]}</svg><span>${l}</span>${k === 'trade' && n ? ` <span class="count">${n}</span>` : k === 'trade' && tradeOpen() ? ' <span class="dot" aria-label="open"></span>' : ''}</button>`).join('')}
-    <span class="tabtools">${a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''}<button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
+    <span class="tabtools">${a && UI.tab !== 'home' ? `<button class="btn go sm tabnext" data-act="${a.act}" title="Shortcut: N">Next: ${esc(a.label.replace(/^Next: /, ''))}</button>` : ''}<button class="btn ghost sm sidelink" data-act="guide">How to play</button><button class="btn ghost sm sidelink dangertxt" data-act="askReset">Start over</button><button class="ibtn2" data-act="help" data-k="${helpKey()}" aria-label="How this works" title="How this works">?</button></span></nav>`;
 }
 
 // ---------- team picker ----------
+// First visit: what the game is, how you win, how you build, then pick a team. Skippable, replayable from the picker.
+const ONB = [
+  {k: 'Welcome', t: 'You run the front office', b: 'Pick an NFL team with its real 2026 roster, contracts and cap. You do not call plays. You build the team, and the games play out.', ico: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>'},
+  {k: 'The goal', t: 'Go 21-0', b: '17-0 in the regular season, then four playoff wins. You get two seasons, 2026 and 2027. The owner sets a goal each year, and if you keep missing it you can be fired.', ico: '<path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 4M17 6h2.5a2.5 2.5 0 0 1-2.6 4M12 14v3M8.5 20h7"/>'},
+  {k: 'How you build', t: 'Trade, sign, draft', list: [['Trade', `Call any GM and negotiate. Trades are open every week until the deadline after Week 9, then all offseason.`], ['Sign', 'Pick up free agents any week of the season, and bid on the big names in the offseason.'], ['Draft', 'Seven rounds of the real 2027 class. Scouts can be wrong.']], ico: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>'},
+  {k: 'Your call', t: 'Pick a team', b: 'A strong roster is the easier path to 21-0. A weak one is the bigger story. Tap a team to see its rating, cap space and what the owner expects.', ico: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>'},
+];
+let ONB_SEEN = false;
+try { ONB_SEEN = localStorage.getItem('21-0-onboard') === '1'; } catch (e) { /* storage unavailable */ }
+function renderOnboarding() {
+  const i = Math.min(UI.onbStep || 0, ONB.length - 1), S = ONB[i], last = i === ONB.length - 1;
+  $('#app').innerHTML = `<section class="onb"><div class="onbcard rise">
+    <div class="onbico"><svg viewBox="0 0 24 24" aria-hidden="true">${S.ico}</svg></div>
+    <div class="kicker">${esc(S.k)} · ${i + 1} of ${ONB.length}</div>
+    <h1 class="display onbt">${esc(S.t)}</h1>
+    ${S.b ? `<p class="lead">${esc(S.b)}</p>` : ''}
+    ${S.list ? `<div class="onblist">${S.list.map(([h, t]) => `<div><b>${esc(h)}</b><span>${esc(t)}</span></div>`).join('')}</div>` : ''}
+    <div class="onbfoot"><span class="gdots">${ONB.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('')}</span>
+      <span class="row nowrap">${i ? '<button class="btn ghost" data-act="onbBack">Back</button>' : '<button class="btn ghost" data-act="onbDone">Skip</button>'}<button class="btn go lg" data-act="${last ? 'onbDone' : 'onbNext'}">${last ? 'Pick a team' : 'Next'}</button></span></div>
+  </div></section>`;
+}
 function renderPicker() {
+  if (!ONB_SEEN && (!hasSave() || UI.onbStep != null)) return renderOnboarding();
   E.newGame(DATA, 'KC', 1);
   const tmp = E.G;
   const rows = Object.keys(DATA.teams).map(t => { const r = E.teamRating(t), qb = r.d.QB[0]; return {t, ovr: r.ovr, qb, cap: tmp.cap[2026] - E.payroll(t), div: DATA.teams[t].div}; });
@@ -585,7 +622,7 @@ function renderPicker() {
   $('#app').innerHTML = `
   <section class="hero picker-hero"><div>
     <h1 class="display">Go 21-0.</h1>
-    <p class="lead">17-0, then four playoff wins. Pick a team. <button class="linkbtn" data-act="modeSheet">${(UI.mode || 'standard') === 'standard' ? 'Try Worst to first' : 'Worst to first is on'}</button></p>
+    <p class="lead">17-0, then four playoff wins. Pick a team. <button class="linkbtn" data-act="onbAgain">How it works</button> · <button class="linkbtn" data-act="modeSheet">${(UI.mode || 'standard') === 'standard' ? 'Try Worst to first' : 'Worst to first is on'}</button></p>
   </div>${hasSave() ? `<button class="btn go lg" data-act="resume">Resume saved game</button>` : ''}</section>
   <div class="mobonly confseg">${seg('pconf', [['AFC', 'AFC'], ['NFC', 'NFC']], UI.pconf || 'AFC')}</div>
   <div class="pickwrap show-${UI.pconf || 'AFC'}">${order.map(d => `<div class="div-${d.slice(0, 3)}"><h2 class="divh">${d}</h2><div class="teams">${(divs[d] || []).sort((a, b) => b.ovr - a.ovr).map(r => { const c = coached[r.t]; return `
@@ -645,11 +682,15 @@ function needModal(pos) {
   const tierBlock = (tiers, kind) => tiers.map(t => `<div class="tierh"><b>${t.tier}</b><span class="small muted">${t.note}</span></div>${t.list.map(x => kind === 'fa'
     ? `<div class="trow">${pRow(x.p, `<span class="gold">+${x.gain}</span> · asks ${money(x.price)} · interest ${x.interest}${x.fits ? '' : ' · <span class="bad">over your cap</span>'}`)}<button class="btn sm go" data-act="faOpen" data-id="${x.p.id}" data-k="offer">Offer</button></div>`
     : `<div class="trow">${pRow(x.p, `<span class="gold">+${x.gain}</span> · ${esc(x.why)} · costs about ${pickEquiv(x.cost)}${x.fits ? '' : ' · <span class="warn">send salary back</span>'}`)}<button class="btn sm" data-act="findFor" data-id="${x.p.id}">Price it</button></div>`).join('')}`).join('');
-  const fa = T.fa.length ? `<h4 class="sub">Free agents</h4>${tierBlock(T.fa, 'fa')}` : '';
+  let fa = T.fa.length ? `<h4 class="sub">Free agents</h4>${tierBlock(T.fa, 'fa')}` : '';
+  if (!fa && midseasonOpen() && G.phase !== 'playoffs' && G.phase !== 'offseason') {
+    const space = E.capSpace(G.user), L = E.faPool().filter(p => p.pos === pos && p.ovr > T.worst - 3).slice(0, 5);
+    if (L.length) fa = `<h4 class="sub">Free agents · sign today</h4>${L.map(p => { const price = E.midseasonPrice(p); return `<div class="trow">${pRow(p, `<span class="${p.ovr > T.worst ? 'gold' : ''}">${p.ovr > T.worst ? '+' + (p.ovr - T.worst) : 'depth'}</span> · ${money(price)} for the season${price > space ? ' · <span class="bad">not enough cap space</span>' : ''}`)}<button class="btn sm go" data-act="midSign" data-id="${p.id}" ${price > space ? 'disabled' : ''}>Sign</button></div>`; }).join('')}`;
+  }
   const tr = tradeOpen() && T.tr.length ? `<h4 class="sub">Trade targets</h4>${tierBlock(T.tr, 'tr')}` : '';
   modal(`<div class="sheeth"><div><div class="kicker">${pos} · your starter is ${T.worst} OVR</div><h3>Upgrade ${pos}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="depthmini">${L.map((p, i) => `<span class="${i < E.STARTERS[pos] ? 'st' : ''}">${face(p, 'xs')} ${esc(lastName(p.n))} <b class="${oc(p.ovr)}">${p.ovr}</b></span>`).join('')}</div>
-    ${fa}${tr}${!fa && !tr ? `<p class="muted">${tradeOpen() ? 'Nobody available is a real upgrade here.' : 'Trades open at the deadline and in the offseason. Free agents sign in the 2027 offseason.'}</p>` : ''}
+    ${fa}${tr}${!fa && !tr ? `<p class="muted">${tradeOpen() ? 'Nobody available is a real upgrade here.' : `Trades are closed: ${G.phase === 'playoffs' ? 'no trades during the playoffs' : `the deadline after Week ${E.DEADLINE_WEEK} has passed`}. They reopen in the offseason.`}</p>` : ''}
     <div class="row end"><button class="btn" data-act="closeModal">Done</button></div>`, true);
 }
 
@@ -658,9 +699,10 @@ function offerCard(o, draft) {
   const ev = E.evalTrade(o.from, o.give, o.get);
   // the one line that decides it: what this does to your team this season
   const dw = E.winsDelta(G.user, o.get, o.give), onlyPicks = o.get.every(id => !G.players[id]);
-  const ch = E.chemTrade(o.give, o.get).d;
+  const ch = E.chemTrade(o.give, o.get).d, d0 = E.depth(G.user);
+  const fills = o.get.map(id => G.players[id]).find(p => p && needSet().has(p.pos) && (!d0[p.pos][E.STARTERS[p.pos] - 1] || p.ovr > d0[p.pos][E.STARTERS[p.pos] - 1].ovr));
   const eff = (Math.abs(dw) < .05 ? 'No change this season' : `<b class="${dw > 0 ? 'good' : 'bad'}">${winsTxt(dw)}</b> this season${dw < 0 && onlyPicks ? ', picks for later' : ''}`) + (ch <= -3 ? ` · <span class="bad">locker room ${ch}</span>` : '');
-  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div title="${esc(o.msg || '')}"><b>${esc(G.teams[o.from].name)}</b><div class="small muted">${eff}</div></div>${fairTag(ev.fair)}</div>
+  return `<div class="offer"><div class="offerh">${badge(o.from, 1)}<div title="${esc(o.msg || '')}"><b>${esc(G.teams[o.from].name)}</b><div class="small muted">${fills ? `<span class="good">Fills your ${fills.pos} need</span> · ` : ''}${eff}</div></div>${fairTag(ev.fair)}</div>
     <div class="offerb"><div><div class="lbl">Get</div>${assetGroupX(o.get, id => o.get.length > 1 ? `data-act="offerDrop" data-id="${o.id}" data-a="${id}" data-draft="${draft ? 1 : ''}"` : '')}</div><div><div class="lbl">Send</div>${assetGroupX(o.give, id => o.give.length > 1 ? `data-act="offerDrop" data-id="${o.id}" data-a="${id}" data-draft="${draft ? 1 : ''}"` : '')}</div></div>
     ${ev.issues.length ? `<div class="small bad">${esc(ev.issues[0])}</div>` : ''}
     <div class="row end"><button class="btn ghost sm" data-act="${draft ? 'declineDraft' : 'decline'}" data-id="${o.id}">Decline</button><button class="btn sm" data-act="counter" data-id="${o.id}" data-draft="${draft ? 1 : ''}">Counter</button><button class="btn sm" data-act="${draft ? 'acceptDraft' : 'accept'}" data-id="${o.id}" ${ev.issues.length ? 'disabled' : ''}>Accept</button></div></div>`;
@@ -710,21 +752,29 @@ function seasonIssue(season) {
   worst.fix = weakest ? weakest.pos : worst.pos[0];
   return worst;
 }
+// Ordered by how much each one needs you: problems and offers first, then the season's scoreboard
 function homeRows(season) {
   const e = E.setExpectations(season), rows = [];
-  rows.push(srow('flag', 'Owner expects', esc(shortGoal(e.goal)), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
-  if (tradeOpen()) { const n = (G.offers || []).length; rows.push(srow('trade', 'Trade offers', n ? `${n} waiting` : 'None yet', 'data-act="openInbox"', n ? 'hot' : '')); }
-  const iss = (G.phase === 'season' || G.phase === 'deadline') && G.week >= 2 ? seasonIssue(season) : null;
-  const gs = E.goalStatus(season);
-  if (gs.length) { const n = gs.filter(x => x.done).length; rows.push(srow('goal', 'Season goals', `${n} of ${gs.length} done`, 'data-act="goalsSheet"', n === gs.length ? 'good' : '')); }
-  const c = E.chemOf();
-  rows.push(srow('chem', 'Locker room', E.chemLabel(c), 'data-act="chemSheet"', c >= 75 ? 'good' : c < 35 ? 'bad' : ''));
-  if (iss && iss.rank > 16) rows.push(srow('target', 'Biggest issue', `<span title="${esc(iss.line)}">${esc(iss.label)} · ${ordinalJ(iss.rank)}</span>`, `data-act="needPos" data-pos="${iss.fix}"`, iss.rank >= 25 ? 'bad' : ''));
   const hurt = hurtStarters();
   if (hurt.length) rows.push(srow('hurt', 'Injured starters', `${hurt.length} out`, 'data-act="injurySheet"', 'bad'));
-  const N = E.teamNeeds().filter(n => n.level !== 'Low').slice(0, 3);
-  if (!(iss && iss.rank > 16)) rows.push(srow('target', 'Biggest needs', N.length ? N.map(n => n.pos).join(' · ') : 'None', 'data-act="rview" data-k="needs"'));
+  if (tradeOpen()) { const n = (G.offers || []).length; rows.push(srow('trade', 'Trade offers', n ? `${n} waiting` : 'None yet', 'data-act="openInbox"', n ? 'hot' : '')); }
+  const iss = (G.phase === 'season' || G.phase === 'deadline') && G.week >= 2 ? seasonIssue(season) : null;
+  if (iss && iss.rank > 16) rows.push(srow('target', 'Biggest issue', `<span title="${esc(iss.line)}">${esc(iss.label)} · ${ordinalJ(iss.rank)}</span>`, `data-act="needPos" data-pos="${iss.fix}"`, iss.rank >= 25 ? 'bad' : ''));
+  const fa = bestFreeAgent();
+  if (fa) rows.push(srow('money', 'Free agents', `${fa.p.pos} ${fa.p.ovr} available`, `data-act="faSheet" data-k="${fa.p.pos}"`, 'hot'));
+  const gs = E.goalStatus(season);
+  if (gs.length) { const n = gs.filter(x => x.done).length; rows.push(srow('goal', 'Season goals', `${n} of ${gs.length} done`, 'data-act="goalsSheet"', n === gs.length ? 'good' : '')); }
+  rows.push(srow('flag', 'Owner expects', esc(shortGoal(e.goal)), 'data-act="ownerSheet"', G.mandate ? 'bad' : ''));
+  const c = E.chemOf();
+  rows.push(srow('chem', 'Locker room', E.chemLabel(c), 'data-act="chemSheet"', c >= 75 ? 'good' : c < 35 ? 'bad' : ''));
   return `<div class="card slist">${rows.join('')}</div>`;
+}
+// In season: the best unsigned player who would start for you at a position you need, if you can afford him
+function bestFreeAgent() {
+  if (!midseasonOpen() || G.phase === 'playoffs' || G.phase === 'offseason') return null;
+  const d = E.depth(G.user), space = E.capSpace(G.user), NS = needSet();
+  return E.faPool().filter(p => p.pos !== 'K' && p.pos !== 'P').map(p => { const st = d[p.pos][E.STARTERS[p.pos] - 1]; return {p, up: st ? p.ovr - st.ovr : p.ovr, price: E.midseasonPrice(p)}; })
+    .filter(x => x.up >= 2 && x.price <= space && (NS.has(x.p.pos) || x.up >= 5)).sort((a, b) => b.up - a.up)[0] || null;
 }
 function ownerSheet() {
   const s = G.season, e = E.setExpectations(s);
@@ -763,7 +813,11 @@ function injurySheet() {
 }
 
 // ---------- home by phase ----------
+const homeFoot = () => `<div class="homefoot"><button class="btn ghost sm" data-act="guide">How to play</button><button class="btn ghost sm dangertxt" data-act="askReset">Start over</button></div>`;
 function renderHome() {
+  return renderHome0() + (G.phase === 'offseason' ? '' : homeFoot());
+}
+function renderHome0() {
   const p = G.phase;
   if (p === 'preseason' || p === 'season') return G.week > 0 ? homeSeason() : homePre();
   if (p === 'deadline') return homeDeadline();
@@ -791,9 +845,32 @@ function nextGameCard() {
   const g = games[0];
   if (!g || G.phase === 'playoffs' || G.phase === 'seasondone') return '';
   const [w, a, h] = g, home = h === G.user, opp = home ? a : h, bye = w > G.week + 1;
-  const tr = E.teamRating(opp).ovr, mine = E.teamRating(G.user).ovr;
+  const tr = E.teamRating(opp).ovr, M = E.matchup(opp, home), pc = Math.round(M.p * 100);
+  UI.nextOpp = {opp, home, w};
+  const key = (f, cls, kick) => `<div class="ngkey ${cls}"><span class="kicker">${kick}</span><b>${esc(f.label)}</b><span class="ngnums"><b>${f.mine}</b> vs <b>${f.theirs}</b></span></div>`;
   return `<div class="card nextgame"><div class="cardh"><h3>Next game</h3><span class="small muted">Week ${w}${bye ? ` · bye in Week ${G.week + 1}` : ''}</span></div>
-    <div class="ngrow">${badge(opp)}<span class="ngmain"><b>${home ? 'vs' : 'at'} ${esc(G.teams[opp].nick)}</b><span class="small muted">${rec(opp)} · ${tr} OVR</span></span><span class="tag ${mine > tr + 1 ? 'good' : mine < tr - 1 ? 'bad' : ''}">${mine > tr + 1 ? 'Favored' : mine < tr - 1 ? 'Underdog' : 'Toss-up'}</span></div></div>`;
+    <div class="ngrow">${badge(opp)}<span class="ngmain"><b>${home ? 'vs' : 'at'} ${esc(G.teams[opp].nick)}</b><span class="small muted">${rec(opp)} · ${tr} OVR${M.star ? ` · watch ${esc(lastName(M.star.n))} (${M.star.pos} ${M.star.ovr})` : ''}</span></span><span class="ngodds ${pc >= 55 ? 'good' : pc <= 45 ? 'bad' : ''}"><b class="num">${pc}%</b><span class="small muted">to win</span></span></div>
+    <div class="ngkeys">${M.worst.edge < 0 ? key(M.worst, 'bad', 'Watch out') : ''}${M.best.edge > 0 ? key(M.best, 'good', 'Lean on') : ''}</div>
+    <div class="row ngacts"><button class="btn sm" data-act="matchSheet">Game plan</button>${M.worst.edge <= -2 ? `<button class="btn sm go" data-act="needPos" data-pos="${M.weakPos.pos}">Upgrade ${M.weakPos.pos}</button>` : ''}</div></div>`;
+}
+// The full game plan: every unit against theirs, who is hurt, and what you can still do about it
+function matchSheet() {
+  const N = UI.nextOpp; if (!N) return;
+  const {opp, home, w} = N, M = E.matchup(opp, home), pc = Math.round(M.p * 100), mineHurt = hurtStarters();
+  const bar = f => { const lo = Math.min(f.mine, f.theirs) - 6, span = Math.max(12, Math.max(f.mine, f.theirs) - lo + 2);
+    return `<div class="mrowx"><div class="mlab"><span>${esc(f.label)}</span><b class="${f.edge > 1 ? 'good' : f.edge < -1 ? 'bad' : ''}">${f.edge > 1 ? 'Edge: you' : f.edge < -1 ? 'Edge: them' : 'Even'}</b></div>
+      <div class="mbars"><span class="small">You</span><i class="mine" style="width:${(f.mine - lo) / span * 100}%"></i><b class="num">${f.mine}</b></div><div class="mbars"><span class="small">Them</span><i style="width:${(f.theirs - lo) / span * 100}%"></i><b class="num">${f.theirs}</b></div></div>`; };
+  const tips = [];
+  if (M.worst.edge <= -2) tips.push(`<div class="trow"><div class="pmain"><b>Shore up your ${esc(M.worst.name)}</b><div class="psub">Your weakest starter there is at ${M.weakPos.pos} (${M.weakPos.ovr}).</div></div><button class="btn sm go" data-act="needPos" data-pos="${M.weakPos.pos}">Upgrade ${M.weakPos.pos}</button></div>`);
+  if (mineHurt.length) tips.push(`<div class="trow"><div class="pmain"><b>${mineHurt.length} starter${mineHurt.length > 1 ? 's' : ''} out</b><div class="psub">${mineHurt.map(p => `${esc(lastName(p.n))} (${p.pos})`).join(', ')}</div></div><button class="btn sm" data-act="faSheet" data-k="${mineHurt[0].pos}">Replace</button></div>`);
+  if (M.best.edge > 1) tips.push(`<div class="trow"><div class="pmain"><b>Lean on your ${esc(M.best.name)}</b><div class="psub">It is ${M.best.edge} points better than what they line up against it.</div></div></div>`);
+  if (M.theirHurt.length) tips.push(`<div class="trow"><div class="pmain"><b>They are banged up</b><div class="psub">${M.theirHurt.map(p => `${esc(p.n)} (${p.pos} ${p.ovr})`).join(', ')} out.</div></div></div>`);
+  if (pc < 45) tips.push(`<div class="trow"><div class="pmain"><b>You are the underdog</b><div class="psub">${tradeOpen() ? 'A trade or a signing before kickoff can swing it.' : 'A free-agent signing before kickoff can still help.'}</div></div></div>`);
+  modal(`<div class="sheeth"><div><div class="kicker">Week ${w} · ${home ? 'home' : 'away'} · ${pc}% to win</div><h3>Game plan: ${home ? 'vs' : 'at'} ${esc(G.teams[opp].name)}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="matchgrid">${M.fights.map(bar).join('')}</div>
+    ${tips.length ? `<h4 class="sub">What you can do</h4><div class="plist">${tips.join('')}</div>` : ''}
+    ${M.last ? `<p class="small muted">Last time: ${(() => { const g = M.last, me = g.h === G.user ? g.hs : g.as, op = g.h === G.user ? g.as : g.hs; return `${me > op ? 'won' : 'lost'} ${me}-${op} in Week ${g.wk}`; })()}.</p>` : ''}
+    <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
 }
 function divisionCard() {
   const dv = E.divisions(), k = Object.keys(dv).find(x => dv[x].includes(G.user));
@@ -801,21 +878,36 @@ function divisionCard() {
   return `<div class="card divcard"><div class="cardh"><h3>${k}</h3><button class="linkbtn" data-act="seg" data-seg="league" data-k="standings" data-go="league">All standings</button></div>
     ${dv[k].map((t, i) => { const r = E.record(t, G.season); return `<div class="divrow ${t === G.user ? 'me' : ''}"><span class="num muted">${i + 1}</span>${badge(t, 1)}<span class="dn">${esc(G.teams[t].nick)}</span><b class="num">${r.w}-${r.l}</b></div>`; }).join('')}</div>`;
 }
-const sideCards = () => { const a = nextGameCard(), b = divisionCard(); return a || b ? `<div class="homeside">${a}${b}</div>` : ''; };
+// Your biggest holes: the grade, who starts there now, who is behind him, and one tap to find an upgrade
+function needsCard() {
+  if (!G.teams[G.user]) return '';
+  const all = E.teamNeeds(), N = all.filter(n => n.level !== 'Low').slice(0, 4), d = E.depth(G.user);
+  const L = N.length ? N : all.slice(0, 2);
+  return `<div class="card needscard"><div class="cardh"><h3>Team needs</h3><button class="linkbtn" data-act="rview" data-k="needs">All positions</button></div>
+    ${L.map(n => { const back = d[n.pos][E.STARTERS[n.pos]]; return `<button class="needrow" data-act="needPos" data-pos="${n.pos}"><span class="ng sm g${RANK_LETTER(n.rank)}">${RANK_LETTER(n.rank)}</span>
+      <span class="nr-main"><b>${n.pos} <span class="small muted">${ordinalJ(n.rank)} in the league</span></b><span class="small muted">${n.starters.map(p => `${esc(lastName(p.n))} <b class="${oc(p.ovr)}">${p.ovr}</b>`).join(' · ') || '<span class="bad">Nobody starting</span>'}${back ? ` · next up ${esc(lastName(back.n))} ${back.ovr}` : ' · no backup'}</span></span>
+      <span class="tag ${n.level === 'High' ? 'bad' : n.level === 'Medium' ? 'warn' : ''}">${N.length ? n.level : 'OK'}</span></button>`; }).join('')}
+    ${N.length ? '' : '<p class="small muted">No big holes. These are your weakest spots.</p>'}</div>`;
+}
+// Home layout: on a computer, the next game and your to-do list on the left, needs and the division on the right.
+// On a phone the cards fall into one column in order of importance: next game, to-do, needs, results, division.
+const sideCards = () => { const b = divisionCard(), c = needsCard(); return b || c ? `<div class="homeside">${c ? c.replace('class="card needscard"', 'class="card needscard o3"') : ''}${b ? b.replace('class="card', 'class="card o5') : ''}</div>` : ''; };
+const homeMain = (season, extra) => `<div class="homemain">${(nextGameCard() || '').replace('class="card nextgame"', 'class="card nextgame o1"')}${homeRows(season).replace('class="card slist"', 'class="card slist o2"')}${extra || ''}${(resultsStrip(season) || '').replace(/^<div class="card/, '<div class="card o4')}</div>`;
 const userGameIn = (s, w) => (G.results[s] || []).find(g => !g.po && g.wk === w && (g.a === G.user || g.h === G.user));
 function playWeek() {
   const s = G.season, w = G.week + 1, mark = (G.injLog || []).length, wasDeadline = G.phase === 'deadline';
   closeModal();
   E.simWeek(w);
   G.phase = 'season';
-  if (wasDeadline || w === 1) { G.offers = []; UI.give = []; UI.get = []; }
-  if (wasDeadline) toast('The trade window is closed until the offseason.');
+  if (wasDeadline) { G.offers = []; UI.give = []; UI.get = []; }
+  if (wasDeadline) toast('The trade deadline has passed. Trades reopen in the offseason.');
   if (w === E.DEADLINE_WEEK) { G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.tview = null; }
   UI.proj = null;
   const last = w >= 18;
   if (last) finishRegular();
   persist(); render();
   gameCard(s, w, mark, last);
+
 }
 function gameCard(s, w, mark, last) {
   const g = userGameIn(s, w), r = E.record(G.user, s), k = E.streak(G.user, s);
@@ -832,7 +924,20 @@ function gameCard(s, w, mark, last) {
     <div class="grec"><span><b class="num">${r.w}-${r.l}</b> record</span>${k ? `<span class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n} streak</span>` : ''}</div>
     ${mine && gameScore(mine.st) > 0 ? `<div class="potg">${face(G.players[mine.id], 'sm')}<div><div class="kicker">Your star</div><b>${esc(G.players[mine.id].n)}</b><div class="small">${perfLine(mine.st)}</div></div></div>` : ''}
     ${hurt.length ? `<button class="srow bad" data-act="injurySheet"><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO.hurt}</svg></span><span class="slabel">${esc(G.players[hurt[0].id].n)} hurt</span><span class="sval">${hurt.length > 1 ? `+${hurt.length - 1} more` : hurt[0].wk === 99 ? 'Season' : hurt[0].wk + ' wk'}</span><span class="chev" aria-hidden="true">›</span></button>` : ''}
+    ${afterGame()}
     <div class="row end"><button class="btn" data-act="box" data-k="${gameKey(g)}" data-s="${s}">Box score</button>${next}</div>`);
+}
+function afterGame() {
+  const dl = G.phase === 'deadline' ? `<button class="dlbanner sm" data-act="openInbox"><span class="dlmain"><span class="kicker">Trade deadline</span><b>Last chance to trade this season</b><span class="small">Trades close when you play Week ${E.DEADLINE_WEEK + 1}.</span></span><span class="dlgo">Trades ›</span></button>` : '';
+  const left = G.phase === 'season' && G.week < E.DEADLINE_WEEK && E.DEADLINE_WEEK - G.week <= 2 ? `<p class="small warn">Trade deadline in ${E.DEADLINE_WEEK - G.week} week${E.DEADLINE_WEEK - G.week > 1 ? 's' : ''}.</p>` : '';
+  const nx = E.seasonGames(G.season).filter(([w, a, h]) => w > G.week && (a === G.user || h === G.user))[0];
+  let up = '';
+  if (nx && G.week < 18) {
+    const [w, a, h] = nx, home = h === G.user, opp = home ? a : h, M = E.matchup(opp, home), pc = Math.round(M.p * 100);
+    UI.nextOpp = {opp, home, w};
+    up = `<div class="upnext">${badge(opp, 1)}<span class="unmain"><span class="kicker">Next · Week ${w}</span><b>${home ? 'vs' : 'at'} ${esc(G.teams[opp].nick)} · ${pc}% to win</b>${M.worst.edge < 0 ? `<span class="small muted">Watch their ${esc(M.worst.k === 'pass' ? 'pass defense' : M.worst.k === 'run' ? 'run defense' : M.worst.k === 'pd' ? 'passing game' : 'run game')}</span>` : ''}</span><button class="btn sm" data-act="matchSheet">Game plan</button></div>`;
+  }
+  return dl + left + up;
 }
 // Starters who joined this offseason: signings, trades and draft picks
 function newFaces(s) {
@@ -842,28 +947,27 @@ function newFaces(s) {
 }
 function homeSeason() {
   const r = E.record(G.user, G.season), k = E.streak(G.user, G.season), pre = G.week < E.DEADLINE_WEEK;
-  return `<section class="hero"><div><div class="kicker">${G.season} · after Week ${G.week}</div>
+  return `<section class="hero"><div><div class="kicker">${G.season} · after Week ${G.week}${pre ? ` · <span class="${E.DEADLINE_WEEK - G.week <= 2 ? 'warn' : ''}">trade deadline in ${E.DEADLINE_WEEK - G.week} week${E.DEADLINE_WEEK - G.week > 1 ? 's' : ''}</span>` : ' · past the trade deadline'}</div>
     <h2>${r.w}-${r.l}${k && k.n >= 2 ? ` · ${k.win ? 'won' : 'lost'} ${k.n} straight` : ''}${helpBtn('pre')}</h2>
-    <p class="lead">${pre ? `Trade deadline after Week ${E.DEADLINE_WEEK}.` : 'The trade window is closed.'}</p></div>
+    <p class="lead">${pre ? `<span class="${E.DEADLINE_WEEK - G.week <= 2 ? 'warn' : ''}">${esc(deadlineLine())}.</span> Trade and sign free agents any week until then.` : 'The trade deadline has passed. You can still sign free agents.'}</p></div>
     <div class="row">${playBtn()}<button class="btn go lg" data-act="${pre ? 'toDeadline' : 'simRest'}">${pre ? 'Sim to the trade deadline' : 'Sim rest of season'}</button></div></section>
-  ${kpiStrip(G.season, true)}<div class="homegrid"><div>${resultsStrip(G.season)}${homeRows(G.season)}</div>${sideCards()}</div>`;
+  ${kpiStrip(G.season, true)}<div class="homegrid">${homeMain(G.season)}${sideCards()}</div>`;
 }
 function homePre() {
   const first = G.season === 2026;
   const s = G.season, fresh = first ? [] : newFaces(s);
-  return `<section class="hero"><div><div class="kicker">${s} season preview ${modeTag(G.mode)}</div>
+  return `<section class="hero"><div><div class="kicker">${s} season preview · trades open until the Week ${E.DEADLINE_WEEK} deadline ${modeTag(G.mode)}</div>
     <h2>${first ? `Week 1 with the ${esc(G.teams[G.user].nick)}` : `Your ${s} team`}${helpBtn('pre')}</h2>
-    <p class="lead">Trades are open until kickoff. Take it one game at a time, or sim ahead.</p></div>
+    <p class="lead">Trades are open every week until the deadline after Week ${E.DEADLINE_WEEK}. Take it one game at a time, or sim ahead.</p></div>
     <div class="row"><button class="btn keep" data-act="toDeadline">Sim to the trade deadline</button><button class="btn go lg playbtn" data-act="playWeek"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Play Week 1</button></div></section>
-  ${kpiStrip(s)}<div class="homegrid"><div>${homeRows(s)}${fresh.length ? `<div class="card"><div class="cardh"><h3>New this year</h3><span class="small muted">${fresh.length} new starter${fresh.length > 1 ? 's' : ''}</span></div><div class="plist">${fresh.slice(0, 6).map(p => `<div class="trow">${pRow(p, `<span class="gold">${esc(p.how)}</span>`)}</div>`).join('')}</div></div>` : ''}</div>${sideCards()}</div>`;
+  ${kpiStrip(s)}<div class="homegrid">${homeMain(s, fresh.length ? `<div class="card o4"><div class="cardh"><h3>New this year</h3><span class="small muted">${fresh.length} new starter${fresh.length > 1 ? 's' : ''}</span></div><div class="plist">${fresh.slice(0, 6).map(p => `<div class="trow">${pRow(p, `<span class="gold">${esc(p.how)}</span>`)}</div>`).join('')}</div></div>` : '')}${sideCards()}</div>`;
 }
 function homeDeadline() {
   const r = E.record(G.user, G.season);
-  return `<section class="hero"><div><div class="kicker">${G.season} trade deadline · after Week ${G.week}</div>
-    <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2>
-    <p class="lead">Your one trade window this season.</p></div>
-    <div class="row">${playBtn('Closes the trade window')}<button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
-  ${kpiStrip(G.season, true)}<div class="homegrid"><div>${resultsStrip(G.season)}${homeRows(G.season)}</div>${sideCards()}</div>`;
+  return `${deadlineBanner()}<section class="hero"><div><div class="kicker">${G.season} trade deadline · after Week ${G.week}</div>
+    <h2>You are ${r.w}-${r.l}. ${r.l === 0 ? 'Still perfect.' : r.w >= 6 ? 'In the hunt.' : 'Buy or sell?'}${helpBtn('deadline')}</h2></div>
+    <div class="row">${playBtn('Closes trades until the offseason')}<button class="btn go lg" data-act="simRest">Sim rest of season</button></div></section>
+  ${kpiStrip(G.season, true)}<div class="homegrid">${homeMain(G.season)}${sideCards()}</div>`;
 }
 function homePlayoffs() {
   const P = G.playoffs[G.season];
@@ -1080,10 +1184,16 @@ function lineupView() {
   const field = (title, rows, sub) => `<div class="card fieldcard"><div class="cardh"><h3>${title}</h3><span class="tag">${sub}</span></div>
     <div class="field">${rows.map(r => `<div class="frow">${r.map(([pos, i]) => slotChip(d, pos, i, needs)).join('')}</div>`).join('')}</div></div>`;
   const order = ['QB', 'RB', 'WR', 'TE', 'OT', 'IOL', 'EDGE', 'DT', 'LB', 'CB', 'S', 'K', 'P'];
-  const mob = `<div class="mobonly card mdepth">${order.map(pos => { const L = d[pos], n = E.STARTERS[pos], nd = needs.find(x => x.pos === pos); return `<button class="mrow" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}${nd ? `<i class="g${RANK_LETTER(nd.rank)}">${RANK_LETTER(nd.rank)}</i>` : ''}</span><span class="mfaces">${L.slice(0, n).map(p => `<span class="mp">${face(p, 'sm')}<span><b class="${oc(p.ovr)}">${p.ovr}</b> ${esc(lastName(p.n))}</span></span>`).join('') || '<span class="bad small">Empty</span>'}</span><span class="chev" aria-hidden="true">›</span></button>`; }).join('')}</div>`;
+  const bench = pos => d[pos].slice(E.STARTERS[pos]);
+  const hurt = pos => E.roster(G.user).filter(p => p.inj && p.pos === pos);
+  const mob = `<div class="mobonly card mdepth">${order.map(pos => { const L = d[pos], n = E.STARTERS[pos], nd = needs.find(x => x.pos === pos), B = bench(pos), H = hurt(pos); return `<button class="mrow" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}${nd ? `<i class="g${RANK_LETTER(nd.rank)}">${RANK_LETTER(nd.rank)}</i>` : ''}</span><span class="mcol"><span class="mfaces">${L.slice(0, n).map(p => `<span class="mp">${face(p, 'sm')}<span><b class="${oc(p.ovr)}">${p.ovr}</b> ${esc(lastName(p.n))}</span></span>`).join('') || '<span class="bad small">Empty</span>'}</span>${B.length || H.length ? `<span class="mbench">${B.map(p => `${esc(lastName(p.n))} <b>${p.ovr}</b>`).join(' · ')}${H.length ? `${B.length ? ' · ' : ''}<span class="bad">${H.map(p => `${esc(lastName(p.n))} (hurt)`).join(' · ')}</span>` : ''}</span>` : ''}</span><span class="chev" aria-hidden="true">›</span></button>`; }).join('')}</div>`;
+  // everyone who is not starting, by position, so nobody disappears off the depth chart
+  const benchCard = `<div class="card benchcard"><div class="cardh"><h3>Bench</h3><span class="small muted">${order.reduce((a, pos) => a + bench(pos).length, 0)} backups · tap to change the depth chart</span></div>
+    <div class="benchgrid">${order.filter(pos => bench(pos).length || hurt(pos).length).map(pos => `<button class="benchpos" data-act="depthPos" data-pos="${pos}"><span class="dpos">${pos}</span><span class="benchlist">${bench(pos).map(p => `<span class="bp">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><b class="${oc(p.ovr)}">${p.ovr}</b>${p.pos !== pos ? `<span class="small muted">${p.pos}</span>` : ''}</span>`).join('')}${hurt(pos).map(p => `<span class="bp hurt">${face(p, 'xs')}<span class="bpn">${esc(lastName(p.n))}</span><span class="tag bad">Hurt</span></span>`).join('')}</span></button>`).join('')}</div></div>`;
   return `${mob}<div class="deskonly"><p class="hint">Tap a player to change the depth chart. Red ring: a big need.</p>
     <div class="grid">${field('Offense', OFF_ROWS, `${tr.off} OVR`)}${field('Defense', DEF_ROWS, `${tr.def} OVR`)}</div>
-    <div class="card" style="margin-top:14px"><div class="cardh"><h3>Specialists</h3></div><div class="frow left">${slotChip(d, 'K', 0, needs)}${slotChip(d, 'P', 0, needs)}</div></div></div>`;
+    <div class="card" style="margin-top:14px"><div class="cardh"><h3>Specialists</h3></div><div class="frow left">${slotChip(d, 'K', 0, needs)}${slotChip(d, 'P', 0, needs)}</div></div>
+    ${benchCard}</div>`;
 }
 function depthModal(pos) {
   const L = E.depth(G.user)[pos];
@@ -1265,16 +1375,27 @@ function blockLine() {
 }
 // Position groups for quick filters
 const POS_GROUPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['OL', 'OL'], ['DL', 'DL'], ['LB', 'LB'], ['DB', 'DB'], ['K', 'K/P']];
-const inGroup = (pos, g) => !g || g === 'ALL' || g === pos || (g === 'OL' && (pos === 'OT' || pos === 'IOL')) || (g === 'DL' && (pos === 'EDGE' || pos === 'DT')) || (g === 'DB' && (pos === 'CB' || pos === 'S')) || (g === 'K' && pos === 'P');
-const posChips = (key, cur) => `<div class="poschips" role="group" aria-label="Filter by position">${POS_GROUPS.map(([k, l]) => `<button class="pchip ${(cur || 'ALL') === k ? 'on' : ''}" data-act="posFilter" data-k="${key}" data-v="${k}">${l}</button>`).join('')}</div>`;
+const inGroup = (pos, g) => !g || g === 'ALL' || g === pos || (g === 'NEEDS' && needSet().has(pos)) || (g === 'OL' && (pos === 'OT' || pos === 'IOL')) || (g === 'DL' && (pos === 'EDGE' || pos === 'DT')) || (g === 'DB' && (pos === 'CB' || pos === 'S')) || (g === 'K' && pos === 'P');
+// Where you are shopping (free agents, the draft, other teams' players) there is a Needs chip, and need positions get a dot
+const SHOP_KEYS = new Set(['faSheetPos', 'dboardPos', 'tposGet', 'tfPos', 'faPos']);
+let NEEDSET = null;
+const needSet = () => NEEDSET || (NEEDSET = new Set(G && G.teams[G.user] ? E.teamNeeds().filter(n => n.level !== 'Low').map(n => n.pos) : []));
+const posChips = (key, cur) => { const shop = SHOP_KEYS.has(key), NS = shop ? needSet() : new Set(), hasNeed = g => [...NS].some(p => inGroup(p, g));
+  return `<div class="poschips" role="group" aria-label="Filter by position">${(shop && NS.size ? [['NEEDS', 'My needs'], ...POS_GROUPS] : POS_GROUPS).map(([k, l]) => `<button class="pchip ${(cur || 'ALL') === k || (cur && cur !== k && k !== 'ALL' && k !== 'NEEDS' && cur !== 'NEEDS' && POS_GROUPS.every(([g]) => g !== cur) && inGroup(cur, k)) ? 'on' : ''} ${k === 'NEEDS' ? 'needchip' : ''}" data-act="posFilter" data-k="${key}" data-v="${k}">${l}${shop && k !== 'ALL' && k !== 'NEEDS' && hasNeed(k) ? '<i class="ndot" aria-label="a need"></i>' : ''}</button>`).join('')}</div>`; };
 // One side of the deal, each item with an x to take it out
 const dockSide = (ids, side) => ids.length ? ids.map(id => `<div class="dockitem">${assetMini(id)}<button class="xs" data-act="toggle" data-side="${side}" data-id="${id}" aria-label="Take ${esc(E.assetName(id))} out of the deal">×</button></div>`).join('') : '<span class="small muted">Nothing yet</span>';
 function renderTrade() {
-  if (!tradeOpen()) return `<section class="hero"><div><div class="kicker">Trade center</div><h2>Trades are closed</h2><p class="lead">Trades open at the Week 9 deadline each season and through the offseason, draft included.</p></div></section>`;
+  if (!tradeOpen()) {
+    const why = G.phase === 'playoffs' ? 'No trades during the playoffs.' : G.phase === 'final' ? 'The run is over.' : G.phase === 'seasondone' ? 'The season is over.' : `The trade deadline passed after Week ${E.DEADLINE_WEEK}, the same as in the NFL.`;
+    return `<section class="hero"><div><div class="kicker">Trade center · closed</div><h2>Trades are closed</h2></div></section>
+      <div class="card closedcard"><h3>${esc(why)}</h3><p class="muted">Trades reopen when the offseason starts and stay open through the draft, then every week of next season until the deadline after Week ${E.DEADLINE_WEEK}.</p>
+      ${midseasonOpen() && G.phase !== 'playoffs' ? '<div class="row"><button class="btn go" data-act="faSheet">Sign a free agent instead</button></div>' : ''}</div>`;
+  }
   const draftOffers = G.step === 'draft' ? E.draftOffers().filter(o => !(UI.declined || []).includes(o.id)) : [];
   const n = (G.offers || []).length + draftOffers.length;
   if (!UI.tview) UI.tview = n ? 'inbox' : 'make';
-  const head = `<section class="hero tight"><div><div class="kicker">Trade center · ${G.phase === 'deadline' ? G.season + ' deadline' : G.phase !== 'offseason' ? G.season + ' · before kickoff' : G.step === 'draft' ? 'Draft day' : G.season + ' offseason'}</div><h2>Trades</h2></div>
+  const dl = deadlineLine();
+  const head = `${deadlineBanner().replace('data-act="openInbox"', 'data-act="seg" data-seg="tview" data-k="inbox"')}<section class="hero tight"><div><div class="kicker">Trade center · ${G.phase === 'deadline' ? 'deadline day' : G.phase !== 'offseason' ? `<span class="${G.week >= E.DEADLINE_WEEK - 2 ? 'warn' : ''}">${esc(dl || G.season)}</span>` : G.step === 'draft' ? 'Draft day' : G.season + ' offseason'}</div><h2>Trades</h2></div>
     ${seg('tview', [['inbox', `Offers${n ? ' · ' + n : ''}`], ['block', 'Trade block'], ['make', 'Build a trade']], UI.tview)}</section>`;
   if (UI.tview === 'inbox') {
     const all = [...(G.offers || []).map(o => offerCard(o)), ...draftOffers.map(o => offerCard(o, true))];
@@ -1295,17 +1416,21 @@ function renderTrade() {
   const picks = t => G.picks.filter(x => x.owner === t).sort((a, b) => a.yr - b.yr || a.rd - b.rd);
   const ev = E.evalTrade(P, UI.give, UI.get);
   const ready = UI.give.length && UI.get.length;
-  const mood = !UI.get.length ? 'Pick what you want from them.' : !UI.give.length ? 'Now pick what you send, or tap Ask what they want.' : ev.fleece ? 'They know that deal is too good for you.' : ev.ok ? 'They would take this deal.' : ev.issues.length && ev.ratio >= 1 ? ev.issues[0] : ev.ratio >= .85 ? 'Close. Add a little more.' : 'Not close yet.';
+  const v1 = x => x < 20 ? x.toFixed(1) : String(Math.round(x));
+  const mood = !UI.get.length ? 'Pick what you want from them.' : !UI.give.length ? 'Now pick what you send, or tap Ask what they want.' : ev.issues.length ? `Can't happen: ${ev.issues[0]}` : ev.fleece ? 'They know that deal is too good for you.' : ev.ok && ev.badLook ? `They would take it, but that is ${ev.badLook} for less than a star's return.` : ev.ok ? 'They would take this deal.'
+    : `${ev.ratio >= .85 ? 'Close' : 'Not close yet'}: your side is worth ${v1(ev.vIn)} to them and they want ${v1(ev.need)}.`;
+  const pillMood = ready && ev.issues.length ? "Can't happen: tap Review" : ready && !ev.ok && !ev.fleece ? `${ev.ratio >= .85 ? 'Close' : 'Short'} · ${v1(ev.vIn)} of ${v1(ev.need)}` : mood;
   const row = (id, side) => { const w = side === 'give' && want.get(id); return assetRow(id, side, P, w ? '<span class="tag gold">Wanted</span>' : '').replace('class="asset ', `class="asset ${w ? 'wanted ' : ''}`); };
   const side = (key, list, pk, tposKey) => `${seg(key, [['players', 'Players'], ['picks', `Picks · ${pk.length}`]], UI[key] || 'players')}${(UI[key] || 'players') === 'players' ? posChips(tposKey, UI[tposKey]) : ''}<div class="alist">${(UI[key] || 'players') === 'players' ? list.map(p => row(p.id, key === 'tsGive' ? 'give' : 'get')).join('') || '<p class="small muted">Nobody at that position.</p>' : pk.map(x => row(x.id, key === 'tsGive' ? 'give' : 'get')).join('') || '<p class="small muted">No picks left.</p>'}</div>`;
   return head + `<div class="tradetop"><button class="btn ghost sm" data-act="tPartner" data-t="">‹ Teams</button>${badge(P)}<div><b>${esc(G.teams[P].name)}</b><div class="small muted">${rec(P)} · ${S[P].status} · ${money(E.capSpace(P))} cap space</div></div></div>
   <div class="mobonly tmobseg">${seg('tmob', [['give', 'Your team' + (UI.give.length ? ' · ' + UI.give.length : '')], ['get', esc(G.teams[P].nick) + (UI.get.length ? ' · ' + UI.get.length : '')], ['panel', 'Needs']], UI.tmob || 'give')}</div>
   <div class="tradecols m-${UI.tmob || 'give'}">
-    <div class="card col-give"><div class="cardh"><h3>Your team</h3><span class="row nowrap">${want.size ? `<span class="tag gold">${want.size} they want</span>` : ''}<span class="small muted">Value to them</span></span></div>${side('tsGive', mine, picks(G.user), 'tposGive')}</div>
-    <div class="card col-get"><div class="cardh"><h3>${esc(G.teams[P].name)}</h3><span class="small muted">Value to them</span></div><div class="deskonly needline"><span class="lbl">Your needs</span>${needChips('tNeedPos', UI.tposGet)}<button class="linkbtn" data-act="depthSheet">Depth chart</button></div>${side('tsGet', theirs, picks(P), 'tposGet')}</div>
+    <div class="card col-give"><div class="cardh"><h3>Your team</h3><span class="row nowrap">${want.size ? `<span class="tag gold">${want.size} they want</span>` : ''}<span class="small muted">Value to them</span></span></div>
+      <div class="needline" title="Tap a need to see their players at that spot"><span class="lbl">You need</span>${needChips('tNeedPos', UI.tposGet)}<button class="linkbtn" data-act="depthSheet">Depth chart</button></div>${side('tsGive', mine, picks(G.user), 'tposGive')}</div>
+    <div class="card col-get"><div class="cardh"><h3>${esc(G.teams[P].name)}</h3><span class="small muted">Value to them</span></div><div class="needline" title="Tap a need to see your players who could fill it"><span class="lbl">They need</span>${needChips('tTheirNeed', UI.tposGive, P)}</div>${side('tsGet', theirs, picks(P), 'tposGet')}</div>
     <div class="col-panel">${teamPanel('tNeedPos', UI.tposGet)}</div>
   </div>
-  <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(mood)}</span><span class="dp-go">Review</span></button>
+  <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(pillMood)}</span><span class="dp-go">Review</span></button>
   <div class="dealdock card deskonly-grid"><div class="dock-sides"><div><div class="lbl">You send</div>${dockSide(UI.give, 'give')}</div><div><div class="lbl">You get</div>${dockSide(UI.get, 'get')}</div></div>
     <div class="dock-right"><b>${esc(mood)}</b>${ready ? `<span class="small muted">For your team: <b class="${E.winsDelta(G.user, UI.get, UI.give) >= .05 ? 'good' : E.winsDelta(G.user, UI.get, UI.give) <= -.05 ? 'bad' : ''}">${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season${(() => { const ch = E.chemTrade(UI.give, UI.get).d; return ch ? ` · locker room <b class="${ch > 0 ? 'good' : 'bad'}">${ch > 0 ? '+' : ''}${ch}</b>` : ''; })()}</span>` : ''}${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
       <div class="row nowrap"><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn go" data-act="callTeam" ${ready ? '' : 'disabled'}>Make the call</button></div></div></div>`;
@@ -2040,8 +2165,8 @@ async function saveCard() {
 
 // ---------- your team panel: needs + depth chart ----------
 // Your needs as small grade chips; tapping one filters a list to that position
-function needChips(act, cur) {
-  const needs = E.teamNeeds().filter(n => n.level !== 'Low');
+function needChips(act, cur, t) {
+  const needs = E.teamNeeds(t).filter(n => n.level !== 'Low' && n.pos !== 'K').slice(0, 5);
   return `<span class="needchips2">${needs.map(n => `<button class="nchip ${n.level === 'High' ? 'hi' : ''} ${cur === n.pos ? 'on' : ''}" data-act="${act}" data-k="${cur === n.pos ? 'ALL' : n.pos}"><span class="ng sm g${RANK_LETTER(n.rank)}">${RANK_LETTER(n.rank)}</span>${n.pos}</button>`).join('') || '<span class="small muted">No big holes</span>'}</span>`;
 }
 function teamPanel(act, cur) {
@@ -2192,6 +2317,7 @@ function renderInner() {
   $('#app').innerHTML = (tabs[UI.tab] || renderHome)();
 }
 function render() {
+  NEEDSET = null;
   if (!G) {
     renderHeader();
     if (UI.tab === 'resume') $('#app').innerHTML = renderResume(); else renderPicker();
@@ -2298,6 +2424,7 @@ document.addEventListener('click', e => {
     case 'flexMove': { const p = G.players[id], back = !el.dataset.k, from = back ? (G.flex || {})[id] : p.pos; E.setFlex(id, el.dataset.k || null); persist(); render(); depthModal(back ? from : el.dataset.k); toast(back ? `${p.n} is back at ${p.pos}.` : `${p.n} now plays ${el.dataset.k}.`); return; }
     case 'ownerSheet': ownerSheet(); return;
     case 'goalsSheet': goalsSheet(); return;
+    case 'matchSheet': matchSheet(); return;
     case 'chemSheet': chemSheet(); return;
     case 'depthSheet': modal(`<div class="sheeth"><h3>Your team</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel(null).replace('<details class="fold dfold" data-fold="depth" ', '<details class="fold dfold" open ')}`, true); return;
     case 'injurySheet': injurySheet(); return;
@@ -2466,6 +2593,7 @@ document.addEventListener('click', e => {
     case 'faNeedPos': UI.faPos = el.dataset.k; UI.faFit = 'all'; break;
     case 'needsSheet': modal(`<div class="sheeth"><div><div class="kicker">Free agency</div><h3>Needs & depth chart</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel('faNeedPosM', UI.faPos)}<div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true); return;
     case 'faNeedPosM': UI.faPos = el.dataset.k; UI.faFit = 'all'; closeModal(); break;
+    case 'tTheirNeed': UI.tposGive = el.dataset.k; UI.tsGive = 'players'; if (UI.tmob === 'panel' || UI.tmob === 'get') UI.tmob = 'give'; break;
     case 'tNeedPos': UI.tposGet = el.dataset.k === 'ALL' ? 'ALL' : el.dataset.k; UI.tpos = el.dataset.k === 'ALL' ? null : el.dataset.k; if (UI.tmob === 'panel') UI.tmob = 'get'; break;
     case 'dealSheet': {
       const P = UI.partner, ev = E.evalTrade(P, UI.give, UI.get), ready = UI.give.length && UI.get.length;
@@ -2530,8 +2658,11 @@ document.addEventListener('click', e => {
       const p = G.players[id]; if (!p || !G.teams[p.tm]) return;
       UI.partner = p.tm; UI.get = [id]; UI.give = []; UI.tposGet = 'ALL';
       const g = E.balanceTrade(UI.partner, [], UI.get);
-      if (g) { UI.give = g; toast('Here is what they would want. Take things out with ×, then make the call.'); } else toast('They will not move him for what you have. Try adding picks.');
-      UI.tview = 'make'; closeModal(); persist(); go('trade'); return;
+      if (!tradeOpen()) { closeModal(); popup('Trades are closed', 'Not right now', `<p class="lead">${esc(G.phase === 'playoffs' ? 'No trades during the playoffs. They reopen in the offseason.' : `The trade deadline after Week ${E.DEADLINE_WEEK} has passed. Trades reopen in the offseason.`)}</p>`); return; }
+      if (g) { UI.give = g; toast('Here is what they would want. Take things out with ×, then make the call.'); UI.tview = 'make'; closeModal(); persist(); go('trade'); return; }
+      UI.tview = 'make'; closeModal(); persist(); go('trade');
+      popup(`No deal for ${esc(p.n)}`, 'Why it will not work', `<p class="lead">${esc(E.whyNoDeal(id))}</p><p class="small muted">You can still build a deal by hand below and make the call.</p>`);
+      return;
     }
     case 'findFor': { const list = E.findPackages(id).map(x => Object.assign(x, {label: x.label + ' · ' + G.teams[x.partner].nick})); openFound(id, list); return; }
     case 'loadFound': { const x = UI.found.list[+el.dataset.i]; UI.partner = x.partner; UI.give = x.give.slice(); UI.get = x.get.slice(); UI.tview = 'make'; closeModal(); UI.found = null; go('trade'); return; }
@@ -2552,6 +2683,10 @@ document.addEventListener('click', e => {
     case 'share': openShare(el.dataset.k); return;
     case 'shareSize': openShare(UI.shareKind, el.dataset.k); return;
     case 'saveCard': saveCard(); return;
+    case 'onbNext': UI.onbStep = (UI.onbStep || 0) + 1; render(); window.scrollTo(0, 0); return;
+    case 'onbBack': UI.onbStep = Math.max(0, (UI.onbStep || 0) - 1); render(); return;
+    case 'onbDone': ONB_SEEN = true; try { localStorage.setItem('21-0-onboard', '1'); } catch (err) { /* storage unavailable */ } UI.onbStep = null; render(); window.scrollTo(0, 0); return;
+    case 'onbAgain': ONB_SEEN = false; UI.onbStep = 0; render(); window.scrollTo(0, 0); return;
     case 'askReset': modal(`<div class="sheeth"><h3>Start over?</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">This erases your current game. Your résumé keeps every finished season.</p><div class="row end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn danger" data-act="newgame">Start over</button></div>`); return;
     case 'newgame': try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(SAVE_KEY + '-ver'); } catch (err) { /* storage unavailable */ } cloudClear(); G = null; closeModal(); UI.tab = 'home'; render(); window.scrollTo(0, 0); return;
   }

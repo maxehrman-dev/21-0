@@ -31,6 +31,10 @@
 - **Season goals.** Every season sets three goals on top of the owner's, picked for your team: win a set number of games, take the division, sweep a rival, a top-10 offense or defense, a winning streak. Each one you hit raises the owner's confidence and counts on your final report.
 - **Locker room.** Chemistry rises with wins and drops when you trade away or cut players the room trusts, veterans most of all. A tight room is worth up to two points a game, and every trade shows what it will cost before you make it.
 - **Offers that make sense.** At most three at a time, all close to fair. Each one says what it does to your wins this season, and only one will ask you to give up a starter for later.
+- **Trades that look right.** A star never moves for spare parts, even when the values add up: the return needs a player close to his level, or a first-round pick and a strong second piece. When a deal can't happen, the game says why.
+- **A trade deadline you can't miss.** Trades are open every week until the deadline after Week 9, with a countdown, a deadline-day banner and a last-chance warning. Free agents can be signed any week of the season.
+- **Know your next opponent.** Win odds, the matchup to watch, the one to lean on, and a game plan that links straight to the upgrade that would help.
+- **Needs everywhere.** Home shows your biggest holes with who starts there and who is next up. The trade builder shows your needs on your side and theirs on theirs. Shopping lists have a My needs filter. The lineup shows the whole bench.
 - **A game model tuned to the real league.** Team wins spread like they do in the NFL (best record usually 13 to 15 wins). Position value follows real analytics: the quarterback explains about 30% of the gap between teams, so an elite QB is worth about +5 wins and a star running back well under one. Every player card and trade shows what a move is worth in wins.
 - **21-0 is a moonshot, not a lottery.** A team as it stands has about a 1 in 20,000 shot. A well-built team has about 1%, and a true superteam about 3%. Any given Sunday still applies.
 - **Worst to first:** an optional mode limited to the 8 worst rosters.
@@ -39,7 +43,7 @@
 - **Scout ahead.** The next draft class is in League › More, well before draft day.
 - **Box scores for every game.** Tap any result for passing, rushing, receiving, defense and kicking lines and a player of the game. Season stats (completions, carries, targets, tackles, pass breakups, field goals) are built play by play and land in real NFL ranges.
 - **A draft you can follow.** The draft shows who is on the clock, a ticker of the picks around now, the big board, and the full order round by round.
-- **Calm by default.** A four-step guide the first time you play. After that, Home shows four numbers and a short list of things that might need you: the owner, trade offers, season goals, the locker room, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
+- **Calm by default.** A short welcome before you pick a team, then a four-step guide on your first game, both replayable; Start over is always one tap away. After that, Home shows four numbers and a short list of things that might need you: the owner, trade offers, season goals, the locker room, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
 
 ## Controls
