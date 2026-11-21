@@ -1366,6 +1366,15 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 
 .scoring { display: grid; gap: 6px; margin-bottom: 8px; }
 .scrow { display: grid; grid-template-columns: 74px 28px 1fr; align-items: center; gap: 8px; font-size: 14px; }
+
+.ltrade { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; gap: 4px; } .ltrade:last-of-type { border-bottom: 0; }
+.ltop { display: flex; align-items: center; gap: 8px; } .ltwhen { margin-left: auto; }
+.lside { padding-left: 34px; font-size: 14px; color: var(--chalk); }
+.bidout { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; } .bidout .tag { display: inline-flex; align-items: center; gap: 6px; }
+
+.clines { display: grid; gap: 4px; margin: 6px 0 10px; } .cline { font-size: 13px; color: var(--muted); } .cline.warn { color: var(--warn); }
+.restrrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin: 6px 0 12px; border-radius: 12px; border: 1px dashed var(--line2); }
+.cwhy { color: var(--chalk); margin: 2px 0 8px; line-height: 1.4; }
 </style>
 </head>
 <body>

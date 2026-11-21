@@ -256,7 +256,8 @@ const GM_STYLES = [
 function gmOf(t) {
   const h = hashStr('gm:' + t);
   const style = GM_STYLES[h % GM_STYLES.length];
-  return {style: style[0], pos: style[1], youth: ((h >>> 8) % 100) / 100, risk: ((h >>> 16) % 100) / 100};
+  const chart = ['steep', 'flat', 'standard'][(h >>> 20) % 3];
+  return {style: style[0], pos: style[1], youth: ((h >>> 8) % 100) / 100, risk: ((h >>> 16) % 100) / 100, chart};
 }
 // ---------- team situation ----------
 // Every team is a Contender, Bubble team, Seller or Rebuilding, from playoff odds in season and roster rank otherwise.
@@ -363,6 +364,11 @@ function valueParts(p, forTeam) {
     else if (sell && a <= 25) { tm = 1.1; why = `${sit.status === 'Seller' ? 'selling' : 'rebuilding'} and want young players`; }
     else if (sit.status === 'Bubble' && needBoost(forTeam, p) > 1) { tm = 1.06; why = 'on the playoff bubble and need help now'; }
     if (tm !== 1) { v *= tm; steps.push({k: 'Situation', note: `${nick} are ${why} (${Math.round(sit.po * 100)}% playoff odds): ×${tm}`, m: tm, v}); }
+    const wkLeft = G.phase === 'deadline' ? 0 : (G.phase === 'season' || G.phase === 'preseason') && G.week < DEADLINE_WEEK ? DEADLINE_WEEK - G.week : null;
+    if (wkLeft != null && wkLeft <= 3 && wkLeft > 0 && a >= 27) {
+      const dm = contend && p.tm !== forTeam ? 1 + .04 * (4 - wkLeft) : sell && p.tm === forTeam ? 1 - .03 * (4 - wkLeft) : 1;
+      if (dm !== 1) { v *= dm; steps.push({k: 'Deadline clock', note: contend ? `${4 - wkLeft === 3 ? 'Days' : 'Weeks'} from the deadline, contenders pay up for help` : `With the deadline close, a seller takes less for a veteran`, m: Math.round(dm * 100) / 100, v}); }
+    }
     if (G.phase === 'deadline' && contend && needBoost(forTeam, p) > 1) { const u = 1 + .35 * sit.po; v *= u; steps.push({k: 'Deadline push', note: `A starter now matters to a contender: ×${u.toFixed(2)}`, m: u, v}); }
     if (rental) { const rr = contend ? 1.15 : sell ? .7 : 1; if (rr !== 1) { v *= rr; steps.push({k: 'Rental', note: contend ? 'Contenders still want half a season of him: ×1.15' : 'A seller gets nothing from an expiring deal: ×0.7', m: rr, v}); } }
     const sc = situations()._scarce[p.pos] || 1;
@@ -446,6 +452,13 @@ function pickValue(pk, forTeam) {
     const st = situation(forTeam).status;
     v *= st === 'Rebuilding' ? 1.22 : st === 'Seller' ? 1.15 : st === 'Bubble' ? .95 : .82;
     v *= .92 + gmOf(forTeam).youth * .16; // some front offices love the draft
+    // each front office reads the draft with its own chart: old-school teams prize the top of the draft,
+    // analytics teams see more value in a pile of later picks
+    const ch = gmOf(forTeam).chart, sl = pickSlot(pk);
+    if (ch !== 'standard') v *= ch === 'steep' ? clamp(1.25 - sl * .006, .8, 1.25) : clamp(.82 + sl * .004, .82, 1.2);
+    // a conditional pick is worth its odds of turning into the better one; a protected one, less to the team getting it
+    if (pk.cond) v = v * (1 - pk.cond.p) + pickPts(Math.max(1, pickSlot(pk) - 32)) * (pk.yr > nextDraftYear() ? .62 : 1) * pk.cond.p * (v / Math.max(.1, pickPts(pickSlot(pk)) * (pk.yr > nextDraftYear() ? .62 : 1)));
+    if (pk.prot) v *= pk.owner === forTeam || pk.orig !== forTeam ? .85 : 1;
   }
   return v;
 }
@@ -465,9 +478,10 @@ function rebuildingRaw(t) {
   if (gp < 4) return teamRating(t).ovr < 70;
   return rec.w / gp < .4;
 }
+const condLabel = pk => pk.cond ? ` (becomes a ${['', '1st', '2nd', '3rd', '4th', '5th', '6th'][pk.rd - 1]} if the ${G.teams[pk.cond.team] ? G.teams[pk.cond.team].nick : 'team'} make the playoffs)` : pk.prot ? ` (top-${pk.prot} protected)` : '';
 function pickLabel(pk) {
   const pre = pk.yr === G.season && G.phase === 'offseason' && G.draftOrder ? `#${G.draftOrder.indexOf(pk.orig) + 1 + (pk.rd - 1) * 32}` : '';
-  return `${pk.yr} Round ${pk.rd}${pk.orig !== pk.owner ? ' (' + pk.orig + ')' : ''}${pre ? ' ' + pre : ''}`;
+  return `${pk.yr} Round ${pk.rd}${pk.orig !== pk.owner ? ' (' + pk.orig + ')' : ''}${pre ? ' ' + pre : ''}${condLabel(pk)}`;
 }
 const pickById = id => G.picks.find(x => x.id === id);
 function assetValue(id, forTeam) { const p = G.players[id]; if (p) return playerValue(p, forTeam); const k = pickById(id); return k ? pickValue(k, forTeam) : 0; }
@@ -511,6 +525,10 @@ function evalTrade(partner, give, get) {
   if (uRoster < 40 && pc(give) > pc(get)) issues.push('Your roster would drop under 40 players.');
   if (uRoster > rosterLimit()) issues.push(`Your roster would go over ${rosterLimit()}. Release someone first.`);
   if (!give.length || !get.length) issues.push('Both sides need at least one asset.');
+  for (const id of give) { const b = ntcBlocks(G.players[id], partner); if (b) issues.push(b); }
+  for (const id of get) { const b = ntcBlocks(G.players[id], G.user); if (b) issues.push(b); }
+  const ext = get.map(id => G.players[id]).filter(Boolean).map(p => ({p, x: extensionAsk(p)})).filter(e => e.x);
+  const deadOut = give.reduce((a, id) => a + tradeDead(G.players[id]), 0);
   // they will not hand over a star for spare parts, however the values add up
   const look = give.length ? looksOk(get, give) : {ok: true};
   if (!look.ok) issues.push(`The ${G.teams[partner].nick} will not move ${look.star.n} for that. A star needs a player close to his level back, or a first-round pick and a strong second piece.`);
@@ -529,7 +547,7 @@ function evalTrade(partner, give, get) {
   const st = G.teams[partner] ? situation(partner).status : '';
   const dump = (st === 'Seller' || st === 'Rebuilding') && get.every(id => { const q = G.players[id]; return q && ageAdj(q) >= 28; });
   const fleece = give.length > 0 && get.length > 0 && fair > (dump ? 1.4 : 1.25);
-  return {rival, spotCost, trust, vIn, vOut, need, ratio, fair, fleece, ok: ratio >= 1 && !issues.length && !fleece, issues, capGive, capGet, badLook: lookMine.ok ? null : lookMine.star.n};
+  return {rival, spotCost, trust, ext: ext.map(e => ({id: e.p.id, n: e.p.n, apy: e.x.apy, yrs: e.x.yrs})), deadOut: Math.round(deadOut * 10) / 10, vIn, vOut, need, ratio, fair, fleece, ok: ratio >= 1 && !issues.length && !fleece, issues, capGive, capGet, badLook: lookMine.ok ? null : lookMine.star.n};
 }
 function doTrade(partner, give, get, how) {
   const ev = evalTrade(partner, give, get);
@@ -541,6 +559,9 @@ function doTrade(partner, give, get, how) {
   const rec = {season: G.season, when, partner, gave: give.map(assetName), got: get.map(assetName), giveIds: give.slice(), getIds: get.slice(),
     vGive: give.reduce((s, id) => s + assetValue(id), 0), vGet: get.reduce((s, id) => s + assetValue(id), 0)};
   const ch = chemTrade(give, get);
+  if (G.season > 2026 || G.phase === 'offseason') G.dead[G.user] = (G.dead[G.user] || 0) + (ev.deadOut || 0);
+  for (const e of ev.ext || []) { const q = G.players[e.id]; if (q) { q.cap = e.apy; q.end = G.season + e.yrs - (G.phase === 'offseason' ? 1 : 0); G.news.unshift(`${q.n} signed an extension as part of the trade: ${e.yrs} yr at $${e.apy}M.`); } }
+  for (const id of give) if (G.players[id]) delete G.players[id].restr;
   for (const id of give) { if (G.players[id]) G.players[id].tm = partner; else { pickById(id).owner = partner; syncDraftSlot(id, partner); } }
   for (const id of get) { if (G.players[id]) { G.players[id].tm = G.user; G.players[id].how = 'Trade'; G.players[id].joined = G.season; } else { pickById(id).owner = G.user; syncDraftSlot(id, G.user); } }
   rec.chem = chemShift(ch.d, ch.why);
@@ -652,7 +673,7 @@ function talkWhy(partner, give, get) {
   const T = talkWith(partner), ev = evalTrade(partner, give, get), nick = G.teams[partner].nick, out = [];
   const fmt = v => v < 20 ? v.toFixed(1) : String(Math.round(v)), vin = fmt(ev.vIn * (1 + T.boost)), need = fmt(ev.need * T.firm), vout = fmt(ev.vOut);
   out.push(`To us, what we give up is worth ${vout}. Your side is worth ${vin}. Our bar right now is about ${need}.`);
-  const team = st => ['Scouting', 'GM style', 'Age taste', 'Situation', 'Deadline push', 'Fit', 'Our guy', 'Franchise QB', 'Cap room', 'Rental', 'Control', 'Scarcity', 'Next year cap', 'Injury need', 'Risk', 'Win leverage', 'Timeline', 'Depth glut'].includes(st.k) && st.m != null && Math.abs(st.m - 1) >= .04;
+  const team = st => ['Scouting', 'GM style', 'Age taste', 'Situation', 'Deadline push', 'Fit', 'Our guy', 'Franchise QB', 'Cap room', 'Rental', 'Control', 'Scarcity', 'Next year cap', 'Injury need', 'Risk', 'Win leverage', 'Timeline', 'Depth glut', 'Deadline clock'].includes(st.k) && st.m != null && Math.abs(st.m - 1) >= .04;
   const top = ids => ids.filter(id => G.players[id]).map(id => G.players[id]).sort((a, b) => playerValue(b, partner) - playerValue(a, partner))[0];
   const key = (p, mine) => {
     if (!p) return;
@@ -1009,13 +1030,19 @@ function acceptPlan(give, get) {
   const d = depth(G.user), starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
   const pool = roster(G.user).filter(p => !give.includes(p.id) && !get.includes(p.id) && p.pos !== 'K' && p.pos !== 'P')
     .map(p => ({p, c: cutCost(p), v: playerValue(p), st: starters.has(p.id)}));
-  const cuts = [];
+  const cuts = [], restr = [];
+  if (over > 0) {
+    // restructures first: no one leaves, the bill comes later
+    for (const q of roster(G.user).filter(x => !give.includes(x.id) && restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
+      if (over <= 0) break; const r = restructureInfo(q); restr.push({id: q.id, save: r.save}); over -= r.save;
+    }
+  }
   if (over > 0) {
     const L = pool.filter(x => x.c.save > .3).sort((a, b) => (a.st - b.st) || a.v / a.c.save - b.v / b.c.save);
     for (const x of L) { if (over <= 0) break; cuts.push(x); over -= x.c.save; extra--; }
   }
   if (extra > 0) for (const x of pool.filter(x => !cuts.includes(x)).sort((a, b) => (a.st - b.st) || a.v - b.v)) { if (extra <= 0) break; cuts.push(x); extra--; }
-  return {cuts: cuts.map(x => x.p.id), save: Math.round(cuts.reduce((a, x) => a + x.c.save, 0) * 10) / 10, dead: Math.round(cuts.reduce((a, x) => a + x.c.dead, 0) * 10) / 10, fill: Math.max(0, short), ok: over <= 0};
+  return {restr, cuts: cuts.map(x => x.p.id), save: Math.round(cuts.reduce((a, x) => a + x.c.save, 0) * 10) / 10, dead: Math.round(cuts.reduce((a, x) => a + x.c.dead, 0) * 10) / 10, fill: Math.max(0, short), ok: over <= 0};
 }
 function acceptOffer(oid, list) {
   const o = (list || G.offers || []).find(x => x.id === oid);
@@ -1025,6 +1052,7 @@ function acceptOffer(oid, list) {
   if (!stillMine || !stillTheirs) { G.offers = (G.offers || []).filter(x => x !== o); return {ok: false, msg: 'Something in that offer already moved.'}; }
   const plan = acceptPlan(o.give, o.get);
   if (!plan.ok) return {ok: false, msg: 'Even releasing players would not fit that deal under your cap.'};
+  for (const r of plan.restr || []) restructure(r.id);
   for (const id of plan.cuts) cutPlayer(id);
   const r = doTrade(o.from, o.give, o.get, 'accepted');
   if (r.ok && plan.fill) fillRoster(G.user, 40);
@@ -1478,6 +1506,9 @@ function simWeekRaw(w) {
   }
   for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
   G.week = w;
+  // the league's own trades: a trickle early, a rush the week of the deadline
+  if (w < DEADLINE_WEEK && w >= 2 && rand() < .28) aiTradeWindow(1);
+  else if (w === DEADLINE_WEEK) aiTradeWindow(2 + Math.floor(rand() * 3));
   return out;
 }
 function simTo(week) { while (G.week < week) simWeek(G.week + 1); }
@@ -1578,7 +1609,10 @@ function beginOffseason() {
   G.phase = 'offseason'; G.step = 'progress'; G.season = next; G.week = 0; G.draftDone = false; G.draft = null;
   if (G.chem != null) G.chem = Math.round(G.chem + (60 - G.chem) / 3);
   for (const p of Object.values(G.players)) if (p.opt && p.opt.year === next) { p.cap = p.opt.cap; delete p.opt; }
+  for (const p of Object.values(G.players)) if (p.restr && p.restr.left > 0) { p.cap = Math.round((p.cap + p.restr.amt) * 10) / 10; if (--p.restr.left <= 0) delete p.restr; }
   aiOptions();
+  settleConditions(prev);
+  if (next > 2026) cached(aiTradeWindow)(2 + Math.floor(rand() * 3));
   // the cap: real figures through 2027, then about 7% a year, the league's recent pace
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
@@ -1810,6 +1844,18 @@ function counterTrade(partner, give, get) {
   const ev = evalTrade(partner, give, get);
   if (ev.ok || ev.ratio < .55 || ev.fleece) return null;
   const out = [];
+  // 1. they name the player they want: one of yours who fills their biggest need
+  const named = wantFromYou(partner, give, get);
+  if (named) out.push(named);
+  // 2. a pick swap: your pick for theirs in the same round, moving them up
+  const sw = pickSwap(partner, give, get, ev);
+  if (sw) out.push(sw);
+  // 3. a conditional pick to bridge a small gap: theirs gets better only if they make the playoffs
+  const cd = conditionalBridge(partner, give, get, ev);
+  if (cd) out.push(cd);
+  // 4. their own first, protected: if it lands in the top 10 they keep it and you get next year's instead
+  const pr = protectFirst(partner, give, get, ev);
+  if (pr) out.push(pr);
   const add = fillSide(partner, give, get, userPool('all', get));
   if (add && add.length > give.length && add.length - give.length <= 2) out.push({label: 'Add to your side', give: add, get: get.slice()});
   if (get.length > 1) {
@@ -1818,7 +1864,71 @@ function counterTrade(partner, give, get) {
       if (evalTrade(partner, give, g2).ok) { out.push({label: 'Take less back', give: give.slice(), get: g2}); break; }
     }
   }
-  return out.length ? out : null;
+  return out.length ? out.slice(0, 3) : null;
+}
+// The one player of yours they really want: he would start at their biggest need, and the deal clears their bar with him
+function wantFromYou(partner, give, get) {
+  const needs = teamNeeds(partner).filter(n => n.level !== 'Low').map(n => n.pos);
+  const L = roster(G.user).filter(p => !give.includes(p.id) && needs.includes(p.pos) && needBoost(partner, p) > 1 && !hasNTC(p))
+    .map(p => ({p, ev: evalTrade(partner, [...give, p.id], get)})).filter(x => x.ev.ok && !x.ev.fleece).sort((a, b) => a.ev.ratio - b.ev.ratio);
+  const x = L[0]; if (!x) return null;
+  return {label: `They want ${x.p.n}`, give: [...give, x.p.id], get: get.slice(), why: `${x.p.n} would start at ${x.p.pos} for them, their biggest need.`};
+}
+// Swap picks in the same round and year: yours lands earlier, so they move up and you move down
+function pickSwap(partner, give, get, ev) {
+  const short = ev.need - ev.vIn; if (short <= 0) return null;
+  for (const mine of G.picks.filter(k => k.owner === G.user && !give.includes(k.id))) {
+    const theirs = G.picks.find(k => k.owner === partner && k.yr === mine.yr && k.rd === mine.rd && !get.includes(k.id));
+    if (!theirs || pickSlot(mine) >= pickSlot(theirs)) continue;
+    const e2 = evalTrade(partner, [...give, mine.id], [...get, theirs.id]);
+    if (e2.ok && !e2.fleece) return {label: 'Swap picks', give: [...give, mine.id], get: [...get, theirs.id], why: `Your ${pickLabel(mine)} for their ${pickLabel(theirs)}: they move up in round ${mine.rd}.`};
+  }
+  return null;
+}
+// A small gap closed with a condition: one of their picks in the deal upgrades a round if they make the playoffs
+function conditionalBridge(partner, give, get, ev) {
+  if (ev.ratio < .9) return null;
+  const pk = get.map(id => pickById(id)).find(k => k && k.owner === partner && k.rd >= 2 && !k.cond);
+  if (!pk) return null;
+  // try it: the condition makes their pick worth more to you, so they accept a little less elsewhere
+  const po = situation(partner).po, save = {...pk};
+  pk.cond = {kind: 'po', team: partner, p: Math.round(clamp(po, .05, .95) * 100) / 100, season: G.season};
+  const e2 = evalTrade(partner, give, get);
+  const ok = e2.ratio >= 1 && !e2.fleece && !e2.issues.length;
+  delete pk.cond;
+  if (!ok) return null;
+  return {label: 'Conditional pick', give: give.slice(), get: get.slice(), cond: {id: pk.id, team: partner, p: Math.round(clamp(po, .05, .95) * 100) / 100}, why: `Their ${pickLabel(save)} becomes a round earlier if they make the playoffs.`};
+}
+function protectFirst(partner, give, get, ev) {
+  if (ev.ratio < .85) return null;
+  const pk = get.map(id => pickById(id)).find(k => k && k.rd === 1 && k.orig === partner && k.owner === partner && !k.prot && pickSlot(k) <= 16);
+  if (!pk) return null;
+  pk.prot = 10; const e2 = evalTrade(partner, give, get); const ok = e2.ratio >= 1 && !e2.fleece && !e2.issues.length; delete pk.prot;
+  return ok ? {label: 'Protected first', give: give.slice(), get: get.slice(), prot: {id: pk.id, n: 10}, why: `Their ${pickLabel(pk)} is top-10 protected: if it lands in the top 10 they keep it and you get their next first.`} : null;
+}
+// When a counter with a condition is accepted, the condition goes on the pick
+function applyCond(c) { const k = pickById(c.id); if (k) k.cond = {kind: 'po', team: c.team, p: c.p, season: G.season}; }
+function applyProt(c) { const k = pickById(c.id); if (k) k.prot = c.n; }
+// Draft day settles protections: a protected first that lands too high goes back, and its new owner gets next year's
+function settleProtections() {
+  for (const k of G.picks.filter(x => x.yr === G.season && x.prot)) {
+    const slot = G.draftOrder.indexOf(k.orig) + 1 + (k.rd - 1) * 32, holder = k.owner;
+    if (slot <= k.prot && holder !== k.orig) {
+      k.owner = k.orig;
+      const nxt = G.picks.find(x => x.yr === G.season + 1 && x.rd === k.rd && x.orig === k.orig);
+      if (nxt) nxt.owner = holder;
+      G.news.unshift(`The ${G.teams[k.orig].nick} pick landed at #${slot}, inside its protection: they keep it, and the ${G.teams[holder].nick} get their ${G.season + 1} first.`);
+    }
+    delete k.prot;
+  }
+}
+// A new league year settles last season's conditions
+function settleConditions(prev) {
+  for (const k of G.picks) if (k.cond && k.cond.season === prev) {
+    const P = G.playoffs[prev], made = P && P.elim && Object.prototype.hasOwnProperty.call(P.elim, k.cond.team) || (P && P.champ === k.cond.team);
+    if (made && k.rd > 1) { k.rd--; G.news.unshift(`A conditional pick came through: ${pickLabel(k)} after the ${G.teams[k.cond.team].nick} made the playoffs.`); }
+    delete k.cond;
+  }
 }
 
 function aiFAWave() {
@@ -1847,6 +1957,7 @@ function aiFAWave() {
 function finishFA() {
   for (const d of (G.fa.decisions || []).slice()) faDecide(d.id, false);
   while (G.fa.wave <= 3) faEndWave();
+  cached(aiTradeWindow)(1 + Math.floor(rand() * 2));
   G.step = 'draft'; startDraft();
 }
 // ---------- free agency: meetings, offers and waves ----------
@@ -1987,6 +2098,7 @@ function faDecide(id, match) {
 
 // Draft: 7 rounds. The real 2027 big board covers the first 150 picks; the late rounds come from a generated tail.
 function startDraft() {
+  settleProtections();
   const order = [];
   for (let rd = 1; rd <= ROUNDS; rd++) for (let i = 0; i < 32; i++) {
     const orig = G.draftOrder[i];
@@ -2393,6 +2505,117 @@ const UNIT_ATTR = {
 };
 const unitScore = (p, k) => { const L = (UNIT_ATTR[k][p.pos] || []).filter(a => p.at && p.at[a] != null); return L.length ? L.reduce((s, a) => s + attr(p, a), 0) / L.length : p.ovr; };
 
+// ---------- the league trades too ----------
+// Sellers shop veterans, contenders and bubble teams with a need go get them, and the price is what both front
+// offices see: the buyer's value of the player has to beat what it gives up, the seller's value of the package has
+// to beat the player. Cap space, roster room and the look of the deal all apply, as they do for you.
+function aiTradeOnce() {
+  const teams = teamList().filter(t => t !== G.user);
+  const S = situations();
+  const sellers = shuffle(teams.filter(t => /Seller|Rebuilding/.test(S[t].status) || (G.phase === 'offseason' && rand() < .3)));
+  for (const seller of sellers) {
+    const shop = onBlock(seller, 4).map(x => x.p).filter(p => !p.inj && p.tm === seller);
+    for (const p of shop) {
+      const buyers = shuffle(teams.filter(t => t !== seller && (S[t].status === 'Contender' || S[t].status === 'Bubble' || G.phase === 'offseason') && needBoost(t, p) > 1));
+      for (const buyer of buyers.slice(0, 4)) {
+        const want = playerValue(p, seller) * 1.02, worth = playerValue(p, buyer);
+        if (worth < want * .95) continue;
+        // the buyer pays mostly in picks, then backups, cheapest first, never a starter it needs
+        const d = depth(buyer), starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(q => q.id)));
+        const pool = [...G.picks.filter(k => k.owner === buyer).map(k => k.id), ...roster(buyer).filter(q => !starters.has(q.id) && q.ovr >= 62 && q.pos !== 'K' && q.pos !== 'P').map(q => q.id)]
+          .map(id => ({id, v: assetValue(id, seller), c: assetValue(id, buyer)})).sort((x, y) => y.v - x.v);
+        const pkg = []; let sum = 0, cost = 0;
+        for (const x of pool) { if (sum >= want || pkg.length >= 3) break; if (sum + x.v <= want * 1.25 || pkg.length === 2) { pkg.push(x.id); sum += x.v; cost += x.c; } }
+        if (sum < want || cost > worth * 1.05 || !looksOk([p.id], pkg).ok) continue;
+        const capIn = pkg.reduce((a, id) => a + (G.players[id] ? G.players[id].cap : 0), 0);
+        if (capSpace(buyer) + capIn < p.cap || capSpace(seller) + p.cap < capIn) continue;
+        aiSwap(seller, buyer, [p.id], pkg);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+function aiSwap(a, b, aGives, bGives) {
+  for (const id of aGives) { if (G.players[id]) { G.players[id].tm = b; G.players[id].joined = G.season; } else { const k = pickById(id); if (k) { k.owner = b; syncDraftSlot(id, b); } } }
+  for (const id of bGives) { if (G.players[id]) { G.players[id].tm = a; G.players[id].joined = G.season; } else { const k = pickById(id); if (k) { k.owner = a; syncDraftSlot(id, a); } } }
+  const star = G.players[aGives[0]];
+  const line = `${G.teams[b].nick} get ${aGives.map(assetName).join(', ')} from the ${G.teams[a].nick} for ${bGives.map(assetName).join(', ')}`;
+  (G.leagueTrades = G.leagueTrades || []).unshift({s: G.season, when: G.phase === 'offseason' ? 'Offseason' : `Week ${G.week}`, a, b, aGives: aGives.map(assetName), bGives: bGives.map(assetName), star: star ? star.n : ''});
+  G.leagueTrades = G.leagueTrades.slice(0, 40);
+  G.news.unshift(`Trade: ${line}.`);
+  // any offer that used these pieces is gone
+  G.offers = (G.offers || []).filter(o => ![...o.give, ...o.get].some(id => aGives.includes(id) || bGives.includes(id)));
+}
+// How busy the market is: a trickle in September, a rush at the deadline, a wave in the offseason
+function aiTradeWindow(n) { let done = 0; for (let i = 0; i < n * 3 && done < n; i++) if (aiTradeOnce()) done++; return done; }
+
+// ---------- contracts inside trades ----------
+// No-trade clauses: big-money veterans and star quarterbacks have one, and use it to stay off rebuilding teams.
+function hasNTC(p) { return !!p && (p.pos === 'QB' && p.cap >= 40 || (p.cap >= 25 && ageAdj(p) >= 29)) && hashStr('ntc' + p.id) % 3 !== 0; }
+function ntcBlocks(p, dest) {
+  if (!hasNTC(p) || !G.teams[dest]) return null;
+  const st = situation(dest).status;
+  if (st === 'Rebuilding' || st === 'Seller') return `${p.n} has a no-trade clause and will not waive it to join a ${st === 'Seller' ? 'team that is selling' : 'rebuilding team'}.`;
+  return null;
+}
+// A star in the last year of his deal wants a new one before he agrees to come
+function extensionAsk(p) {
+  if (!p || p.ovr < 84 || p.pos === 'K' || p.pos === 'P' || p.end > G.season) return null;
+  const yrs = ageAdj(p) >= 30 ? 2 : 4, apy = Math.round(Math.max(p.cap, market(p) * 1.05) * 10) / 10;
+  return {apy, yrs};
+}
+// Trading a player away leaves dead money: the rest of his signing bonus, more if you restructured him
+function tradeDead(p) {
+  if (!p) return 0;
+  const left = p.end - G.season;
+  const base = p.cap >= 10 && left >= 1 ? p.cap * .12 * Math.min(3, left) : 0;
+  return Math.round((base + (p.restr ? p.restr.amt * p.restr.left : 0)) * 10) / 10;
+}
+// Restructure: turn part of this year's salary into bonus spread over the years left. Room now, a bill later.
+function restructureInfo(p) {
+  if (!p || p.tm !== G.user || p.restr) return null;
+  const left = p.end - G.season + 1;
+  if (left < 2 || p.cap < 6) return null;
+  const save = Math.round(p.cap * .4 * (1 - 1 / left) * 10) / 10;
+  return save >= 1 ? {save, per: Math.round(save / (left - 1) * 10) / 10, left: left - 1} : null;
+}
+function restructure(id) {
+  const p = G.players[id], r = restructureInfo(p); if (!r) return null;
+  p.cap = Math.round((p.cap - r.save) * 10) / 10;
+  p.restr = {amt: r.per, left: r.left};
+  G.news.unshift(`Restructured ${p.n}: $${r.save.toFixed(1)}M of room now, $${r.per.toFixed(1)}M more a year after this one.`);
+  return r;
+}
+// When their side goes over the cap: the cheapest bad contract of theirs that, sent back to you, fixes it
+function salaryBack(partner, give, get) {
+  const ev = evalTrade(partner, give, get);
+  if (!ev.issues.some(i => i.includes('would be over the cap'))) return null;
+  const over = payroll(partner) - ev.capGet + ev.capGive - G.cap[G.season];
+  const L = roster(partner).filter(q => !get.includes(q.id) && q.cap >= over && q.cap - market(q) > 0).sort((a, b) => (a.cap - market(a)) - (b.cap - market(b)));
+  return L[0] ? L[0].id : null;
+}
+
+// ---------- a bidding war for your player ----------
+// Every interested team has a top price, its own value of him. The best bidder wins, and pays just past the
+// second-best team's top price, the way a real auction for a player ends.
+function biddingWar(pid) {
+  const p = G.players[pid]; if (!p || p.tm !== G.user) return null;
+  const bids = teamList().filter(t => t !== G.user && needBoost(t, p) >= 1).map(t => ({t, max: playerValue(p, t) * (1 + (gmOf(t).risk - .5) * .15)}))
+    .filter(x => x.max >= assetValue(pid) * .8).sort((a, b) => b.max - a.max).slice(0, 5);
+  if (bids.length < 2) return {bids, winner: null};
+  const [w, second] = bids, target = Math.min(w.max, second.max * 1.04);
+  // the winner's package at the target price, from its picks and backups
+  const d = depth(w.t), starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(q => q.id)));
+  const pool = [...G.picks.filter(k => k.owner === w.t).map(k => k.id), ...roster(w.t).filter(q => !starters.has(q.id) && q.ovr >= 64 && q.pos !== 'K' && q.pos !== 'P').map(q => q.id)]
+    .map(id => ({id, v: assetValue(id)})).sort((x, y) => y.v - x.v);
+  const pkg = []; let sum = 0;
+  for (const x of pool) { if (sum >= target || pkg.length >= 3) break; if (sum + x.v <= target * 1.2 || pkg.length === 2) { pkg.push(x.id); sum += x.v; } }
+  if (!pkg.length || sum < target * .9) return {bids, winner: null};
+  const rounds = bids.slice(1, 4).map(b => ({t: b.t, out: Math.round(b.max * 10) / 10}));
+  return {bids, winner: {t: w.t, give: [pid], get: pkg, value: Math.round(sum * 10) / 10, beat: second.t, rounds}};
+}
+
 // ---------- next game ----------
 // How you match up, unit against unit, with the one thing to fix and the one thing to lean on
 const UNITS = {
@@ -2726,7 +2949,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

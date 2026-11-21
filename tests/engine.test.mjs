@@ -160,11 +160,31 @@ test('a trade offer a team sends you always goes through, clearing cap room for 
   G.cap[2026] = E.payroll('NYJ') + 1;
   G.offers = [{id: 'oTEST', from: 'LV', kind: 'want', give: [mine.id], get: [theirs.id], msg: ''}];
   const plan = E.acceptPlan([mine.id], [theirs.id]);
-  assert.ok(plan.cuts.length >= 1 && plan.ok, 'it plans releases to make room');
+  assert.ok(plan.cuts.length + plan.restr.length >= 1 && plan.ok, 'it plans restructures or releases to make room');
   const r = E.acceptOffer('oTEST');
   assert.ok(r.ok, r.msg);
   assert.equal(G.players[theirs.id].tm, 'NYJ');
   assert.ok(E.payroll('NYJ') <= G.cap[2026] + .01, 'still under the cap');
+});
+
+test('contracts in trades: no-trade clauses, restructures, extension asks, and named counters', () => {
+  E.newGame(DATA, 'NYJ', 41); E.simTo(9); E.G.phase = 'deadline';
+  const G = E.G;
+  // a big-money veteran with a no-trade clause will not go to a rebuilding team
+  const ntc = Object.values(G.players).find(p => G.teams[p.tm] && p.tm !== 'NYJ' && E.hasNTC(p));
+  if (ntc) { const S = E.situations(); const reb = E.teamList().find(t => t !== ntc.tm && /Rebuilding|Seller/.test(S[t].status));
+    if (reb === 'NYJ') assert.ok(E.evalTrade(ntc.tm, [E.roster('NYJ')[0].id], [ntc.id]).issues.some(i => /no-trade/.test(i))); }
+  // restructuring frees room now and adds it back later
+  const r = E.roster('NYJ').find(p => E.restructureInfo(p));
+  if (r) { const cap0 = r.cap, info = E.restructure(r.id); assert.ok(r.cap < cap0 && info.save > 0 && r.restr); }
+  // a counter can name a specific player of yours
+  let named = false;
+  for (const t of E.teamList().filter(t => t !== 'NYJ')) {
+    const tgt = E.roster(t).filter(p => p.ovr >= 76 && p.ovr <= 86)[0]; if (!tgt) continue;
+    const c = E.counterTrade(t, G.picks.filter(k => k.owner === 'NYJ' && k.rd >= 4).map(k => k.id).slice(0, 1), [tgt.id]);
+    if (c && c.some(x => /^They want /.test(x.label))) { named = true; break; }
+  }
+  assert.ok(named, 'some GM asks for a player by name');
 });
 
 test('fifth-year options, captains, and ratings that do not inflate', () => {
