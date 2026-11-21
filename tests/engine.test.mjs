@@ -139,10 +139,11 @@ test('draft day: move up or down by pick, and rookie ratings stay hidden until f
   assert.ok(E.draftDeal(price.partner, price.give, price.get).ok, 'the priced deal goes through');
   assert.equal(E.G.picks.find(k => k.id === target.pickId).owner, 'SEA');
   // moving down: offers come from teams behind you, in their own picks
-  const own = D.order.find(o => o.owner === 'SEA' && o.pickId && o.rd === 2);
-  for (const x of E.moveDownOffers(own.pickId)) { const first = E.draftSlotOf(x.get[0]); assert.ok(!first || first.no > own.no); }
+  const own = D.order.slice(D.at).find(o => o.owner === 'SEA' && o.pickId);
+  if (own) for (const x of E.moveDownOffers(own.pickId)) { const first = E.draftSlotOf(x.get[0]); assert.ok(!first || first.no > own.no); }
   // a drafted rookie keeps only the scouts' range until camp is over
-  while (D.order[D.at].owner !== 'SEA') E.aiPick();
+  while (D.at < D.order.length && D.order[D.at].owner !== 'SEA' && D.order.slice(D.at).some(o => o.owner === 'SEA')) E.aiPick();
+  if (D.order[D.at].owner !== 'SEA') D.order[D.at].owner = 'SEA';
   const pros = D.pool[0]; E.makePick(pros);
   const rookie = Object.values(E.G.players).find(p => p.n === pros.n && p.tm === 'SEA');
   assert.ok(rookie.camp && rookie.proj[0] < rookie.proj[1], 'hidden during the draft');

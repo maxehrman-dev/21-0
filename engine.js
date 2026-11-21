@@ -13,7 +13,7 @@ const DEF_W = {EDGE:.22,DT:.16,LB:.12,CB:.34,S:.16};
 // Game model, calibrated to the real 17-game NFL: team wins spread with a standard deviation near 3.1, the best record
 // usually 13 to 15 wins, and the final margin landing about 13.5 points either side of the expected one.
 // talent: points per rating point of edge. cap: the most a matchup can tilt (any given Sunday). rep: an empty starting spot plays like a street free agent.
-const SIM = {talent: 2.6, cap: 14, hfa: 1.6, teamNoise: 7.2, sharedNoise: 4, rep: 50};
+const SIM = {talent: 2.6, cap: 14, hfa: 1.6, teamNoise: 7.2, sharedNoise: 4, rep: 50, play: {sack: .062, int: .019, cmp: .028, ypc: 4.15}};
 const POS_MULT = {QB:2.4,EDGE:1.25,OT:1.15,CB:1.1,WR:1.1,DT:1.0,IOL:.85,LB:.8,S:.85,TE:.85,RB:.7,K:.3,P:.25};
 const MARKET_TOP = {QB:60,EDGE:40,WR:38,OT:30,DT:32,CB:28,LB:20,S:20,TE:18,IOL:22,RB:14,K:6,P:4};
 const ROSTER_MAX = 53;
@@ -1246,7 +1246,7 @@ function genBox(t, opp, pts, tr, otr, oppPts) {
   const ry = ry1 + ry2 + qry;
   return {py, ptd, rtd, ints, sk, ry, att, cmp, car, box: box.join(';')};
 }
-function simGame(a, h, opts = {}) {
+function simGameQuick(a, h, opts = {}) {
   const ta = teamRating(a), th = teamRating(h);
   const hfa = opts.neutral ? 0 : SIM.hfa, T = SIM.talent, A = ta.x || ta, H = th.x || th;
   const ce = t => t === G.user ? chemEdge() : 0;
@@ -1265,6 +1265,186 @@ function simGame(a, h, opts = {}) {
   const ba = genBox(a, h, as, ta, th, hs), bh = genBox(h, a, hs, th, ta, as);
   const hurt = [...injuries(a, ta), ...injuries(h, th)];
   return {a, h, as, hs, ot, ba, bh, hurt};
+}
+// ---------- the game, snap by snap ----------
+// Every game is played out: possessions, downs and distance, the clock, play calls from each coach's tendencies,
+// and every snap decided by the players on the field. Quarterback accuracy and decisions against coverage, pass rush
+// against pass blocking, run blocking against run defense, hands, yards after catch, tackling, the kicker's range.
+// Weather, home field, momentum and the locker room tilt it a little. The box score is what happened on the plays.
+const DOMES = new Set(['ATL', 'DAL', 'DET', 'HOU', 'IND', 'LV', 'LA', 'LAC', 'MIN', 'NO', 'ARI']);
+const COLD = new Set(['GB', 'BUF', 'CHI', 'CLE', 'KC', 'NE', 'NYG', 'NYJ', 'PIT', 'PHI', 'DEN', 'CIN', 'BAL', 'WAS', 'SEA', 'TEN', 'CAR', 'JAX', 'TB', 'MIA', 'SF']);
+function gameWeather(h, wk) {
+  if (DOMES.has(h)) return {k: 'dome', pass: 0, kick: 0, fum: 0};
+  const r = (hashStr(G.season + '-' + wk + '-' + h) % 1000) / 1000, late = wk >= 12 || !wk;
+  const cold = COLD.has(h) && ['GB', 'BUF', 'CHI', 'CLE', 'KC', 'NE', 'NYG', 'NYJ', 'PIT', 'PHI', 'DEN', 'CIN', 'BAL', 'WAS'].includes(h);
+  if (late && cold && r < .18) return {k: 'snow', pass: -.06, kick: -.08, fum: .006};
+  if (r < (late ? .32 : .14)) return {k: 'wind', pass: -.025, kick: -.1, fum: 0, deep: -.06};
+  if (r < (late ? .45 : .26)) return {k: 'rain', pass: -.03, kick: -.04, fum: .005};
+  return {k: 'clear', pass: 0, kick: 0, fum: 0};
+}
+// Each head coach: how often he throws, how aggressive he is on fourth down, how fast he plays
+function coachOf(t) { const h = hashStr('coach' + t); return {pass: .5 + (h % 9) / 100, aggr: .25 + ((h >> 4) % 50) / 100, tempo: (h >> 9) % 3}; }
+const A = (p, k) => p ? (p.at && p.at[k] != null ? clamp(p.ovr + p.at[k], 35, 99) : p.ovr) + formOf(p) * 1.5 : 55;
+const avgA = (L, k) => { const v = L.filter(Boolean); return v.length ? v.reduce((s, p) => s + A(p, k), 0) / v.length : 55; };
+// Everything a side needs for the game, read once from its depth chart
+function sideOf(t) {
+  const d = depth(t);
+  const wrs = d.WR.slice(0, 4), tes = d.TE.slice(0, 2), rbs = d.RB.slice(0, 2), ol = [...d.OT.slice(0, 2), ...d.IOL.slice(0, 3)];
+  const front = [...d.EDGE.slice(0, 2), ...d.DT.slice(0, 2)], secondary = [...d.CB.slice(0, 3), ...d.S.slice(0, 2)], lbs = d.LB.slice(0, 2);
+  const qb = d.QB[0];
+  return {t, d, qb, rbs, wrs, tes, k: d.K[0], pn: d.P && d.P[0], coach: coachOf(t),
+    acc: A(qb, 'Accuracy'), arm: A(qb, 'Arm'), dec: A(qb, 'Decisions'), poise: A(qb, 'Poise'), mob: A(qb, 'Mobility'),
+    pblk: avgA(ol, 'Pass blocking'), rblk: avgA(ol, 'Run blocking'),
+    rush: avgA(front, 'Pass rush') * .8 + avgA(lbs, 'Pass rush') * .2, cover: avgA(secondary, 'Coverage') * .85 + avgA(lbs, 'Coverage') * .15,
+    hawk: avgA(secondary, 'Ball skills'), runD: avgA([...d.DT.slice(0, 2), ...lbs, ...d.EDGE.slice(0, 2)], 'Run defense'), tackle: avgA([...lbs, ...d.S.slice(0, 2), ...d.CB.slice(0, 2)], 'Tackling'),
+    targets: [[wrs[0], .22], [wrs[1], .17], [wrs[2], .12], [wrs[3], .04], [tes[0], .15], [tes[1], .04], [rbs[0], .12], [rbs[1], .05]].filter(x => x[0]),
+    rushers: [[d.EDGE[0], .28], [d.EDGE[1], .23], [d.DT[0], .16], [d.DT[1], .1], [d.LB[0], .12], [d.LB[1], .06], [d.S[0], .05]].filter(x => x[0]),
+    dbs: [[d.CB[0], .27], [d.CB[1], .23], [d.S[0], .17], [d.S[1], .14], [d.CB[2], .1], [d.LB[0], .06], [d.LB[1], .03]].filter(x => x[0]),
+    tacklers: [[d.LB[0], .13], [d.LB[1], .1], [d.S[0], .095], [d.S[1], .085], [d.CB[0], .07], [d.CB[1], .065], [d.CB[2], .045], [d.EDGE[0], .05], [d.EDGE[1], .045], [d.DT[0], .05], [d.DT[1], .045], [d.LB[2], .03]].filter(x => x[0])};
+}
+const pickW = L => { let tot = 0; for (const x of L) tot += x[1]; let r = rand() * tot; for (const x of L) { r -= x[1]; if (r <= 0) return x[0]; } return L[L.length - 1][0]; };
+function simGame(a, h, opts = {}) {
+  const S = {[a]: sideOf(a), [h]: sideOf(h)};
+  const wx = opts.neutral ? {k: 'dome', pass: 0, kick: 0, fum: 0} : gameWeather(h, opts.wk);
+  const score = {[a]: 0, [h]: 0}, L = {[a]: {}, [h]: {}}, tot = {[a]: {py: 0, ry: 0, sk: 0, ints: 0, att: 0, cmp: 0, car: 0, ptd: 0, rtd: 0}, [h]: {py: 0, ry: 0, sk: 0, ints: 0, att: 0, cmp: 0, car: 0, ptd: 0, rtd: 0}};
+  const put = (t, p, k, v) => { if (!p || !v) return; const o = L[t][p.id] = L[t][p.id] || {}; o[k] = (o[k] || 0) + v; };
+  const sc = [], mo = {[a]: 0, [h]: 0};
+  const edge = t => (t === G.user ? chemEdge() : 0) * .006 + (t === h && !opts.neutral ? .012 : 0) + mo[t] * .02;
+  const T = SIM.play;
+  let q = 1, clock = 900, poss = rand() < .5 ? a : h, firstRecv = poss, yl = 30, down = 1, togo = 10, ot = false, otPoss = 0, otDone = false;
+  const opp = t => t === a ? h : a;
+  const fmt = () => `Q${q > 4 ? 'OT' : q} ${Math.floor(clock / 60)}:${String(Math.floor(clock % 60)).padStart(2, '0')}`;
+  const newDrive = (t, at) => { poss = t; yl = at; down = 1; togo = 10; if (ot) otPoss++; };
+  const scoreTD = (t, how) => { score[t] += 6; mo[t] = Math.min(1, mo[t] + .3); mo[opp(t)] = Math.max(-1, mo[opp(t)] - .2);
+    const k = S[t].k, xpOk = rand() < (.94 + (A(k, 'Accuracy') - 75) * .002 + wx.kick * .2);
+    if (xpOk) { score[t] += 1; put(t, k, 'xp', 1); }
+    sc.push([fmt(), t, how]); newDrive(opp(t), 35); };
+  const kickFG = (t, dist) => { const k = S[t].k; const pr = clamp(1 / (1 + Math.exp((dist - (50 + (A(k, 'Power') - 75) * .3 + wx.kick * 25)) / 5.2)) + (A(k, 'Accuracy') - 75) * .004, .05, .99);
+    put(t, k, 'fga', 1); clock -= 5;
+    if (rand() < pr) { score[t] += 3; put(t, k, 'fg', 1); sc.push([fmt(), t, `${lastNameE(k)} ${dist}-yd field goal`]); newDrive(opp(t), 35); return true; }
+    newDrive(opp(t), Math.max(20, 100 - (yl + 8))); return false; };
+  const lastNameE = p => p ? p.n.split(' ').slice(-1)[0] : 'Kicker';
+  // play-calling: the coach's lean, then down and distance, the score and the clock
+  const callPass = t => {
+    const s = S[t], c = s.coach, diff = score[t] - score[opp(t)], left = (4 - Math.min(4, q)) * 900 + clock;
+    let pp = c.pass + (s.acc + s.arm - 150) * .0025 - (s.rblk - 75) * .002;
+    if (down === 3) pp = togo >= 7 ? .9 : togo <= 2 ? .38 : .7;
+    else if (down === 2 && togo >= 8) pp += .1;
+    else if (down === 1 && togo <= 10) pp -= .03;
+    if (q >= 3 && diff <= -9) pp += .18; if (q === 4 && diff >= 9) pp -= .28;
+    if (left < 130 && diff <= 0) pp = .92;
+    if (wx.k === 'snow') pp -= .08;
+    return rand() < clamp(pp, .2, .95);
+  };
+  const tackleBy = (t, extra) => { const def = S[opp(t)]; put(opp(t), pickW(def.tacklers), 'tkl', 1); if (extra && rand() < .3) put(opp(t), pickW(def.tacklers), 'tkl', 1); };
+  const tick = (sec) => { clock -= sec;
+    while (clock <= 0) {
+      if (q === 2) { q = 3; clock = 900; newDrive(opp(firstRecv), 35); return 'half'; }
+      if (q < 4) { q++; clock += 900; return; }
+      return 'end';
+    } };
+  let plays = 0;
+  while (plays++ < 400) {
+    if (q > 4 && !ot) break;
+    const off = S[poss], def = S[opp(poss)], t = poss, e = edge(t) - edge(opp(t)) * .5;
+    // fourth down: kick, punt or go
+    if (down === 4) {
+      const dist = 100 - yl + 17, diff = score[t] - score[opp(t)], left = (4 - Math.min(4, q)) * 900 + clock, desperate = q >= 4 && diff < 0 && left < 300;
+      const range = 55 + (A(off.k, 'Power') - 75) * .3 + wx.kick * 25;
+      const goFor = desperate || (togo <= 2 && yl >= 40 && rand() < .25 + off.coach.aggr * .8) || (togo <= 4 && yl >= 60 && dist > range - 8 && rand() < off.coach.aggr * .6) || (togo === 1 && yl >= 30 && rand() < off.coach.aggr * .5);
+      if (!goFor) {
+        if (dist <= range && !(desperate && diff < -3)) { kickFG(t, dist); if (tick(5) === 'end') break; continue; }
+        // punt
+        const net = clamp(41 + (A(off.pn, 'Distance') - 75) * .25 + randn() * 6 + wx.kick * 20, 25, 60);
+        put(t, off.pn, 'punts', 1);
+        const land = yl + net; newDrive(opp(t), land >= 100 ? 20 : Math.max(1, 100 - land)); if (tick(8) === 'end') break; continue;
+      }
+    }
+    let gain = 0, clockUse = 36, turnover = false, td = false, tdTxt = '';
+    const hurry = (q === 2 || q >= 4) && clock < 120;
+    if (callPass(t)) {
+      // the quarterback drops back
+      const sackP = clamp(T.sack + (off.poise < 0 ? 0 : 0) + (def.rush - off.pblk) * .0032 - (off.poise - 75) * .0012 - (off.mob - 75) * .0008, .02, .16);
+      const scramble = clamp(.035 + (off.mob - 75) * .0025, .01, .12);
+      tot[t].att += 0;
+      if (rand() < sackP) {
+        gain = -Math.round(5 + rand() * 5); put(t, off.qb, 'sacked', 1); tot[t].sk++; put(opp(t), pickW(def.rushers), 'sk', 1); clockUse = 32;
+        if (rand() < .1 + wx.fum) { turnover = true; }
+      } else if (rand() < scramble) {
+        gain = Math.round(clamp(3 + (off.mob - 75) * .12 + randn() * 4, -2, 30)); put(t, off.qb, 'car', 1); put(t, off.qb, 'ry', gain); tot[t].car++; tot[t].ry += gain; tackleBy(t);
+      } else {
+        const rec = pickW(off.targets.map(([p, w]) => [p, w * Math.pow(Math.max(.3, A(p, 'Route running')) / 75, .9) * (.6 + rand() * .8)]));
+        put(t, off.qb, 'att', 1); put(t, rec, 'tgt', 1); tot[t].att++;
+        const deepP = clamp(.13 + (off.arm - 75) * .002 + (A(rec, 'Deep threat') - 75) * .002 + (wx.deep || 0), .05, .3);
+        const depth = rand() < deepP ? 'deep' : rand() < .36 ? 'mid' : 'short';
+        const intP = clamp(T.int + (depth === 'deep' ? .018 : depth === 'mid' ? .006 : -.004) - (off.dec - 75) * .0007 + (def.cover - 75) * .0005 + (def.hawk - 75) * .0003, .004, .07);
+        if (rand() < intP) {
+          turnover = true; put(t, off.qb, 'int', 1); tot[t].ints++; put(opp(t), pickW(def.dbs.map(([p, w]) => [p, w * Math.pow(A(p, 'Ball skills') / 75, 3)])), 'dint', 1); clockUse = 10;
+          gain = depth === 'deep' ? 25 : depth === 'mid' ? 12 : 4;
+        } else {
+          const base = depth === 'deep' ? .37 : depth === 'mid' ? .58 : .75;
+          const cp = clamp(base + T.cmp + (off.acc - 75) * .0035 + (A(rec, 'Route running') - def.cover) * .003 + (A(rec, 'Hands') - 75) * .0015 + wx.pass + e, .15, .93);
+          if (rand() < cp) {
+            const air = depth === 'deep' ? 20 + Math.round(rand() * 18) : depth === 'mid' ? 9 + Math.round(rand() * 9) : Math.round(rand() * 8) - 2;
+            let yac = Math.max(0, Math.round((depth === 'short' ? 3.1 : depth === 'mid' ? 2.1 : 2.3) + (A(rec, 'After the catch') - def.tackle) * .06 + randn() * 2.6));
+            if (rand() < .022 + (A(rec, 'After the catch') - 75) * .0008) yac += Math.round(8 + rand() * 26);
+            gain = air + yac;
+            put(t, off.qb, 'cmp', 1); put(t, rec, 'rec', 1); tot[t].cmp++;
+            if (yl + gain >= 100) { gain = 100 - yl; td = true; }
+            put(t, off.qb, 'py', gain); put(t, rec, 'recy', gain); tot[t].py += gain;
+            if (td) { put(t, off.qb, 'ptd', 1); put(t, rec, 'rectd', 1); tot[t].ptd++; tdTxt = `${lastNameE(rec)} ${gain}-yd TD catch from ${lastNameE(off.qb)}`; } else tackleBy(t);
+            clockUse = hurry ? 14 : rand() < .25 ? 9 : 39;
+            if (!td && rand() < .005 + wx.fum) turnover = true;
+          } else {
+            clockUse = 6;
+            if (rand() < .36) put(opp(t), pickW(def.dbs), 'pd', 1);
+          }
+        }
+      }
+    } else {
+      // the run game
+      const rb = off.rbs[1] && rand() < clamp(.36 - (A(off.rbs[0], 'Vision') - A(off.rbs[1], 'Vision')) * .008, .24, .5) ? off.rbs[1] : off.rbs[0];
+      const mean = T.ypc + (off.rblk - def.runD) * .045 + ((A(rb, 'Vision') + A(rb, 'Power')) / 2 - 75) * .022 + e * 20 + (wx.k === 'snow' ? -.4 : 0);
+      const r = rand();
+      gain = r < .11 ? -Math.round(rand() * 3) : r < .16 + (A(rb, 'Vision') - 75) * .0006 ? Math.round(10 + rand() * 26) : Math.round(mean + randn() * 2.6);
+      if (yl + gain >= 100) { gain = 100 - yl; td = true; }
+      put(t, rb, 'car', 1); put(t, rb, 'ry', gain); tot[t].car++; tot[t].ry += gain;
+      if (td) { put(t, rb, 'rtd', 1); tot[t].rtd++; tdTxt = `${lastNameE(rb)} ${gain}-yd TD run`; } else tackleBy(t, true);
+      clockUse = hurry ? 20 : 41;
+      if (!td && rand() < clamp(.006 - (A(rb, 'Ball security') - 75) * .0002 + wx.fum, .001, .02)) turnover = true;
+    }
+    if (hurry) clockUse = Math.min(clockUse, 18);
+    if (td) { scoreTD(t, tdTxt || 'Touchdown'); if (tick(clockUse) === 'end') break; continue; }
+    if (turnover) { mo[t] = Math.max(-1, mo[t] - .25); mo[opp(t)] = Math.min(1, mo[opp(t)] + .25); newDrive(opp(t), clamp(100 - (yl + gain), 1, 99)); if (tick(clockUse) === 'end') break; continue; }
+    yl += gain; if (yl <= 0) { score[opp(t)] += 2; sc.push([fmt(), opp(t), 'Safety']); newDrive(t, 30); if (tick(clockUse) === 'end') break; continue; }
+    if (gain >= togo) { down = 1; togo = Math.min(10, 100 - yl); } else { down++; togo -= gain; }
+    if (down > 4) { mo[t] = Math.max(-1, mo[t] - .15); newDrive(opp(t), 100 - yl); }
+    const tk = tick(clockUse);
+    if (tk === 'end') {
+      // overtime: both teams get a chance, then the next score wins
+      if (score[a] === score[h] && !ot) { ot = true; q = 5; clock = 600; otPoss = 0; newDrive(rand() < .5 ? a : h, 30); otPoss = 1; continue; }
+      break;
+    }
+    if (ot && score[a] !== score[h] && otPoss >= 2) break;
+  }
+  if (score[a] === score[h]) { const w = rand() < .5 ? a : h; score[w] += 3; sc.push(['OT', w, 'Walk-off field goal']); ot = true; }
+  const ta = teamRating(a), th = teamRating(h);
+  const ba = boxFrom(a, S[a].d, L[a], tot[a]), bh = boxFrom(h, S[h].d, L[h], tot[h]);
+  const hurt = [...injuries(a, ta), ...injuries(h, th)];
+  return {a, h, as: score[a], hs: score[h], ot, ba, bh, hurt, wx: wx.k === 'clear' || wx.k === 'dome' ? undefined : wx.k, sc: sc.slice(0, 14)};
+}
+// The game's stat lines into season totals and the compact box kept on the game
+function boxFrom(t, d, Lt, tt) {
+  for (const pos of POS_ORDER) for (const p of d[pos].slice(0, STARTERS[pos])) addStat(p.id, 'gp', 1);
+  const starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
+  const box = [];
+  for (const id in Lt) {
+    if (!starters.has(id)) addStat(id, 'gp', 1);
+    let row = (id.startsWith('00-00') ? id.slice(5) : id) + ':';
+    for (const kk in Lt[id]) { addStat(id, kk, Lt[id][kk]); row += BOXK[kk] + Lt[id][kk]; }
+    box.push(row);
+  }
+  return {py: tt.py, ptd: tt.ptd, rtd: tt.rtd, ints: tt.ints, sk: tt.sk, ry: tt.ry, att: tt.att, cmp: tt.cmp, car: tt.car, box: box.join(';')};
 }
 // About one starter in a hundred gets hurt each game: most miss a few weeks, some the season.
 // Injuries: none while the 2026 first half plays out on autopilot, rare after that, rarer still for quarterbacks.
@@ -1290,7 +1470,7 @@ function simWeekRaw(w) {
   const out = [];
   for (const [wk, a, h] of seasonGames(G.season)) {
     if (wk !== w) continue;
-    const g = simGame(a, h);
+    const g = simGame(a, h, {wk: w});
     g.wk = w;
     G.results[G.season].push(g);
     chemGame(g);
@@ -1403,7 +1583,7 @@ function beginOffseason() {
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
   // last season's box scores: keep your own games, drop the rest so the save stays small
-  for (const g of G.results[prev] || []) if (g.a !== G.user && g.h !== G.user) { if (g.ba) delete g.ba.box; if (g.bh) delete g.bh.box; }
+  for (const g of G.results[prev] || []) if (g.a !== G.user && g.h !== G.user) { if (g.ba) delete g.ba.box; if (g.bh) delete g.bh.box; delete g.sc; }
   // picks: every team always holds its picks for the next two drafts
   for (const yr of [next, next + 1]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   // contracts that step up after this season (extensions, back-loaded deals) now pay their real average

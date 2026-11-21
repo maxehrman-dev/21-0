@@ -1729,6 +1729,9 @@ function boxSheet(s, k, side) {
     ${cmpRow('Rushing', A.car ? `${A.car} · ${n(ry(A, la))}` : n(ry(A, la)), H.car ? `${H.car} · ${n(ry(H, lh))}` : n(ry(H, lh)))}
     ${cmpRow('Turnovers', n(A.ints), n(H.ints))}
     ${cmpRow('Sacks taken', n(A.sk), n(H.sk))}</tbody></table>`;
+  // the scoring plays, in order, and the conditions
+  const WX = {snow: 'Snow', rain: 'Rain', wind: 'Wind'};
+  const scoring = g.sc && g.sc.length ? `<h4 class="sub">Scoring${g.wx ? ` <span class="tag">${WX[g.wx] || g.wx}</span>` : ''}</h4><div class="scoring">${g.sc.map(([tm, t, txt]) => `<div class="scrow"><span class="small muted num">${esc(tm)}</span>${badge(t, 1)}<span>${esc(txt)}</span></div>`).join('')}</div>` : '';
   const all = [...(la || []).map(r => ({...r, t: g.a})), ...(lh || []).map(r => ({...r, t: g.h}))];
   const win = g.as > g.hs ? g.a : g.h, gs = r => gameScore(r.st) + (r.t === win ? 4 : 0);
   const star = all.slice().sort((x, y) => gs(y) - gs(x))[0];
@@ -1747,7 +1750,7 @@ function boxSheet(s, k, side) {
   modal(`<div class="sheeth"><div><div class="kicker">${s} · ${when}${g.ot ? ' · OT' : ''}</div><h3>Box score</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="boxhead"><div class="bt ${aw ? '' : 'l'}">${badge(g.a, 1)}<span>${esc(G.teams[g.a].nick)}</span><b class="num">${g.as}</b></div><span class="muted">at</span><div class="bt ${aw ? 'l' : ''}"><b class="num">${g.hs}</b><span>${esc(G.teams[g.h].nick)}</span>${badge(g.h, 1)}</div></div>
     ${star && gameScore(star.st) > 0 ? `<div class="potg">${face(G.players[star.id], 'sm')}<div><div class="kicker">Player of the game</div><b>${esc(G.players[star.id].n)}</b> <span class="small muted">${G.players[star.id].pos} · ${esc(G.teams[star.t].nick)}</span><div class="small">${perfLine(star.st)}</div></div></div>` : ''}
-    ${team}
+    ${team}${scoring}
     <div class="seg boxseg"><button class="${side === 'a' ? 'on' : ''}" data-act="boxSide" data-k="a">${esc(G.teams[g.a].nick)}</button><button class="${side === 'h' ? 'on' : ''}" data-act="boxSide" data-k="h">${esc(G.teams[g.h].nick)}</button></div>
     ${players}`, true);
 }
