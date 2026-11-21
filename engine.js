@@ -53,7 +53,7 @@ function newGame(DATA, userTeam, seed) {
   G = {
     v: 1, rng: 0, user: userTeam, season: 2026, phase: 'preseason', week: 0,
     cap: {2026: DATA.cap26, 2027: DATA.cap27},
-    teams: DATA.teams, games: DATA.games, prospects: DATA.prospects,
+    teams: DATA.teams, games: DATA.games, prospects: DATA.prospects, realClasses: DATA.classes || {},
     players, picks, dead: {}, results: {2026: [], 2027: []}, stats: {2026: {}, 2027: {}},
     playoffs: {}, trades: [], news: [], history: {}, fa: null, draft: null, resign: null, prog: null,
   };
@@ -2122,10 +2122,29 @@ function genClass(yr, from, count) {
   for (let i = 0; i < count; i++) { let n; do { n = pick(FIRST) + ' ' + pick(LAST); } while (used.has(n)); used.add(n); out.push([from + i, pos(), n, pick(SCHOOLS)]); }
   return out;
 }
+// Real names for the classes after 2027, from the recruiting rankings: the stars of today's college and high school
+// classes, mixed into a full generated board. A recruiting rank is not a draft rank, so each lands near his ranking
+// but not on it. Later years get a few Easter eggs.
+const EGGS = {
+  2029: [{n: 'Willie Beamen', pos: 'QB', sch: 'Miami (Sharks practice squad)', rank: 26, note: 'Throws through a wall, calls his own plays, and has a rap album dropping on draft day.', forty: 4.52, hype: 80}],
+  2030: [{n: 'Forrest Gump', pos: 'WR', sch: 'Alabama', rank: 44, note: 'Fastest player anybody has ever timed. Runs until somebody tells him to stop. Bring the playbook in small words.', forty: 4.21, hype: 75}],
+  2031: [{n: 'Bobby Boucher', pos: 'LB', sch: 'South Central Louisiana State', rank: 12, note: 'Tackles like a truck. Plays angry. Brings his own water. Mama says the NFL is the devil.', forty: 4.55, hype: 70},
+         {n: 'Ray "Laces Out" Finkle', pos: 'K', sch: 'Collier County', rank: 118, note: 'Big leg, bigger grudge. Insists the laces face out on every hold.', forty: 5.1, hype: 40}],
+  2032: [{n: 'Baby Gronk', pos: 'TE', sch: 'Viral Prep Academy', rank: 6, note: 'Hyped since the fifth grade. Has more followers than half the league. The ceiling, they say, is limitless.', forty: 4.6, hype: 99},
+         {n: 'Tim Riggins', pos: 'RB', sch: 'Dillon Panthers (TX)', rank: 63, note: 'Runs downhill and never skips leg day. Texas forever.', forty: 4.54, hype: 55}],
+  2033: [{n: 'Paul Crewe', pos: 'QB', sch: 'Allenville State', rank: 30, note: 'A former league MVP with a complicated past, back for one more shot. Somehow still eligible.', forty: 4.7, hype: 88}],
+};
 function classFor(yr) {
   G.classes = G.classes || {};
-  if (yr === 2027) return (G.classes[2027] = G.classes[2027] || [...G.prospects, ...genClass(2027, G.prospects.length + 1, CLASS_SIZE - G.prospects.length)]);
-  return (G.classes[yr] = G.classes[yr] || genClass(yr));
+  if (G.classes[yr]) return G.classes[yr];
+  if (yr === 2027) return (G.classes[2027] = [...G.prospects, ...genClass(2027, G.prospects.length + 1, CLASS_SIZE - G.prospects.length)]);
+  const base = genClass(yr), real = ((G.realClasses || {})[yr] || (G.realClasses || {})[String(yr)] || []).slice();
+  const rng = makeRng(hashStr('real' + yr + G.user)), used = new Set();
+  const place = (rank, row) => { let r = clamp(rank, 1, base.length); while (used.has(r) && r < base.length) r++; used.add(r); base[r - 1] = [r, row[1], row[2], row[3]]; };
+  // recruiting rank to draft rank: around 2.2x the recruit rank (only the very best are listed), with a lot of spread
+  real.forEach(([rr, pos, n, sch]) => place(Math.round((rr * 2.2 + 1) * Math.exp((rng() + rng() + rng() - 1.5) * .7)), [0, pos, n, sch]));
+  for (const e of EGGS[yr] || []) place(e.rank, [0, e.pos, e.n, e.sch]);
+  return (G.classes[yr] = base);
 }
 // A class is scouted once, the first time anyone looks, so the big board does not change between visits
 function scoutedClass(yr) {
@@ -2143,32 +2162,34 @@ const TRAITS = {QB: ['Arm strength', 'Accuracy', 'Pocket poise', 'Mobility', 'Re
   EDGE: ['First step', 'Bend', 'Power rush', 'Run defense', 'Motor'], DT: ['Penetration', 'Run stopping', 'Power', 'Hand usage', 'Motor'],
   LB: ['Range', 'Tackling', 'Coverage', 'Blitzing', 'Instincts'], CB: ['Man coverage', 'Zone instincts', 'Ball skills', 'Speed', 'Press'], S: ['Range', 'Ball skills', 'Tackling', 'Versatility', 'Instincts'],
   K: ['Leg strength', 'Accuracy', 'Clutch', 'Consistency', 'Kickoffs'], P: ['Hang time', 'Placement', 'Leg strength', 'Consistency', 'Directional']};
+function eggOf(n) { for (const L of Object.values(EGGS)) for (const e of L) if (e.n === n) return e; return null; }
 function scoutProspect(pr) {
+  const egg = eggOf(pr.n);
   const h = hashStr('pros:' + pr.n), r = k => ((h >>> k) % 1000) / 1000;
   const ovr = Math.round(clamp(75 - .1 * pr.rank + randn() * 3.2, 50, 84));
   const est = ovr + randn() * 3;                       // what scouts think, give or take
   const width = 3 + Math.min(4, pr.rank / 30);
   const m = MEAS[pr.pos] || MEAS.LB;
   const ht = Math.round(m[0] + (r(1) - .5) * m[1]), wt = Math.round(m[2] + (r(5) - .5) * m[3]);
-  const forty = Math.round((m[4] + (r(9) - .5) * .22) * 100) / 100;
+  const forty = egg && egg.forty ? egg.forty : Math.round((m[4] + (r(9) - .5) * .22) * 100) / 100;
   const tl = (TRAITS[pr.pos] || TRAITS.LB).slice();
   const traits = [tl.splice(h % tl.length, 1)[0], tl.splice((h >>> 3) % tl.length, 1)[0]];
   const weak = tl[(h >>> 6) % tl.length];
   // prospects' ceilings follow the consensus big board: the higher he ranks, the more room scouts see
   const pot = clamp(Math.round(ovr + 3 + (pr.rank <= 10 ? 8 : pr.rank <= 32 ? 6 : pr.rank <= 64 ? 4 : 2) + randn() * 1.5), ovr, 96);
   return Object.assign(pr, {ovr, pot, lo: Math.round(est - width), hi: Math.round(est + width), est: Math.round(est), ht: `${Math.floor(ht / 12)}'${ht % 12}"`, wt, forty, traits, weak,
-    potGrade: pot - est >= 10 ? 'High' : pot - est >= 6 ? 'Medium' : 'Low', potWhy: `big board #${pr.rank}, ${pr.sch}`, round: pr.rank <= 32 ? '1st round' : pr.rank <= 64 ? '2nd round' : pr.rank <= 100 ? '3rd round' : 'Day 3'});
+    potGrade: egg ? 'High' : pot - est >= 10 ? 'High' : pot - est >= 6 ? 'Medium' : 'Low', potWhy: egg ? egg.note : `big board #${pr.rank}, ${pr.sch}`, egg: egg ? egg.note : undefined, round: pr.rank <= 32 ? '1st round' : pr.rank <= 64 ? '2nd round' : pr.rank <= 100 ? '3rd round' : 'Day 3'});
 }
 const draftVerdict = (ovr, lo, hi) => ovr > hi ? 'Steal' : ovr < lo ? 'Bust' : 'As projected';
 function rookieOvr(rank) { return Math.round(clamp(72 - .1 * rank + randn() * 2.5, 50, 79)); }
 function rookieCap(no) { return Math.round(Math.max(1.0, 11.5 * Math.exp(-.045 * (no - 1)) + .9) * 10) / 10; }
 function makePick(prospect) {
   const D = G.draft, slot = D.order[D.at];
-  const id = 'R27-' + prospect.rank;
+  const id = (G.season === 2027 ? 'R27-' : `R${G.season % 100}-`) + prospect.rank;
   if (prospect.ovr == null) scoutProspect(prospect);
   const verdict = draftVerdict(prospect.ovr, prospect.lo, prospect.hi);
   G.players[id] = {id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
-    proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: Math.max(10, Math.round(70 - slot.no * .5)), hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
+    proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: eggOf(prospect.n) ? eggOf(prospect.n).hype : Math.max(10, Math.round(70 - slot.no * .5)), egg: prospect.egg, hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
   D.pool = D.pool.filter(x => x !== prospect);
   if (slot.pickId) G.picks = G.picks.filter(x => x.id !== slot.pickId);

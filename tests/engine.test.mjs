@@ -229,6 +229,16 @@ test('attributes and a deeper trade model: timelines, roster spots and memory', 
   assert.ok(E.evalTrade('LV', mine.slice(0, 1), [theirs]).need > ev1.need, 'they ask for more after a lopsided deal');
 });
 
+test('future draft classes carry real names, and later years hide a few legends', () => {
+  E.newGame(DATA, 'NYJ', 51);
+  const c28 = E.scoutedClass(2028), c29 = E.scoutedClass(2029), c32 = E.scoutedClass(2032);
+  assert.equal(c28.length, 260);
+  assert.ok(c28.some(p => p.n === 'Bryce Underwood' && p.rank <= 40), 'the top 2025 recruits headline the 2028 class');
+  assert.ok(c29.some(p => p.n === 'Keenyi Pepe'));
+  assert.ok(c32.some(p => p.n === 'Baby Gronk' && p.egg), 'Baby Gronk is in the 2032 class');
+  assert.equal(new Set(c28.map(p => p.rank)).size, 260, 'every board rank is unique');
+});
+
 test('no new injuries before the first deadline, and Week 1 injuries heal', () => {
   E.newGame(DATA, 'BUF', 8);
   const hurt = Object.values(E.G.players).filter(p => p.inj);

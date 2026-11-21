@@ -1108,6 +1108,7 @@ function prospectModal(rank) {
   const scale = v => Math.max(0, Math.min(100, (v - 45) / 50 * 100));
   modal(`<div class="pchead">${face({n: p.n, id: 'pros-' + p.rank, tm: G.user}, 'xl')}<div class="pcmid"><div class="kicker">${p.pos} · ${esc(p.sch)} · big board #${p.rank}</div><h3>${esc(p.n)}</h3><span class="tag">${p.round} talent</span></div>
       <div class="pcovr"><b class="${oc(p.hi)}">${p.lo}–${p.hi}</b><span>PROJECTED</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    ${p.egg ? `<div class="eggnote"><span class="kicker">Scouting legend</span><span>${esc(p.egg)}</span></div>` : ''}
     <div class="ratingrow">
       <div class="rh"><span class="kicker" style="color:var(--muted)">Height</span><b>${p.ht}</b></div>
       <div class="rh"><span class="kicker" style="color:var(--muted)">Weight</span><b>${p.wt}</b><span class="small muted">lb</span></div>
@@ -1394,6 +1395,7 @@ function playerCard(id) {
       ${p.age <= 27 ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Potential</span><b class="${(p.pot || p.ovr) - p.ovr >= 8 ? 'good' : (p.pot || p.ovr) - p.ovr >= 4 ? 'gold' : ''}">${(p.pot || p.ovr) - p.ovr >= 8 ? 'High' : (p.pot || p.ovr) - p.ovr >= 4 ? 'Medium' : 'Low'}</b><span class="small muted">${esc(p.potWhy || "Scouts' read")}</span></div>` : ''}
       ${E.formLabel(p) ? `<div class="rh"><span class="kicker" style="color:var(--muted)">This season</span><b class="${E.formOf(p) > 0 ? 'good' : 'bad'}">${E.formLabel(p)}</b><span class="small muted">Shapes next year's rating</span></div>` : ''}
     </div>
+    ${p.egg ? `<div class="eggnote"><span class="kicker">Scouting legend</span><span>${esc(p.egg)}</span></div>` : ''}
     ${attrBlock(p)}
     ${ratingWhy(p)}
     ${p.inj ? `<p class="small bad">Injured: ${p.injW === undefined || p.injW === 99 ? 'out for the season' : `out about ${p.injW} more week${p.injW > 1 ? 's' : ''}`}.</p>` : ''}

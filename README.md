@@ -32,6 +32,7 @@
 - **Trade for anyone.** Search the league by name or position and trade for a player straight from the list. Every deal, offer and call has an × on each piece to take it out.
 - **Position flexibility.** Move a tackle to guard or a corner to safety in the depth chart, a few points worse than at his own spot.
 - **The real 2027 draft class**, with scouting ranges that can be wrong. Rookies carry only the scouts' range until training camp is over; their real ratings come out at final cuts: steal, as projected, or bust.
+- **Real future classes.** The 2028, 2029 and 2030 drafts are headlined by today's top college sophomores, college freshmen and high school seniors from the national recruiting rankings, mixed into full boards where a recruiting rank is no promise. Play long enough and a few legends show up on the big board.
 - **A draft room.** The big board marks where your pick falls, with your needs and depth chart beside it. Rookies are judged after camp as ahead of schedule, on track or needing time, never written off before they play.
 - **Fifth-year options and captains.** Keep a first-round pick a fifth year at a set price, and name an offense and a defense captain who steady the locker room.
 - **Offers you can always take.** Accept, Decline or Counter: if a deal needs cap room, Accept makes it and says who goes. While you counter, their original offer stays on the table.
