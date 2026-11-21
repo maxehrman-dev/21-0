@@ -27,6 +27,9 @@
 - **Trade for anyone.** Search the league by name or position and trade for a player straight from the list. Every deal, offer and call has an × on each piece to take it out.
 - **Position flexibility.** Move a tackle to guard or a corner to safety in the depth chart, a few points worse than at his own spot.
 - **The real 2027 draft class**, with scouting ranges that can be wrong. Rookies carry only the scouts' range until training camp is over; their real ratings come out at final cuts: steal, as projected, or bust.
+- **A draft room.** The big board marks where your pick falls, with your needs and depth chart beside it. Rookies are judged after camp as ahead of schedule, on track or needing time, never written off before they play.
+- **Fifth-year options and captains.** Keep a first-round pick a fifth year at a set price, and name an offense and a defense captain who steady the locker room.
+- **Offers you can always take.** Accept, Decline or Counter: if a deal needs cap room, Accept makes it and says who goes. While you counter, their original offer stays on the table.
 - **Draft-day trades by pick or by team.** Every upcoming pick is priced on the draft chart, so moving up or down is one tap from the ticker, the draft order or the Trades tab, without leaving the draft.
 - **Seasons that feel alive.** Hidden form drives breakout years and slumps, injuries happen, owner confidence rises and falls, and awards are handed out at the end.
 - **Season goals.** Every season sets three goals on top of the owner's, picked for your team: win a set number of games, take the division, sweep a rival, a top-10 offense or defense, a winning streak. Each one you hit raises the owner's confidence and counts on your final report.

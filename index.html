@@ -1339,6 +1339,20 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 .ngkey { grid-template-columns: 1fr; }
 
 .goalscard .goallist { margin: 0; } .goalscard .goalrow { padding: 10px 12px; }
+
+/* the draft room: board on the left, your needs and depth chart on the right, a line where your pick falls */
+.yourline { position: relative; margin: 6px 0; text-align: center; }
+.yourline::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px dashed var(--gold); }
+.yourline span { position: relative; display: inline-block; padding: 4px 12px; border-radius: 99px; background: var(--gold); color: #1b1203; font-weight: 800; font-size: 12.5px; letter-spacing: .02em; }
+.draftgrid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+.draftside { position: sticky; top: 16px; }
+.draftside .tpanel { margin: 0; }
+@media (max-width: 1100px) { .draftgrid { grid-template-columns: 1fr; } .draftside { position: static; order: -1; } }
+.captline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.captline .cpatch { margin: 0 2px 0 0; } .captline .linkbtn { font-weight: 700; color: var(--chalk); }
+
+.draftgrid .dstart { display: none !important; }
+@media (max-width: 1100px) { .draftside .dfold, .draftside .cardh .small { display: none; } .draftside .tpanel { padding: 12px 14px; } }
 </style>
 </head>
 <body>
