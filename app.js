@@ -1372,6 +1372,7 @@ function playerCard(id) {
       ${p.age <= 27 ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Potential</span><b class="${(p.pot || p.ovr) - p.ovr >= 8 ? 'good' : (p.pot || p.ovr) - p.ovr >= 4 ? 'gold' : ''}">${(p.pot || p.ovr) - p.ovr >= 8 ? 'High' : (p.pot || p.ovr) - p.ovr >= 4 ? 'Medium' : 'Low'}</b><span class="small muted">${esc(p.potWhy || "Scouts' read")}</span></div>` : ''}
       ${E.formLabel(p) ? `<div class="rh"><span class="kicker" style="color:var(--muted)">This season</span><b class="${E.formOf(p) > 0 ? 'good' : 'bad'}">${E.formLabel(p)}</b><span class="small muted">Shapes next year's rating</span></div>` : ''}
     </div>
+    ${attrBlock(p)}
     ${ratingWhy(p)}
     ${p.inj ? `<p class="small bad">Injured: ${p.injW === undefined || p.injW === 99 ? 'out for the season' : `out about ${p.injW} more week${p.injW > 1 ? 's' : ''}`}.</p>` : ''}
     <h4 class="sub">Stats</h4>
@@ -1387,6 +1388,12 @@ function playerCard(id) {
     <div class="row end">${tradeOpen() && tm && p.tm === G.user ? `<button class="btn" data-act="blockToggle" data-id="${esc(p.id)}">${E.blockOf().ids.includes(p.id) ? 'On your trade block ✓' : 'Add to trade block'}</button>` : ''}${tradeOpen() && tm ? `<button class="btn go" data-act="findTrades" data-id="${esc(p.id)}">${p.tm === G.user ? 'Ask around' : 'Find trades'}</button>` : ''}<button class="btn" data-act="closeModal">Close</button></div>`;
 }
 // Why he is rated what he is: his strongest and weakest measures, and where he ranks on play, role and market
+// Madden-style attributes as bars: what he is good at, at a glance
+function attrBlock(p) {
+  if (inCamp(p)) return '';
+  const L = E.attrList(p); if (!L.length) return '';
+  return `<div class="attrs">${L.map(x => `<div class="attr"><span>${esc(x.k)}</span><i><b class="${x.v >= 85 ? 'hi' : x.v < 70 ? 'lo' : ''}" style="width:${Math.max(4, (x.v - 40) / 59 * 100)}%"></b></i><em class="${oc(x.v)}">${x.v}</em></div>`).join('')}</div>`;
+}
 function ratingWhy(p) {
   const w = p.why;
   if (!w || G.season > 2026 && p.ovr !== (p.hist && p.hist[0] && p.hist[0][1])) return w ? `<p class="small muted">Rated on his NFL play since 2019, role and contract, then moved by how he has developed since.</p>` : '';

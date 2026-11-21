@@ -187,6 +187,27 @@ test('fifth-year options, captains, and ratings that do not inflate', () => {
   assert.ok(x.p.opt && x.p.opt.cap >= x.p.cap);
 });
 
+test('attributes and a deeper trade model: timelines, roster spots and memory', () => {
+  E.newGame(DATA, 'NYJ', 31);
+  const G = E.G, P = n => Object.values(G.players).find(x => x.n === n);
+  // attributes follow the player: offsets from OVR, shown as 35-99
+  const lamar = P('Lamar Jackson');
+  const at = Object.fromEntries(E.attrList(lamar).map(x => [x.k, x.v]));
+  assert.ok(at.Mobility > at.Accuracy, 'Lamar runs better than he throws on target');
+  lamar.ovr += 3; assert.equal(E.attr(lamar, 'Mobility'), at.Mobility + 3); lamar.ovr -= 3;
+  // a young riser suits a rebuilder's timeline better than a contender's
+  const young = E.roster('NYJ').filter(p => p.age <= 24 && p.ovr >= 72 && p.end >= 2028)[0];
+  if (young) assert.ok(E.timelineFactor(young, 'Rebuilding') >= E.timelineFactor(young, 'Contender'));
+  // three players for one costs them roster spots
+  const mine = E.roster('NYJ').filter(p => p.ovr >= 65 && p.pos !== 'K' && p.pos !== 'P').slice(0, 3).map(p => p.id);
+  const theirs = E.roster('LV').filter(p => p.ovr >= 75)[0].id;
+  const ev3 = E.evalTrade('LV', mine, [theirs]), ev1 = E.evalTrade('LV', mine.slice(0, 1), [theirs]);
+  assert.ok(ev3.spotCost > ev1.spotCost, 'extra bodies cost roster spots');
+  // fleece a team and they remember
+  G.trust = {LV: -2};
+  assert.ok(E.evalTrade('LV', mine.slice(0, 1), [theirs]).need > ev1.need, 'they ask for more after a lopsided deal');
+});
+
 test('no new injuries before the first deadline, and Week 1 injuries heal', () => {
   E.newGame(DATA, 'BUF', 8);
   const hurt = Object.values(E.G.players).filter(p => p.inj);

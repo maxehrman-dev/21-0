@@ -18,6 +18,11 @@ star in a quieter year stays near the top while a one-year breakout climbs more 
 Quarterbacks also carry their winning, as in Madden: win rate in their starts since 2019 (recent years count
 more), plus playoff wins and Super Bowl titles, from the nflverse schedule file (games.csv, with starting QBs).
 
+Every player also gets Madden-style attributes (QB accuracy, arm, decisions, poise, mobility; a corner's coverage,
+ball skills and tackling; and so on), built from the same measures. Linemen, who have almost no stats of their own,
+are graded on how their line played while they were on the field: sack rate for pass blocking, yards per carry and
+rushing EPA for run blocking. Attributes are stored as offsets from OVR, so they move with the player in the game.
+
 Usage: python3 tools/ratings3.py <folder with the nflverse csvs> [folder with stats_player_reg_2019-2022.csv] [games.csv]
 """
 import csv, json, math, os, statistics, sys
@@ -63,6 +68,7 @@ def ngs(name):
 NP, NR, NU = ngs('ngs_passing.csv'), ngs('ngs_receiving.csv'), ngs('ngs_rushing.csv')
 
 team_games, snaps = {}, defaultdict(lambda: [0.0, 0])
+snap_team = defaultdict(lambda: defaultdict(int))
 for yr in (2025, 2026):
     tg, rs = defaultdict(set), []
     for r in rows(f'snap_counts_{yr}.csv'):
@@ -72,6 +78,7 @@ for yr in (2025, 2026):
     for r in rs:
         s = snaps[(r['pfr_player_id'], yr)]
         s[0] += max(n0(r['offense_pct']), n0(r['defense_pct'])); s[1] += 1
+        if n0(r['offense_pct']) >= .5: snap_team[(r['pfr_player_id'], yr)][r['team']] += 1
 def snap_share(pid, yr):
     pfr = meta.get(pid, {}).get('pfr_id')
     s = snaps.get((pfr, yr)) if pfr else None
@@ -248,6 +255,45 @@ for qb, (wn, st, pw, sb) in acc.items():
     if st < 8: continue
     QBW[qb] = (wn + 4) / (st + 8) + .025 * pw + .05 * sb    # win rate pulled toward .500 for short careers, then the playoffs
 
+# ---------- attributes ----------
+ATTR = {
+    'QB': {'Accuracy': ['Completion % over expected', 'Accuracy (on target)'], 'Arm': ['Big plays', 'Adjusted yards per attempt'],
+           'Decisions': ['Avoiding interceptions', 'EPA per play'], 'Poise': ['Avoiding sacks', 'Under pressure'], 'Mobility': ['Running']},
+    'RB': {'Vision': ['Rush yards over expected', 'Explosive runs'], 'Power': ['Yards after contact', 'Breaking tackles'],
+           'Receiving': ['Receiving'], 'Ball security': ['Ball security']},
+    'WR': {'Route running': ['Getting open', 'Target share'], 'Hands': ['Hands'], 'After the catch': ['After the catch'],
+           'Deep threat': ['Air yards share', 'Yards per game'], 'Chains': ['Moving the chains', 'Scoring']},
+    'EDGE': {'Pass rush': ['Pressure', 'Sacks', 'QB knockdowns'], 'Run defense': ['Run stops (TFL)'], 'Tackling': ['Tackling'], 'Playmaking': ['Forced fumbles', 'Batted passes']},
+    'LB': {'Coverage': ['Coverage (rating allowed)', 'Coverage (yards per target)', 'Ball skills'], 'Run defense': ['Run stops (TFL)', 'Tackles'],
+           'Tackling': ['Tackling'], 'Pass rush': ['Pass rush']},
+    'CB': {'Coverage': ['Coverage (rating allowed)', 'Coverage (yards per target)', 'Coverage (catch rate allowed)'], 'Ball skills': ['Interceptions', 'Pass breakups'], 'Tackling': ['Tackling']},
+    'S': {'Coverage': ['Coverage (rating allowed)', 'Coverage (yards per target)'], 'Ball skills': ['Interceptions', 'Pass breakups'],
+          'Run support': ['Tackles', 'Run stops (TFL)'], 'Tackling': ['Tackling'], 'Blitzing': ['Blitzing']},
+    'K': {'Accuracy': ['Accuracy', 'Extra points'], 'Power': ['Range (50+)', 'Long makes']},
+    'P': {'Distance': ['Net average', 'Gross average'], 'Placement': ['Inside the 20']},
+}
+ATTR['TE'] = ATTR['WR']; ATTR['DT'] = ATTR['EDGE']
+REC_W = {2026: .35, 2025: .3, 2024: .2, 2023: .15}
+# the line: a team's sack rate and rushing, season by season, z-scored across the league
+team_line = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0, 0.0])   # sacks, dropbacks, rush yds, carries, rush epa
+for (gid, yr), r in SP.items():
+    if yr not in (2025, 2026): continue
+    t = r.get('recent_team'); x = team_line[(t, yr)]
+    if r.get('position') == 'QB': x[0] += n0(r.get('sacks_suffered')); x[1] += n0(r.get('attempts')) + n0(r.get('sacks_suffered'))
+    if r.get('position') in ('RB', 'FB'): x[2] += n0(r.get('rushing_yards')); x[3] += n0(r.get('carries')); x[4] += n0(r.get('rushing_epa'))
+def zs_of(d):
+    xs = [v for v in d.values() if v is not None]
+    if len(xs) < 4: return {}
+    m, sd = statistics.mean(xs), statistics.pstdev(xs) or 1
+    return {k: (v - m) / sd for k, v in d.items() if v is not None}
+LINE = {}
+for yr in (2025, 2026):
+    sk = zs_of({t: -(x[0] / x[1]) for (t, y), x in team_line.items() if y == yr and x[1] > 100})
+    ru = zs_of({t: x[2] / x[3] for (t, y), x in team_line.items() if y == yr and x[3] > 80})
+    ep = zs_of({t: x[4] / x[3] for (t, y), x in team_line.items() if y == yr and x[3] > 80})
+    for t in sk: LINE[(t, yr)] = {'Pass blocking': sk[t], 'Run blocking': (ru.get(t, 0) + ep.get(t, 0)) / 2}
+attr_z = {}
+
 # role, market, pedigree weights by position (production takes the rest)
 W = {'QB': (.36, .06, .36, .06), 'RB': (.52, .15, .23, .1), 'WR': (.52, .14, .26, .08), 'TE': (.47, .2, .23, .1),
      'OT': (.08, .36, .46, .1), 'IOL': (.08, .36, .46, .1), 'EDGE': (.52, .12, .29, .07), 'DT': (.48, .16, .28, .08),
@@ -309,6 +355,26 @@ for pos, L in by_pos.items():
             if pid in S[yr]:
                 for zz, lab in S[yr][pid][1]: agg[lab].append(zz)
         avg = sorted(((sum(v) / len(v), lab) for lab, v in agg.items()), reverse=True)
+        wz = defaultdict(lambda: [0.0, 0.0])
+        for yr in YEARS:
+            if pid in S[yr]:
+                for zz, lab in S[yr][pid][1]: wz[lab][0] += zz * REC_W[yr]; wz[lab][1] += REC_W[yr]
+        lab_z = {lab: a / b for lab, (a, b) in wz.items() if b}
+        az = {}
+        for name, labs in ATTR.get(pos, {}).items():
+            vals = [lab_z[l] for l in labs if l in lab_z]
+            if vals: az[name] = sum(vals) / len(vals)
+        if pos in ('OT', 'IOL'):
+            pfr = meta.get(pid, {}).get('pfr_id'); acc = defaultdict(lambda: [0.0, 0.0])
+            for yr in (2025, 2026):
+                tm = snap_team.get((pfr, yr))
+                if not tm: continue
+                t = max(tm, key=tm.get); sh = snap_share(pid, yr) or 0
+                for k, v in LINE.get((t, yr), {}).items(): acc[k][0] += v * sh * REC_W[yr]; acc[k][1] += sh * REC_W[yr]
+            for k, (a, b) in acc.items():
+                if b: az[k] = a / b
+            if 'Clean play (penalties)' in lab_z: az['Discipline'] = lab_z['Clean play (penalties)']
+        if len(az) >= 2: attr_z[pid] = az
         why[pid] = {'s': [lab for zz, lab in avg[:2] if zz > .5], 'w': [lab for zz, lab in avg[-1:] if zz < -.5],
                     'parts': {'Production': pz, 'Role': rz, 'Market': mz, 'Pedigree': dz}, 'age': agez}
     Sx = 32 * STARTERS[pos]
@@ -341,6 +407,10 @@ for p in data['players']:
     p[13] = int(max(o, min(99, o + max(0, p[13] - old))))
     w = why[p[0]]
     rec = {'s': w['s'], 'w': w['w'], 'p': w['pct']}
+    az = attr_z.get(p[0])
+    if az:
+        zbar = sum(az.values()) / len(az)
+        rec['t'] = {k: int(max(-14, min(14, round(5.5 * (v - zbar))))) for k, v in az.items()}
     if w['age'] < 0: rec['a'] = 1
     while len(p) < 18: p.append(None)
     if len(p) == 18: p.append(rec)
@@ -349,6 +419,7 @@ for p in data['players']:
 
 json.dump(data, open(dpath, 'w'), separators=(',', ':'))
 P = data['players']
+print('players with attributes:', sum(1 for p in P if isinstance(p[18], dict) and p[18].get('t')), 'of', len(P))
 print('99:', sum(1 for p in P if p[5] >= 99), ' 95+:', sum(1 for p in P if p[5] >= 95), ' 90+:', sum(1 for p in P if p[5] >= 90), ' 80+:', sum(1 for p in P if p[5] >= 80), ' of', len(P))
 for pos in STARTERS:
     top = sorted([p for p in P if p[2] == pos], key=lambda p: -p[5])[:10]
