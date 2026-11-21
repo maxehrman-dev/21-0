@@ -1238,7 +1238,8 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 
 /* home order on a phone: next game, to-do, needs, results, division */
 @media (max-width: 1000px) {
-  .homegrid { display: flex; flex-direction: column; gap: 14px; }
+  .homegrid { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
+  .homegrid .card { width: 100%; box-sizing: border-box; }
   .homegrid > .homemain, .homegrid > .homeside { display: contents; }
   .homegrid .card { margin: 0; }
   .homegrid .o1 { order: 1; } .homegrid .o2 { order: 2; } .homegrid .o3 { order: 3; } .homegrid .o4 { order: 4; } .homegrid .o5 { order: 5; }
@@ -1288,6 +1289,56 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 /* rookies still in camp: a range, not a rating */
 .ovrb.proj { width: auto; min-width: 44px; padding: 0 6px; font-size: 13px; color: var(--muted); border-style: dashed; }
 .pcovr.proj b { font-size: 34px; color: var(--muted); } .sovr.proj { color: var(--muted); }
+
+.planline { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(243,181,47,.07); border: 1px solid rgba(243,181,47,.25); color: var(--chalk); line-height: 1.4; }
+.origbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin-top: 10px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line2); font-size: 14px; }
+
+/* the next step on every tab (phones have it in the bottom bar) */
+.pagenext { display: none; }
+@media (min-width: 1100px) { .pagenext { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; } .pagenext .ico { width: 16px; height: 16px; fill: currentColor; } }
+
+/* the answer banner */
+.vban { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin: 4px 0 14px; border-radius: 14px; border: 1.5px solid; animation: vbIn .45s cubic-bezier(.2,1.4,.4,1) both; }
+.vban > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vban b { font-family: var(--display); font-weight: 900; font-size: 24px; letter-spacing: .02em; text-transform: uppercase; line-height: 1.05; }
+.vban span:not(.vbico) { font-size: 14px; color: var(--chalk); line-height: 1.35; }
+.vban .vbico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: none; }
+.vban .vbico svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.vban.yes { border-color: rgba(63,192,127,.6); background: linear-gradient(90deg, rgba(63,192,127,.2), rgba(63,192,127,.05)); } .vban.yes b, .vban.yes .vbico { color: var(--good); } .vban.yes .vbico { background: rgba(63,192,127,.16); }
+.vban.counter { border-color: rgba(243,181,47,.65); background: linear-gradient(90deg, rgba(243,181,47,.2), rgba(243,181,47,.05)); } .vban.counter b, .vban.counter .vbico { color: var(--gold); } .vban.counter .vbico { background: rgba(243,181,47,.16); }
+.vban.no { border-color: rgba(239,91,81,.6); background: linear-gradient(90deg, rgba(239,91,81,.2), rgba(239,91,81,.05)); } .vban.no b, .vban.no .vbico { color: var(--bad); } .vban.no .vbico { background: rgba(239,91,81,.16); }
+.vban.warn { border-color: rgba(240,160,70,.55); background: linear-gradient(90deg, rgba(240,160,70,.16), rgba(240,160,70,.04)); } .vban.warn b, .vban.warn .vbico { color: var(--warn); } .vban.warn .vbico { background: rgba(240,160,70,.14); }
+.vban.info { border-color: var(--line2); background: var(--panel2); } .vban.info b { color: var(--chalk); font-size: 18px; }
+@keyframes vbIn { 0% { opacity: 0; transform: scale(.92) translateY(-6px); } 100% { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .vban { animation: none; } }
+@media (max-width: 640px) { .vban b { font-size: 20px; } }
+
+.dmood { display: inline-block; padding: 6px 10px; border-radius: 10px; font-size: 15px; line-height: 1.3; }
+.dmood.yes { background: rgba(63,192,127,.16); color: var(--good); border: 1px solid rgba(63,192,127,.45); }
+.dmood.counter { background: rgba(243,181,47,.14); color: var(--gold); border: 1px solid rgba(243,181,47,.45); }
+.dmood.no { background: rgba(239,91,81,.14); color: var(--bad); border: 1px solid rgba(239,91,81,.45); }
+.dmood.warn { background: rgba(240,160,70,.14); color: var(--warn); border: 1px solid rgba(240,160,70,.4); }
+.dmood.flash { animation: vbIn .45s cubic-bezier(.2,1.4,.4,1) both; }
+.dp-mood.good { color: var(--good); } .dp-mood.bad { color: var(--bad); }
+
+.waitrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border-radius: 12px; border: 1px dashed var(--line2); margin: 4px 0 10px; }
+.waitrow > div { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 2px; }
+.outbidcard .outbid { padding: 6px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 8px; } .outbidcard .outbid:last-child { border-bottom: 0; }
+
+/* captains */
+.cpatch { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: 6px; border-radius: 5px; background: var(--gold); color: #1b1203; font-family: var(--display); font-weight: 900; font-size: 12px; vertical-align: 1px; }
+.slot .cpatch { width: 14px; height: 14px; font-size: 10px; margin-left: 3px; }
+.captrow { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.captslot { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel2); color: var(--chalk); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.captslot:hover { border-color: var(--gold); } .captslot .cmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; } .captslot b { font-size: 15px; }
+.captcard { margin-bottom: 16px; }
+@media (max-width: 640px) { .captrow { grid-template-columns: 1fr; } }
+
+.kpistrip.k3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 760px) { .kpistrip.k3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpistrip.k3 .kpi > b { font-size: 21px; } .kpistrip.k3 .kpi em { display: none; } }
+.ngkey { grid-template-columns: 1fr; }
+
+.goalscard .goallist { margin: 0; } .goalscard .goalrow { padding: 10px 12px; }
 </style>
 </head>
 <body>

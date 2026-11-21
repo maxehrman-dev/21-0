@@ -150,6 +150,43 @@ test('draft day: move up or down by pick, and rookie ratings stay hidden until f
   assert.ok(!rookie.camp && E.G.campReveal.includes(rookie.id), 'revealed at final cuts');
 });
 
+test('a trade offer a team sends you always goes through, clearing cap room for you if it has to', () => {
+  E.newGame(DATA, 'NYJ', 21); E.simTo(9); E.G.phase = 'deadline';
+  const G = E.G;
+  // a deal that adds salary: a cheap backup of yours for a pricey starter of theirs
+  const mine = E.roster('NYJ').filter(p => p.cap < 2 && p.ovr >= 60 && p.pos !== 'K' && p.pos !== 'P')[0];
+  const theirs = E.roster('LV').filter(p => p.cap >= 15).sort((a, b) => a.ovr - b.ovr)[0];
+  G.cap[2026] = E.payroll('NYJ') + 1;
+  G.offers = [{id: 'oTEST', from: 'LV', kind: 'want', give: [mine.id], get: [theirs.id], msg: ''}];
+  const plan = E.acceptPlan([mine.id], [theirs.id]);
+  assert.ok(plan.cuts.length >= 1 && plan.ok, 'it plans releases to make room');
+  const r = E.acceptOffer('oTEST');
+  assert.ok(r.ok, r.msg);
+  assert.equal(G.players[theirs.id].tm, 'NYJ');
+  assert.ok(E.payroll('NYJ') <= G.cap[2026] + .01, 'still under the cap');
+});
+
+test('fifth-year options, captains, and ratings that do not inflate', () => {
+  E.newGame(DATA, 'MIN', 2);
+  const G = E.G, c = E.captains();
+  assert.ok(c.off && c.def && G.players[c.off].tm === 'MIN', 'every team starts with captains');
+  const plain = E.roster('MIN').find(p => p.ovr >= 86 && !E.isCaptain(p.id) && p.age < 29);
+  if (plain) assert.ok(E.chemTrade([c.off], []).d < E.chemTrade([plain.id], []).d, 'trading a captain costs more');
+  const before = Object.fromEntries(Object.values(G.players).filter(p => G.teams[p.tm]).map(p => [p.id, p.ovr]));
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  E.beginOffseason();
+  const ch = Object.keys(before).filter(id => G.players[id] && G.teams[G.players[id].tm]).map(id => G.players[id].ovr - before[id]);
+  const avg = ch.reduce((a, b) => a + b, 0) / ch.length;
+  assert.ok(Math.abs(avg) < 1.2, `the league average moved ${avg.toFixed(2)}`);
+  assert.ok(Math.max(...ch) <= 8, 'nobody jumps more than 8 in one offseason');
+  const L = E.optionList();
+  assert.ok(L.length >= 1, 'a 2024 first-rounder is due for his option in 2027');
+  const x = L[0], end = x.p.end;
+  assert.ok(E.decideOption(x.p.id, true));
+  assert.equal(x.p.end, end + 1);
+  assert.ok(x.p.opt && x.p.opt.cap >= x.p.cap);
+});
+
 test('no new injuries before the first deadline, and Week 1 injuries heal', () => {
   E.newGame(DATA, 'BUF', 8);
   const hurt = Object.values(E.G.players).filter(p => p.inj);

@@ -39,9 +39,10 @@ function newGame(DATA, userTeam, seed) {
   R = makeRng(seed || Date.now());
   const players = {};
   for (const a of DATA.players) {
-    const [id, n, pos, tm, age, ovr, cap, end, st25, st26, inj, rook, prior, pot, potWhy, prod, hype, apy, why] = a;
+    const [id, n, pos, tm, age, ovr, cap, end, st25, st26, inj, rook, prior, pot, potWhy, prod, hype, apy, why, r1] = a;
     players[id] = {id, n, pos, tm, age, ovr, cap, end, st25, st26, inj: !!inj, rook: !!rook, prior: prior || ovr, pot: pot || null, potWhy: potWhy || '', prod: prod == null ? -1 : prod, hype: hype == null ? 30 : hype, hist: [[2026, ovr, 'Week 1']]};
     if (why) players[id].why = why;
+    if (r1) players[id].r1 = r1;
     // contracts that pay more after this season (extensions, back-loaded deals) switch to their real average next year
     if (apy != null && end >= 2027) players[id].apy = apy;
     // hurt at kickoff: most come back during the season, about one in five is out for the year
@@ -224,7 +225,7 @@ function ratingOf(list, dd) {
 function ageAdj(p) { return p.pos === 'QB' ? p.age - 4 : p.pos === 'RB' ? p.age + 2 : p.age; }
 function market(p) {
   const top = MARKET_TOP[p.pos] || 10;
-  let v = top * Math.pow(clamp((p.ovr - 55) / 42, 0, 1.1), 2.3);
+  let v = top * Math.pow(clamp((p.ovr - 52) / 40, 0, 1.1), 2.3);
   const a = ageAdj(p);
   if (a >= 33) v *= .55; else if (a >= 31) v *= .75; else if (a >= 29) v *= .9;
   return Math.max(1.1, Math.round(v * 10) / 10);
@@ -234,11 +235,12 @@ function market(p) {
 // a young 99 OVR non-QB is about 100 points, the #1 pick about 70, a late 1st about 26.
 // Order from real returns for traded starters: QB and EDGE first, then WR, CB, OT, then DT, then IOL, S, TE, then LB and RB
 const TV_POS = {QB: 2.3, EDGE: 1.15, WR: 1.08, CB: 1.0, OT: 1.0, DT: .9, IOL: .72, S: .72, TE: .7, LB: .65, RB: .6, K: .15, P: .1};
-// Value roughly doubles every 5 OVR: 70 is a 7th-round pick, 80 a 3rd, 85 a 2nd, 90 a late 1st, 95 about 1.5 firsts, 99 the #1 pick.
+// Value roughly doubles every 5 OVR, and climbs faster still for stars: 70 is a 6th-round pick, 75 a 4th, 80 a 3rd,
+// 85 a 2nd, 90 a first and a second, and the best player at a position about two firsts, like Ramsey, Parsons or Hill.
 const ordinal = n => { const r = n % 100, t = n % 10; return n + (r >= 11 && r <= 13 ? 'th' : t === 1 ? 'st' : t === 2 ? 'nd' : t === 3 ? 'rd' : 'th'); };
 // Calibrated on the last 1,000 NFL trades: the best non-QBs ever moved (Tyreek Hill, Davante Adams, Jalen Ramsey,
 // DeForest Buckner) cost about a #12-16 pick; a typical traded starter costs a day 3 pick.
-const ratingPts = ovr => ovr < 60 ? .2 : 1.2 * Math.exp(.12 * (ovr - 70));
+const ratingPts = ovr => ovr < 58 ? .2 : 1.2 * Math.exp(.13 * (ovr - 66)) * (1 + Math.max(0, ovr - 82) * .06);
 const ageMult = a => a <= 23 ? 1.12 : a <= 25 ? 1.08 : a <= 27 ? 1 : a <= 28 ? .94 : a <= 29 ? .86 : a <= 30 ? .76 : a <= 31 ? .66 : a <= 32 ? .55 : a <= 33 ? .44 : .3;
 function playerValue(p, forTeam) { return valueParts(p, forTeam).total; }
 // Each front office is different. Built from a fixed hash so a team's taste never changes mid-game.
@@ -320,7 +322,7 @@ function valueParts(p, forTeam) {
   const eff = p.age <= 25 && p.pot > p.ovr ? p.ovr + (p.pot - p.ovr) * .4 : p.ovr;
   let v = ratingPts(eff);
   steps.push({g: 'Player', k: 'Talent', note: eff > p.ovr + .5 ? `${p.ovr} OVR with room to grow: valued like a ${eff.toFixed(0)}` : `${p.ovr} OVR. Value doubles about every 6 points`, v});
-  const pm = p.pos === 'QB' ? Math.round((1 + 1.6 * clamp((p.ovr - 72) / 16, 0, 1)) * 100) / 100 : (TV_POS[p.pos] || 1);
+  const pm = p.pos === 'QB' ? Math.round((1 + 1.4 * clamp((p.ovr - 70) / 16, 0, 1)) * 100) / 100 : (TV_POS[p.pos] || 1);
   v *= pm; steps.push({g: 'Player', k: 'Positional value', note: p.pos === 'QB' ? `Starting-caliber QBs carry a premium that grows with how good he is` : pm >= 1.05 ? `${p.pos} is a premium position` : pm >= .95 ? `${p.pos} is valued at par` : `${p.pos}s are cheaper to replace`, m: pm, v});
   const af = ageFactor(p), a = ageAdj(p);
   v *= af.m; steps.push({g: 'Player', k: 'Age', note: af.note, m: af.m, v});
@@ -460,12 +462,12 @@ function rosterLimit() { return G.phase === 'offseason' && G.step !== 'cutdown' 
 function assetLook(id) {
   const p = G.players[id]; if (p) return p.ovr;
   const k = pickById(id); if (!k) return 0;
-  if (k.rd === 1) { const sl = pickSlot(k); return sl <= 10 ? 90 : sl <= 20 ? 87 : 85; }
-  return k.rd === 2 ? 79 : k.rd === 3 ? 75 : 70;
+  if (k.rd === 1) { const sl = pickSlot(k); return sl <= 10 ? 88 : sl <= 20 ? 85 : 83; }
+  return k.rd === 2 ? 77 : k.rd === 3 ? 73 : 68;
 }
 function looksOk(out, back) {
   const star = out.map(id => G.players[id]).filter(Boolean).sort((a, b) => b.ovr - a.ovr)[0];
-  if (!star || star.ovr < 85) return {ok: true};
+  if (!star || star.ovr < 84) return {ok: true};
   const L = back.map(assetLook).sort((a, b) => b - a), S = star.ovr;
   const ok = (L[0] || 0) >= S - 6 || ((L[0] || 0) >= S - 10 && (L[1] || 0) >= S - 14);
   return {ok, star};
@@ -503,8 +505,10 @@ function evalTrade(partner, give, get) {
 }
 function doTrade(partner, give, get, how) {
   const ev = evalTrade(partner, give, get);
-  if (!ev.ok && how !== 'offer') return ev;
-  if (ev.issues.length) return ev;
+  if (!ev.ok && how !== 'offer' && how !== 'accepted') return ev;
+  // a deal they proposed: only your side's limits can stop it, and acceptOffer clears those first
+  const block = how === 'accepted' ? ev.issues.filter(i => i.startsWith('You') || i.startsWith('Your')) : ev.issues;
+  if (block.length) return {...ev, issues: block};
   const when = G.phase === 'offseason' ? (G.step === 'draft' ? 'Draft day' : 'Offseason') : `Week ${G.week}`;
   const rec = {season: G.season, when, partner, gave: give.map(assetName), got: get.map(assetName), giveIds: give.slice(), getIds: get.slice(),
     vGive: give.reduce((s, id) => s + assetValue(id), 0), vGet: get.reduce((s, id) => s + assetValue(id), 0)};
@@ -958,14 +962,38 @@ function marketBoard(limit) {
   for (const t of teamList().filter(x => x !== G.user)) { const top = interestIn(t, 1)[0]; if (top) out.push({t, ...top}); }
   return out.sort((a, b) => b.v * b.lift - a.v * a.lift).slice(0, limit || 8);
 }
-function acceptOffer(oid) {
-  const o = (G.offers || []).find(x => x.id === oid);
+// What you would have to do to take a deal: release players to fit the cap or the roster limit, or sign
+// minimum-salary players to stay above 40. Cheapest loss first, never a player in the deal, never a starter if avoidable.
+function acceptPlan(give, get) {
+  const pc = ids => ids.filter(id => G.players[id]).length;
+  const capOf = ids => ids.reduce((a, id) => a + (G.players[id] ? G.players[id].cap : 0), 0);
+  const cap = G.cap[G.season];
+  let over = payroll(G.user) - capOf(give) + capOf(get) - cap;
+  let extra = roster(G.user).length - pc(give) + pc(get) - rosterLimit();
+  const short = 40 - (roster(G.user).length - pc(give) + pc(get));
+  const d = depth(G.user), starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
+  const pool = roster(G.user).filter(p => !give.includes(p.id) && !get.includes(p.id) && p.pos !== 'K' && p.pos !== 'P')
+    .map(p => ({p, c: cutCost(p), v: playerValue(p), st: starters.has(p.id)}));
+  const cuts = [];
+  if (over > 0) {
+    const L = pool.filter(x => x.c.save > .3).sort((a, b) => (a.st - b.st) || a.v / a.c.save - b.v / b.c.save);
+    for (const x of L) { if (over <= 0) break; cuts.push(x); over -= x.c.save; extra--; }
+  }
+  if (extra > 0) for (const x of pool.filter(x => !cuts.includes(x)).sort((a, b) => (a.st - b.st) || a.v - b.v)) { if (extra <= 0) break; cuts.push(x); extra--; }
+  return {cuts: cuts.map(x => x.p.id), save: Math.round(cuts.reduce((a, x) => a + x.c.save, 0) * 10) / 10, dead: Math.round(cuts.reduce((a, x) => a + x.c.dead, 0) * 10) / 10, fill: Math.max(0, short), ok: over <= 0};
+}
+function acceptOffer(oid, list) {
+  const o = (list || G.offers || []).find(x => x.id === oid);
   if (!o) return {ok: false, msg: 'That offer is gone.'};
   const stillMine = o.give.every(id => (G.players[id] && G.players[id].tm === G.user) || (pickById(id) && pickById(id).owner === G.user));
   const stillTheirs = o.get.every(id => (G.players[id] && G.players[id].tm === o.from) || (pickById(id) && pickById(id).owner === o.from));
-  if (!stillMine || !stillTheirs) { G.offers = G.offers.filter(x => x !== o); return {ok: false, msg: 'Something in that offer already moved.'}; }
-  const r = doTrade(o.from, o.give, o.get, 'offer');
-  return r.ok ? {ok: true, msg: `Done. You got ${o.get.map(assetName).join(', ')}.`} : {ok: false, msg: r.issues[0] || 'It no longer works under the cap.'};
+  if (!stillMine || !stillTheirs) { G.offers = (G.offers || []).filter(x => x !== o); return {ok: false, msg: 'Something in that offer already moved.'}; }
+  const plan = acceptPlan(o.give, o.get);
+  if (!plan.ok) return {ok: false, msg: 'Even releasing players would not fit that deal under your cap.'};
+  for (const id of plan.cuts) cutPlayer(id);
+  const r = doTrade(o.from, o.give, o.get, 'accepted');
+  if (r.ok && plan.fill) fillRoster(G.user, 40);
+  return r.ok ? {ok: true, cuts: plan.cuts, msg: `Done. You got ${o.get.map(assetName).join(', ')}.`} : {ok: false, msg: r.issues[0] || 'It no longer works under the cap.'};
 }
 // Teams that would trade for one of your players, best offer first
 function shopPlayer(pid, kind, pos) {
@@ -1332,6 +1360,8 @@ function beginOffseason() {
   G.draftOrder = draftOrder(prev);
   G.phase = 'offseason'; G.step = 'progress'; G.season = next; G.week = 0; G.draftDone = false; G.draft = null;
   if (G.chem != null) G.chem = Math.round(G.chem + (60 - G.chem) / 3);
+  for (const p of Object.values(G.players)) if (p.opt && p.opt.year === next) { p.cap = p.opt.cap; delete p.opt; }
+  aiOptions();
   // the cap: real figures through 2027, then about 7% a year, the league's recent pace
   G.cap[next] = G.cap[next] || Math.round(G.cap[prev] * 1.07 * 10) / 10;
   G.results[next] = G.results[next] || []; G.stats[next] = G.stats[next] || {};
@@ -1341,20 +1371,29 @@ function beginOffseason() {
   for (const yr of [next, next + 1]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   // contracts that step up after this season (extensions, back-loaded deals) now pay their real average
   for (const p of Object.values(G.players)) if (p.apy != null) { if (p.end >= next) p.cap = p.apy; delete p.apy; }
-  // progression: age, hidden potential, how the season went, and the player's track record
+  // progression: age, hidden potential, how the season went, and the player's track record.
+  // The league as a whole does not get better every year: young players rise, veterans fall, and the average holds.
   const prog = [];
-  for (const p of Object.values(G.players)) {
+  const progParts = p => {
     const a = ageAdj(p), f = formOf(p);
     const st = (G.stats[prev] || {})[p.id], gp = st ? st.gp || 0 : 0;
     const played = Math.min(1, gp / 8);
-    const age = a <= 22 ? 3 : a <= 24 ? 2 : a <= 26 ? 1 : a <= 28 ? 0 : a <= 30 ? -1 : a <= 32 ? -2.5 : -4.5 - Math.max(0, a - 34);
-    const parts = {age, dev: 0, form: f * 1.4 * played, track: 0};
-    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 25 ? .25 : .08);
+    const age = a <= 22 ? 2 : a <= 24 ? 1.5 : a <= 26 ? .5 : a <= 28 ? 0 : a <= 30 ? -1 : a <= 32 ? -2.5 : -4.5 - Math.max(0, a - 34);
+    const parts = {age, dev: 0, form: f * 1.0 * played, track: 0};
+    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 25 ? .2 : .06);
     const prior = p.prior || p.ovr;
     if (prior > p.ovr && f > 0) parts.track = (prior - p.ovr) * .5 * played;        // proved himself again
     else if (prior < p.ovr && f < -1) parts.track = -(p.ovr - prior) * .4 * played; // fell back to his track record
-    let d = parts.age + parts.dev + parts.form + parts.track + randn() * 1.2 + (p.rook ? 1 : 0);
-    d = clamp(Math.round(d), -12, 14);
+    let d = parts.age + parts.dev + parts.form + parts.track + (p.rook ? .5 : 0);
+    if (d > 0 && p.ovr >= 86) d *= p.ovr >= 90 ? .35 : .6;                            // the top is hard to reach and harder to climb
+    return {parts, d, prior};
+  };
+  const rostered = Object.values(G.players).filter(p => G.teams[p.tm]);
+  const drift = rostered.reduce((s, p) => s + progParts(p).d, 0) / Math.max(1, rostered.length);
+  for (const p of Object.values(G.players)) {
+    const {parts, prior} = progParts(p);
+    let d = progParts(p).d - drift + randn() * 1.2;
+    d = clamp(Math.round(d), -10, 8);
     const why = d >= 4 && parts.track >= 2 ? 'Proved himself' : d >= 4 && parts.form >= 2 ? 'Breakout season' : d >= 3 && parts.dev >= 1.5 ? 'Development'
       : d <= -4 && parts.form <= -2 ? 'Down year' : d <= -2 && parts.age <= -2.5 ? 'Age decline' : d <= -3 && parts.track < 0 ? 'Regressed' : d > 0 ? 'Improved' : d < 0 ? 'Slipped' : 'Steady';
     const old = p.ovr;
@@ -1792,7 +1831,7 @@ function scoutProspect(pr) {
     potGrade: pot - est >= 10 ? 'High' : pot - est >= 6 ? 'Medium' : 'Low', potWhy: `big board #${pr.rank}, ${pr.sch}`, round: pr.rank <= 32 ? '1st round' : pr.rank <= 64 ? '2nd round' : pr.rank <= 100 ? '3rd round' : 'Day 3'});
 }
 const draftVerdict = (ovr, lo, hi) => ovr > hi ? 'Steal' : ovr < lo ? 'Bust' : 'As projected';
-function rookieOvr(rank) { return Math.round(clamp(75 - .1 * rank + randn() * 2.5, 52, 82)); }
+function rookieOvr(rank) { return Math.round(clamp(72 - .1 * rank + randn() * 2.5, 50, 79)); }
 function rookieCap(no) { return Math.round(Math.max(1.0, 11.5 * Math.exp(-.045 * (no - 1)) + .9) * 10) / 10; }
 function makePick(prospect) {
   const D = G.draft, slot = D.order[D.at];
@@ -1800,7 +1839,7 @@ function makePick(prospect) {
   if (prospect.ovr == null) scoutProspect(prospect);
   const verdict = draftVerdict(prospect.ovr, prospect.lo, prospect.hi);
   G.players[id] = {id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
-    proj: [prospect.lo, prospect.hi], camp: 1, verdict, prod: -1, hype: Math.max(10, Math.round(70 - slot.no * .5)), hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
+    proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: Math.max(10, Math.round(70 - slot.no * .5)), hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
   D.pool = D.pool.filter(x => x !== prospect);
   if (slot.pickId) G.picks = G.picks.filter(x => x.id !== slot.pickId);
@@ -2172,6 +2211,32 @@ function whyNoDeal(pid) {
   return `No mix of three of your assets gets the ${nick} to yes without breaking the cap or roster limits. Try a bigger package in Build a trade.`;
 }
 
+// ---------- fifth-year option ----------
+// A first-round pick's rookie deal runs four years; before year four ends the team can add a fifth at a set price:
+// based on the 3rd to 25th highest salaries at his position, a little less for picks after the top 10.
+function optionPrice(p) {
+  const caps = Object.values(G.players).filter(x => x.pos === p.pos && G.teams[x.tm]).map(x => x.cap).sort((a, b) => b - a);
+  // like the CBA: the 3rd to 25th highest salaries at his spot, a step lower for picks after the top 10
+  const top = caps.slice(2, 25), avg = top.reduce((a, b) => a + b, 0) / Math.max(1, top.length);
+  return Math.round(Math.max(p.cap, avg * (p.r1 && p.r1[1] <= 10 ? .9 : .78)) * 10) / 10;
+}
+// Due this offseason: a first-rounder entering the last year of his rookie deal
+const optionDue = p => p.r1 && G.phase === 'offseason' && G.season === p.r1[0] + 3 && p.end === G.season && !p.optDone;
+function optionList() { return roster(G.user).filter(optionDue).map(p => ({p, price: optionPrice(p)})).sort((a, b) => b.p.ovr - a.p.ovr); }
+function decideOption(id, yes) {
+  const p = G.players[id]; if (!p || !optionDue(p)) return false;
+  p.optDone = yes ? 'picked' : 'declined';
+  if (yes) { p.opt = {year: G.season + 1, cap: optionPrice(p)}; p.end = G.season + 1; G.news.unshift(`Picked up ${p.n}'s fifth-year option: $${p.opt.cap.toFixed(1)}M in ${p.opt.year}.`); }
+  else G.news.unshift(`Declined ${p.n}'s fifth-year option. He can be a free agent after ${G.season}.`);
+  return true;
+}
+// Other teams decide theirs at the start of the offseason: they keep the good ones
+function aiOptions() {
+  for (const p of Object.values(G.players)) if (G.teams[p.tm] && p.tm !== G.user && optionDue(p)) {
+    if (p.ovr >= 74 || (p.pos === 'QB' && p.ovr >= 70)) { p.optDone = 'picked'; p.opt = {year: G.season + 1, cap: optionPrice(p)}; p.end = G.season + 1; } else p.optDone = 'declined';
+  }
+}
+
 // ---------- locker room ----------
 // Chemistry runs 0-100. Winning builds it; trading away or cutting players the room trusts costs it.
 // It is worth up to about 2 points a game either way, a bit under a win a season at the extremes.
@@ -2192,27 +2257,59 @@ function chemTrade(give, get) {
   let d = 0; const lost = [];
   for (const id of give) {
     const p = G.players[id]; if (!p || p.tm !== G.user) continue;
-    let hit = p.ovr >= 88 ? 5 : p.ovr >= 80 ? 3 : p.ovr >= 74 ? 1 : 0;
+    let hit = p.ovr >= 86 ? 5 : p.ovr >= 78 ? 3 : p.ovr >= 72 ? 1 : 0;
     if (hit && ageAdj(p) >= 29) hit += 2;                         // a veteran leader
     if (hit && p.how === 'Trade' && p.joined === G.season) hit = Math.min(hit, 1);   // he just got here
+    if (isCaptain(p.id)) { hit += 4; lost.unshift(p.n + ' (captain)'); }
     if (hit >= 3) lost.push(p.n);
     d -= hit;
   }
-  for (const id of get) { const p = G.players[id]; if (p && p.ovr >= 88) d += 2; }
+  for (const id of get) { const p = G.players[id]; if (p && p.ovr >= 86) d += 2; }
   d = Math.max(-10, d);
   return {d, why: lost.length ? `Traded away ${lost.slice(0, 2).join(' and ')}` : d > 0 ? 'A star joined the team' : 'Trade'};
 }
+// ---------- captains ----------
+// One captain on offense, one on defense. Respected veterans steady the room: losses sting less,
+// and naming one gives the locker room a lift. Trading or cutting a captain costs a lot more than an ordinary player.
+const OFF_POS = new Set(['QB', 'RB', 'WR', 'TE', 'OT', 'IOL']), DEF_POS = new Set(['EDGE', 'DT', 'LB', 'CB', 'S']);
+const leadScore = p => p.ovr + Math.min(10, Math.max(0, ageAdj(p) - 24) * 1.6) + (p.pos === 'QB' ? 4 : p.pos === 'LB' || p.pos === 'S' ? 2 : 0) + (p.how ? 0 : 3);
+function captainCandidates(side) {
+  const d = depth(G.user), set = side === 'off' ? OFF_POS : DEF_POS;
+  return Object.keys(d).filter(pos => set.has(pos)).flatMap(pos => d[pos].slice(0, STARTERS[pos])).filter(p => !p.inj || p.injW !== 99).sort((a, b) => leadScore(b) - leadScore(a));
+}
+function captains() {
+  G.captains = G.captains || {};
+  for (const side of ['off', 'def']) { const id = G.captains[side]; if (!id || !G.players[id] || G.players[id].tm !== G.user) G.captains[side] = (captainCandidates(side)[0] || {}).id || null; }
+  return G.captains;
+}
+const isCaptain = id => { const c = G.captains || {}; return c.off === id || c.def === id; };
+// How much the captains steady the room: veterans who play well count most
+function leadership() {
+  const c = captains();
+  return ['off', 'def'].reduce((a, side) => { const p = G.players[c[side]]; return a + (p ? (ageAdj(p) >= 28 ? 1 : .55) * (p.ovr >= 80 ? 1 : .7) : 0); }, 0);
+}
+function setCaptain(side, id) {
+  const p = G.players[id]; if (!p || p.tm !== G.user) return false;
+  const c = captains(), was = G.players[c[side]];
+  if (c[side] === id) return true;
+  c[side] = id;
+  const vet = ageAdj(p) >= 28 && p.ovr >= 78;
+  if (G.phase === 'offseason' || G.phase === 'preseason' || G.week === 0) chemShift(vet ? 2 : 0, `${p.n} named ${side === 'off' ? 'offensive' : 'defensive'} captain`);
+  else chemShift(vet ? 0 : -2, `Took the C from ${was ? was.n : 'a captain'} midseason`);
+  G.news.unshift(`${p.n} is the new ${side === 'off' ? 'offensive' : 'defensive'} captain.`);
+  return true;
+}
 function chemCut(p) {
   if (!p) return 0;
-  const vet = ageAdj(p) >= 28 && p.ovr >= 75, young = p.draftYr === G.season || p.rook;
-  return vet ? -3 : young && p.ovr >= 65 ? -2 : 0;
+  const vet = ageAdj(p) >= 28 && p.ovr >= 73, young = p.draftYr === G.season || p.rook;
+  return (vet ? -3 : young && p.ovr >= 65 ? -2 : 0) + (isCaptain(p.id) ? -5 : 0);
 }
 function chemGame(g) {
   if (g.h !== G.user && g.a !== G.user) return;
   const me = g.h === G.user ? g.hs : g.as, op = g.h === G.user ? g.as : g.hs;
   const opp = g.h === G.user ? g.a : g.h;
   if (me > op) chemShift(g.po ? 3 : 2, g.po ? 'Playoff win' : `Beat the ${G.teams[opp].nick}`);
-  else chemShift(-(op - me >= 17 ? 3 : 2), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}`);
+  else { const steady = leadership() >= 1.5 ? 1 : 0; chemShift(-((op - me >= 17 ? 3 : 2) - steady), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}${steady ? ', the captains kept the room together' : ''}`); }
 }
 
 // ---------- season goals ----------
@@ -2398,7 +2495,7 @@ function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; 
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
   newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
-  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
+  interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
   userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,

@@ -7,7 +7,7 @@ other players at his position that season. Those seasons become three views of h
 Ratings are sticky like Madden's: the three views are blended, so a hot half-season or an injury moves him
 only a little. Then come his role (snap share in the games he played), the market (his contract), draft
 pedigree while he is young, and a position-specific age curve. Positions are mapped onto Madden-like tiers:
-the best at a spot near 97 (99 only when he is clearly ahead), the 10th around 90, an average starter about 80.
+the best at a spot about 95 (97 only when he is clearly ahead), 90+ only for the league's elite, an average starter in the mid 70s.
 
 It writes OVR (field 5), track record (12), potential (13) and the reasons behind the rating (18) into
 data.json and leaves every other field, contracts included, as it is.
@@ -254,7 +254,7 @@ W = {'QB': (.36, .06, .36, .06), 'RB': (.52, .15, .23, .1), 'WR': (.52, .14, .26
      'LB': (.46, .18, .28, .08), 'CB': (.5, .14, .28, .08), 'S': (.48, .16, .28, .08), 'K': (.75, 0, .25, 0), 'P': (.75, 0, .25, 0)}
 STARTERS = {'QB': 1, 'RB': 1, 'WR': 3, 'TE': 1, 'OT': 2, 'IOL': 3, 'EDGE': 2, 'DT': 2, 'LB': 2, 'CB': 3, 'S': 2, 'K': 1, 'P': 1}
 AGE = {'RB': 29, 'WR': 31, 'TE': 31, 'CB': 30, 'S': 31, 'LB': 30, 'EDGE': 31, 'DT': 31, 'OT': 35, 'IOL': 34, 'QB': 37, 'K': 39, 'P': 39}
-TIERS = [(0, 97), (.03, 94), (.1, 90), (.3, 85), (.6, 80), (1.0, 75), (1.5, 69), (2.5, 62), (4, 54), (6, 47)]
+TIERS = [(0, 94), (.03, 91), (.1, 87), (.3, 81), (.6, 76), (1.0, 71), (1.5, 65), (2.5, 58), (4, 51), (6, 45)]
 def tier(frac):
     for (a, oa), (b, ob) in zip(TIERS, TIERS[1:]):
         if frac <= b: return oa + (ob - oa) * (frac - a) / (b - a)
@@ -316,8 +316,8 @@ for pos, L in by_pos.items():
         ranked = sorted(L, key=lambda p: -sc[p[0]])
         for i, p in enumerate(ranked):
             o = tier(i / Sx)
-            if i == 0: o = 99 if sc[p[0]] - sc[ranked[1][0]] > .3 else 97
-            elif i == 1 and sc[p[0]] - sc[ranked[2][0]] > .3: o = max(o, 96)
+            if i == 0: o = 96 if sc[p[0]] - sc[ranked[1][0]] > .45 else 95 if sc[p[0]] - sc[ranked[1][0]] > .25 else 94
+            elif i == 1 and sc[p[0]] - sc[ranked[2][0]] > .45: o = max(o, 93)
             out[p[0]] = int(max(40, min(99, round(o))))
     pct = lambda d, k: None if d.get(k) is None else round(100 * sum(1 for v in d.values() if v is not None and v < d[k]) / max(1, sum(1 for v in d.values() if v is not None) - 1))
     for p in L:
@@ -331,7 +331,7 @@ for p in data['players']:
     m = meta.get(p[0], {})
     if n0(m.get('years_of_experience')) <= 0:
         pk = n0(m.get('draft_pick')) or 300
-        cap = 84 if pk <= 5 else 80 if pk <= 15 else 77 if pk <= 32 else 73 if pk <= 64 else 69
+        cap = 79 if pk <= 5 else 76 if pk <= 15 else 73 if pk <= 32 else 70 if pk <= 64 else 66
         new[p[0]] = min(new[p[0]], cap); prior[p[0]] = min(prior[p[0]], cap)
 
 changed = []
