@@ -2126,13 +2126,13 @@ function genClass(yr, from, count) {
 // classes, mixed into a full generated board. A recruiting rank is not a draft rank, so each lands near his ranking
 // but not on it. Later years get a few Easter eggs.
 const EGGS = {
-  2029: [{n: 'Willie Beamen', pos: 'QB', sch: 'Miami (Sharks practice squad)', rank: 26, note: 'Throws through a wall, calls his own plays, and has a rap album dropping on draft day.', forty: 4.52, hype: 80}],
-  2030: [{n: 'Forrest Gump', pos: 'WR', sch: 'Alabama', rank: 44, note: 'Fastest player anybody has ever timed. Runs until somebody tells him to stop. Bring the playbook in small words.', forty: 4.21, hype: 75}],
-  2031: [{n: 'Bobby Boucher', pos: 'LB', sch: 'South Central Louisiana State', rank: 12, note: 'Tackles like a truck. Plays angry. Brings his own water. Mama says the NFL is the devil.', forty: 4.55, hype: 70},
-         {n: 'Ray "Laces Out" Finkle', pos: 'K', sch: 'Collier County', rank: 118, note: 'Big leg, bigger grudge. Insists the laces face out on every hold.', forty: 5.1, hype: 40}],
-  2032: [{n: 'Baby Gronk', pos: 'TE', sch: 'Viral Prep Academy', rank: 6, note: 'Hyped since the fifth grade. Has more followers than half the league. The ceiling, they say, is limitless.', forty: 4.6, hype: 99},
+  2028: [{n: 'Forrest Gump', pos: 'WR', sch: 'Alabama', rank: 44, note: 'Fastest player anybody has ever timed. Runs until somebody tells him to stop. Bring the playbook in small words.', forty: 4.21, hype: 75}],
+  2029: [{n: 'Baby Gronk', pos: 'TE', sch: 'Viral Prep Academy', rank: 6, note: 'Hyped since the fifth grade. Has more followers than half the league. The ceiling, they say, is limitless.', forty: 4.6, hype: 99},
+         {n: 'Willie Beamen', pos: 'QB', sch: 'Miami (Sharks practice squad)', rank: 26, note: 'Throws through a wall, calls his own plays, and has a rap album dropping on draft day.', forty: 4.52, hype: 80}],
+  2030: [{n: 'Bobby Boucher', pos: 'LB', sch: 'South Central Louisiana State', rank: 12, note: 'Tackles like a truck. Plays angry. Brings his own water. Mama says the NFL is the devil.', forty: 4.55, hype: 70}],
+  2031: [{n: 'Ray "Laces Out" Finkle', pos: 'K', sch: 'Collier County', rank: 118, note: 'Big leg, bigger grudge. Insists the laces face out on every hold.', forty: 5.1, hype: 40},
          {n: 'Tim Riggins', pos: 'RB', sch: 'Dillon Panthers (TX)', rank: 63, note: 'Runs downhill and never skips leg day. Texas forever.', forty: 4.54, hype: 55}],
-  2033: [{n: 'Paul Crewe', pos: 'QB', sch: 'Allenville State', rank: 30, note: 'A former league MVP with a complicated past, back for one more shot. Somehow still eligible.', forty: 4.7, hype: 88}],
+  2032: [{n: 'Paul Crewe', pos: 'QB', sch: 'Allenville State', rank: 30, note: 'A former league MVP with a complicated past, back for one more shot. Somehow still eligible.', forty: 4.7, hype: 88}],
 };
 function classFor(yr) {
   G.classes = G.classes || {};
