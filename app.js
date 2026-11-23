@@ -1109,6 +1109,7 @@ function prospectModal(rank) {
   modal(`<div class="pchead">${face({n: p.n, id: 'pros-' + p.rank, tm: G.user}, 'xl')}<div class="pcmid"><div class="kicker">${p.pos} · ${esc(p.sch)} · big board #${p.rank}</div><h3>${esc(p.n)}</h3><span class="tag">${p.round} talent</span></div>
       <div class="pcovr"><b class="${oc(p.hi)}">${p.lo}–${p.hi}</b><span>PROJECTED</span></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     ${p.egg ? `<div class="eggnote"><span class="kicker">Scouting legend</span><span>${esc(p.egg)}</span></div>` : ''}
+    ${p.path ? `<p class="small muted">${esc(p.path)}</p>` : ''}
     <div class="ratingrow">
       <div class="rh"><span class="kicker" style="color:var(--muted)">Height</span><b>${p.ht}</b></div>
       <div class="rh"><span class="kicker" style="color:var(--muted)">Weight</span><b>${p.wt}</b><span class="small muted">lb</span></div>
@@ -2582,7 +2583,7 @@ document.addEventListener('click', e => {
     }
     case 'confirmPick': { startGame(el.dataset.t); closeModal(); window.scrollTo(0, 0); let seen = false; try { seen = localStorage.getItem('21-0-guide') === '1'; localStorage.setItem('21-0-guide', '1'); } catch (e) { /* storage unavailable */ } persist(); render(); if (!seen) setTimeout(() => showGuide(0), 300); return; }
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
-    case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
+    case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); E.attachData(DATA); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
     case 'closeModal': closeModal(); UI.found = null; return;
     case 'faSheet': faSheet(el.dataset.k); return;
     case 'flexMove': { const p = G.players[id], back = !el.dataset.k, from = back ? (G.flex || {})[id] : p.pos; E.setFlex(id, el.dataset.k || null); persist(); render(); depthModal(back ? from : el.dataset.k); toast(back ? `${p.n} is back at ${p.pos}.` : `${p.n} now plays ${el.dataset.k}.`); return; }

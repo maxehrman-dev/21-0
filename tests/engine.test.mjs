@@ -231,11 +231,16 @@ test('attributes and a deeper trade model: timelines, roster spots and memory', 
 
 test('future draft classes carry real names, and later years hide a few legends', () => {
   E.newGame(DATA, 'NYJ', 51);
-  const c28 = E.scoutedClass(2028), c29 = E.scoutedClass(2029), c32 = E.scoutedClass(2029);
+  const c28 = E.scoutedClass(2028), c29 = E.scoutedClass(2029), c32 = E.scoutedClass(2032);
   assert.equal(c28.length, 260);
   assert.ok(c28.some(p => p.n === 'Bryce Underwood' && p.rank <= 40), 'the top 2025 recruits headline the 2028 class');
-  assert.ok(c29.some(p => p.n === 'Keenyi Pepe'));
-  assert.ok(c32.some(p => p.n === 'Baby Gronk' && p.egg), 'Baby Gronk is in the 2029 class');
+  // a recruit enters the draft the year the college model picked: Pepe barely played as a freshman, so he redshirts
+  const c30 = E.scoutedClass(2030), pepe = [...c29, ...c30].find(p => p.n === 'Keenyi Pepe');
+  assert.ok(pepe && pepe.path, 'top recruits carry their college path');
+  assert.ok(c29.filter(p => p.path).length > 150, 'boards fill with real college players below the recruits');
+  assert.ok(E.scoutedClass(2027).slice(150).some(p => p.path), 'the 2027 board past the top 150 uses real college seniors');
+  assert.ok(c29.some(p => p.n === 'Willie Beamen') && !c28.some(p => p.egg), 'legends stay in the later years');
+  assert.ok(c32.some(p => p.n === 'Baby Gronk' && p.egg), 'Baby Gronk is in the 2032 class');
   assert.equal(new Set(c28.map(p => p.rank)).size, 260, 'every board rank is unique');
 });
 

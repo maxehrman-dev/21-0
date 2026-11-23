@@ -11,6 +11,7 @@ recruits, orders them by their average ESPN, 247Sports and Rivals/On3 rank, and 
 
 Writes data.json "classes": {year: [[recruit rank, position, name, school], ...]}.
 Usage: python3 -I tools/futureclasses.py [folder with the Wikipedia pages]
+Then run tools/collegerosters.py, which moves recruits to the year they turn pro and adds the college roster pool.
 """
 import html, json, os, re, sys
 

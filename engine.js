@@ -34,8 +34,11 @@ const poisson = l => { let L = Math.exp(-Math.max(0, l)), k = 0, p = 1; do { k++
 
 // ---------- state ----------
 let G = null;
+let POOL = {};          // college players for the future draft boards (data.json "pool"), kept out of the save file
+function attachData(DATA) { POOL = (DATA && DATA.pool) || {}; }
 
 function newGame(DATA, userTeam, seed) {
+  attachData(DATA);
   R = makeRng(seed || Date.now());
   const players = {};
   for (const a of DATA.players) {
@@ -2126,31 +2129,50 @@ function genClass(yr, from, count) {
 // classes, mixed into a full generated board. A recruiting rank is not a draft rank, so each lands near his ranking
 // but not on it. Later years get a few Easter eggs.
 const EGGS = {
-  2028: [{n: 'Forrest Gump', pos: 'WR', sch: 'Alabama', rank: 44, note: 'Fastest player anybody has ever timed. Runs until somebody tells him to stop. Bring the playbook in small words.', forty: 4.21, hype: 75}],
-  2029: [{n: 'Baby Gronk', pos: 'TE', sch: 'Viral Prep Academy', rank: 6, note: 'Hyped since the fifth grade. Has more followers than half the league. The ceiling, they say, is limitless.', forty: 4.6, hype: 99},
-         {n: 'Willie Beamen', pos: 'QB', sch: 'Miami (Sharks practice squad)', rank: 26, note: 'Throws through a wall, calls his own plays, and has a rap album dropping on draft day.', forty: 4.52, hype: 80}],
-  2030: [{n: 'Bobby Boucher', pos: 'LB', sch: 'South Central Louisiana State', rank: 12, note: 'Tackles like a truck. Plays angry. Brings his own water. Mama says the NFL is the devil.', forty: 4.55, hype: 70}],
-  2031: [{n: 'Ray "Laces Out" Finkle', pos: 'K', sch: 'Collier County', rank: 118, note: 'Big leg, bigger grudge. Insists the laces face out on every hold.', forty: 5.1, hype: 40},
+  2029: [{n: 'Willie Beamen', pos: 'QB', sch: 'Miami (Sharks practice squad)', rank: 26, note: 'Throws through a wall, calls his own plays, and has a rap album dropping on draft day.', forty: 4.52, hype: 80}],
+  2030: [{n: 'Forrest Gump', pos: 'WR', sch: 'Alabama', rank: 44, note: 'Fastest player anybody has ever timed. Runs until somebody tells him to stop. Bring the playbook in small words.', forty: 4.21, hype: 75}],
+  2031: [{n: 'Bobby Boucher', pos: 'LB', sch: 'South Central Louisiana State', rank: 12, note: 'Tackles like a truck. Plays angry. Brings his own water. Mama says the NFL is the devil.', forty: 4.55, hype: 70},
+         {n: 'Ray "Laces Out" Finkle', pos: 'K', sch: 'Collier County', rank: 118, note: 'Big leg, bigger grudge. Insists the laces face out on every hold.', forty: 5.1, hype: 40}],
+  2032: [{n: 'Baby Gronk', pos: 'TE', sch: 'Viral Prep Academy', rank: 6, note: 'Hyped since the fifth grade. Has more followers than half the league. The ceiling, they say, is limitless.', forty: 4.6, hype: 99},
          {n: 'Tim Riggins', pos: 'RB', sch: 'Dillon Panthers (TX)', rank: 63, note: 'Runs downhill and never skips leg day. Texas forever.', forty: 4.54, hype: 55}],
-  2032: [{n: 'Paul Crewe', pos: 'QB', sch: 'Allenville State', rank: 30, note: 'A former league MVP with a complicated past, back for one more shot. Somehow still eligible.', forty: 4.7, hype: 88}],
+  2033: [{n: 'Paul Crewe', pos: 'QB', sch: 'Allenville State', rank: 30, note: 'A former league MVP with a complicated past, back for one more shot. Somehow still eligible.', forty: 4.7, hype: 88}],
 };
+// Below the ranked recruits, every board fills with real college players from the 2026 rosters. Each one enters
+// the draft the year a model picked for him (tools/collegerosters.py): starters on contenders leave early, backups
+// on stacked rosters wait their turn, injured and redshirted players stay longer. A row's fifth field is his path.
 function classFor(yr) {
   G.classes = G.classes || {};
   if (G.classes[yr]) return G.classes[yr];
-  if (yr === 2027) return (G.classes[2027] = [...G.prospects, ...genClass(2027, G.prospects.length + 1, CLASS_SIZE - G.prospects.length)]);
+  const pool = (POOL[yr] || POOL[String(yr)] || []).slice(), rng = makeRng(hashStr('real' + yr + G.user));
+  if (yr === 2027) {
+    const tail = genClass(2027, G.prospects.length + 1, CLASS_SIZE - G.prospects.length);
+    pool.slice(0, tail.length).forEach(([pos, n, sch, path], i) => { tail[i] = [tail[i][0], pos, n, sch, path]; });
+    return (G.classes[2027] = [...G.prospects, ...tail]);
+  }
   const base = genClass(yr), real = ((G.realClasses || {})[yr] || (G.realClasses || {})[String(yr)] || []).slice();
-  const rng = makeRng(hashStr('real' + yr + G.user)), used = new Set();
-  const place = (rank, row) => { let r = clamp(rank, 1, base.length); while (used.has(r) && r < base.length) r++; used.add(r); base[r - 1] = [r, row[1], row[2], row[3]]; };
-  // recruiting rank to draft rank: around 2.2x the recruit rank (only the very best are listed), with a lot of spread
-  real.forEach(([rr, pos, n, sch]) => place(Math.round((rr * 2.2 + 1) * Math.exp((rng() + rng() + rng() - 1.5) * .7)), [0, pos, n, sch]));
-  for (const e of EGGS[yr] || []) place(e.rank, [0, e.pos, e.n, e.sch]);
+  const eggs = EGGS[yr] || [], eggAt = new Set(eggs.map(e => e.rank));
+  for (const e of eggs) base[e.rank - 1] = [e.rank, e.pos, e.n, e.sch];
+  // recruiting rank to draft rank: around 2.2x the recruit rank (only the very best are listed), with a lot of spread.
+  // College players without a recruiting rank start lower, in the order the model rated them.
+  const step = (CLASS_SIZE - 10) / Math.max(pool.length, CLASS_SIZE - real.length);
+  const ranked = [...real.map(([rr, pos, n, sch, path]) => ({s: (rr * 2.2 + 1) * Math.exp((rng() + rng() + rng() - 1.5) * .7), row: [pos, n, sch, path]})),
+    ...pool.map((row, i) => ({s: (10 + i * step) * Math.exp((rng() + rng() - 1) * .35), row}))].sort((a, b) => a.s - b.s);
+  // a full class of real names fills the board top to bottom; a thin one (years out) keeps generated players in the gaps
+  const dense = ranked.length >= 150;
+  let r = 0;
+  for (const {s: sc, row: [pos, n, sch, path]} of ranked) {
+    r = dense ? r + 1 : Math.max(r + 1, Math.round(sc));
+    while (eggAt.has(r)) r++;
+    if (r > base.length) break;
+    base[r - 1] = path ? [r, pos, n, sch, path] : [r, pos, n, sch];
+  }
   return (G.classes[yr] = base);
 }
 // A class is scouted once, the first time anyone looks, so the big board does not change between visits
 function scoutedClass(yr) {
   G.scouted = G.scouted || {};
   const C = classFor(yr), have = G.scouted[yr] || [];
-  if (have.length < C.length) G.scouted[yr] = have.concat(C.slice(have.length).map(([rank, pos, n, sch]) => scoutProspect({rank, pos, n, sch})));
+  if (have.length < C.length) G.scouted[yr] = have.concat(C.slice(have.length).map(([rank, pos, n, sch, path]) => scoutProspect(path ? {rank, pos, n, sch, path} : {rank, pos, n, sch})));
   return G.scouted[yr];
 }
 // Every prospect has a true rating, hidden until he is drafted, and a scouting range that can be wrong.
@@ -2973,7 +2995,7 @@ const api = {
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);
