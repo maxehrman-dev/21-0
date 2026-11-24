@@ -552,7 +552,7 @@ function nextAction() {
       if ((G.fa.decisions || []).length) return {label: 'Match or let go', act: 'tabHome', sub: `${G.fa.decisions.length} decision${G.fa.decisions.length > 1 ? 's' : ''} waiting`};
       return G.fa.wave <= 3 ? {label: `End wave ${G.fa.wave}`, act: 'faWave', sub: `Free agency · wave ${G.fa.wave} of 3`, alt: {label: 'Draft', act: 'toDraft'}} : {label: 'Next: the draft', act: 'toDraft', sub: 'Free agency is over'};
     }
-    if (S === 'draft') { const D = G.draft, slot = D.order[D.at]; if (!slot) return {label: 'Next: training camp', act: 'finishDraft', sub: 'Draft complete'}; return slot.owner === G.user ? {label: `You're on the clock: #${slot.no}`, act: 'tabHome', sub: 'Pick from the big board', alt: {label: 'Auto', act: 'finishDraft'}} : {label: 'Sim to my pick', act: 'toMyPick', sub: `Pick #${slot.no}`, alt: {label: 'Auto', act: 'finishDraft'}}; }
+    if (S === 'draft') { const D = G.draft, slot = D.order[D.at]; if (!slot) return {label: 'Next: training camp', act: 'finishDraft', sub: 'Draft complete'}; return slot.owner === G.user ? {label: `Make pick #${slot.no}`, act: 'pickSheet', sub: 'You are on the clock', alt: {label: 'Auto', act: 'finishDraft'}} : {label: 'Sim to my pick', act: 'toMyPick', sub: `Pick #${slot.no}`, alt: {label: 'Auto', act: 'finishDraft'}}; }
     if (S === 'camp') return {label: 'Next: final roster', act: 'toCutdown', sub: 'Training camp is over'};
     if (S === 'cutdown') { const bad = E.userReady(); return bad.length ? {label: 'Fix it for me', act: 'fixRoster', sub: bad[0]} : {label: `Start the ${G.season} season`, act: 'startS2', sub: 'Roster is set'}; }
   }
@@ -574,7 +574,7 @@ function renderBottomNav() {
   const tab = ([k, l]) => `<button data-tab="${k}" class="${UI.tab === k || (k === 'league' && UI.tab === 'resume') ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}"><svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICON[k]}</svg><span>${l}</span>${k === 'trade' && n ? `<i class="bcount">${n}</i>` : ''}</button>`;
   const a = nextAction();
   const SHORT = {playWeek: 'Week 1', toDeadline: 'Deadline', simRest: 'Sim rest', poNext: 'Play', offseason: 'Offseason', final: 'Results', toResign: 'Re-sign', toFA: 'Free agency', faWave: 'End wave', toDraft: 'Draft', toCutdown: 'Final roster',
-    toMyPick: 'My pick', finishDraft: 'Finish', fillRoster: 'Fill roster', fixRoster: 'Fix roster', startS2: 'Start season', runback: 'Run back', tabHome: 'Go'};
+    toMyPick: 'My pick', pickSheet: 'Pick', finishDraft: 'Finish', fillRoster: 'Fill roster', fixRoster: 'Fix roster', startS2: 'Start season', runback: 'Run back', tabHome: 'Go'};
   const short = a ? (a.act === 'tabHome' && G.step === 'draft' ? 'Pick' : a.act === 'faWave' ? `Wave ${G.fa.wave}` : a.act === 'playWeek' ? `Week ${G.week + 1}` : a.act === 'poNext' ? 'Play' : SHORT[a.act] || 'Next') : '';
   const center = a ? `<button class="bnext" data-act="${a.act}" aria-label="${esc(a.label)}" title="${esc(a.label)}"><span class="bnext-ring"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></span><span>${esc(short)}</span></button>` : '<span class="bnext off"></span>';
   el.innerHTML = tab(['home', 'Home']) + tab(['roster', 'Roster']) + center + tab(['trade', 'Trade']) + tab(['league', 'League']);
@@ -1139,13 +1139,18 @@ function leaveResignSheet() {
     ${R.fits.length < R.starters.length ? `<p class="small warn">${R.fits.length ? `You can afford ${R.fits.length} of them at their asking price.` : 'None of them fit under your cap at their asking price.'} Negotiate for less, or <button class="linkbtn" data-act="capRoom">make cap room</button>.</p>` : ''}
     <div class="row end">${R.fits.length ? `<button class="btn ghost" data-act="toFA" data-force="1">Let them go</button><button class="btn" data-act="closeModal">Decide one by one</button><button class="btn go" data-act="resignStarters" data-then="toFA">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : `<button class="btn" data-act="closeModal">Negotiate</button><button class="btn go" data-act="toFA" data-force="1">Let them go</button>`}</div>`, true);
 }
+// Over the cap in the offseason: say it first, and fix it in one tap
+function overCapBar() {
+  const sp = E.capSpace(G.user); if (sp >= 0) return '';
+  return `<div class="vban warn capbar" role="status"><span class="vbico" aria-hidden="true"><svg viewBox="0 0 24 24">${VB_ICON.warn}</svg></span><div><b>${money(-sp)} over the ${G.season} cap</b><span>You cannot sign anyone until you are under it.</span></div><div class="row"><button class="btn sm go" data-act="fixCap">Fix it for me</button><button class="btn sm ghost" data-act="capRoom">Choose who to cut</button></div></div>`;
+}
 function homeResign() {
   const ids = Object.keys(G.resign).filter(id => G.players[id] && (G.players[id].tm === G.user || G.resign[id].done));
   const list = ids.map(id => ({p: G.players[id], r: G.resign[id]})).sort((a, b) => b.p.ovr - a.p.ovr);
   const pending = list.filter(x => !x.r.done);
   const d = E.depth(G.user);
   const starter = p => d[p.pos].indexOf(p) > -1 && d[p.pos].indexOf(p) < E.STARTERS[p.pos];
-  return `${stepper(0)}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
+  return `${stepper(0)}${overCapBar()}<section class="hero"><div><h2>Expiring contracts${helpBtn('resign')}</h2>
     <p class="lead">${money(E.capSpace(G.user))} cap space. Anyone you do not keep becomes a free agent.</p></div>
     <div class="row">${pendingResign().starters.length ? '' : '<button class="btn ghost" data-act="capRoom">Make cap room</button>'}<button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
   ${optionCard()}
@@ -1199,6 +1204,16 @@ function revealPopup(sel, no) {
     <div class="small muted" style="margin-top:6px">His real rating shows after training camp and the preseason, at final cuts.</div></div></div>`, 'win');
 }
 // Training camp is over: every rookie's real rating against what the scouts said
+// On the clock: the best players left, the ones who fill a need first, each one tap away
+function pickSheet() {
+  const D = G.draft, slot = D && D.order[D.at]; if (!slot || slot.owner !== G.user) return;
+  D.pool.forEach(p => { if (p.lo == null) E.scoutProspect(p); });
+  const needs = needSet(), top = D.pool.slice().sort((a, b) => a.rank - b.rank).slice(0, 12);
+  const pick = [...top.filter(p => needs.has(p.pos)).slice(0, 3), ...top.filter(p => !needs.has(p.pos))].slice(0, 5).sort((a, b) => a.rank - b.rank);
+  modal(`<div class="sheeth"><div><div class="kicker">${G.season} draft · pick #${slot.no}</div><h3>You are on the clock</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="plist">${pick.map(p => `<div class="trow"><button class="prow linkrow" data-act="prospect" data-rank="${p.rank}">${face({n: p.n, id: 'pros-' + p.rank, tm: G.user}, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)}${needs.has(p.pos) ? ' <span class="tag gold">Need</span>' : ''}</div><div class="psub">${p.pos} · ${esc(p.sch)} · board #${p.rank} · scouts ${p.lo}–${p.hi}</div></div></button><button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button></div>`).join('')}</div>
+    <div class="row end"><button class="btn" data-act="closeModal">See the whole board</button></div>`);
+}
 function draftRecap() {
   const mine = myClass(), all = G.draft.order.filter(o => o.sel && o.sel.ovr != null);
   const steals = all.filter(o => o.sel.verdict === 'Steal' && o.owner !== G.user).sort((a, b) => (b.sel.ovr - b.sel.hi) - (a.sel.ovr - a.sel.hi)).slice(0, 3);
@@ -1678,7 +1693,9 @@ function renderTrade() {
     <div class="card col-get"><div class="cardh"><h3>${esc(G.teams[P].name)}</h3><span class="small muted">Value to them</span></div><div class="needline" title="Tap a need to see your players who could fill it"><span class="lbl">They need</span>${needChips('tTheirNeed', UI.tposGive, P)}</div>${side('tsGet', theirs, picks(P), 'tposGet')}</div>
     <div class="col-panel">${teamPanel('tNeedPos', UI.tposGet)}</div>
   </div>
-  <button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(pillMood)}</span><span class="dp-go">Review</span></button>
+  ${UI.get.length && !UI.give.length
+    ? `<button class="dockpill mobonly" data-act="balance"><span class="dp-count">0 for ${UI.get.length}</span><span class="dp-mood">Let them build your side</span><span class="dp-go">Ask what they want</span></button>`
+    : `<button class="dockpill mobonly" data-act="dealSheet"><span class="dp-count">${UI.give.length} for ${UI.get.length}</span><span class="dp-mood ${ready ? (ev.ok ? 'good' : ev.ratio >= .85 ? 'warn' : 'bad') : ''}">${esc(pillMood)}</span><span class="dp-go">Review</span></button>`}
   <div class="dealdock card deskonly-grid"><div class="dock-sides"><div><div class="lbl">You send</div>${dockSide(UI.give, 'give')}</div><div><div class="lbl">You get</div>${dockSide(UI.get, 'get')}</div></div>
     <div class="dock-right"><b class="dmood ${dState} ${UI.lastMood !== mood ? 'flash' : ''}">${esc(mood)}</b>${(() => { UI.lastMood = mood; return ''; })()}${ready ? `<span class="small muted">For your team: <b class="${E.winsDelta(G.user, UI.get, UI.give) >= .05 ? 'good' : E.winsDelta(G.user, UI.get, UI.give) <= -.05 ? 'bad' : ''}">${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season${(() => { const ch = E.chemTrade(UI.give, UI.get).d; return ch ? ` · locker room <b class="${ch > 0 ? 'good' : 'bad'}">${ch > 0 ? '+' : ''}${ch}</b>` : ''; })()}</span>` : ''}${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}" role="meter" aria-valuemin="0" aria-valuemax="125" aria-valuenow="${Math.round(Math.min(1.25, ev.ratio) * 100)}" aria-label="How they feel"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>` : ''}
       ${ready ? contractLines(ev) : ''}
@@ -2485,7 +2502,7 @@ function homeFA() {
       <div class="faprice"><b class="num">${money(c ? c.apy : price)}</b><span class="small muted">${c ? 'his counter' : `× ${yrs} yr`}</span></div>
       <button class="btn sm ${price <= space ? 'go' : ''}" data-act="${price <= space ? 'faSign' : 'faOpen'}" data-id="${p.id}">${price <= space ? 'Sign' : 'Offer'}</button></div>`;
   };
-  return `${stepper(1)}<section class="hero"><div><div class="kicker">Wave ${Math.min(F.wave, 3)} of 3 · prices drop each wave</div><h2>Free agency${helpBtn('fa')}</h2>
+  return `${stepper(1)}${overCapBar()}<section class="hero"><div><div class="kicker">Wave ${Math.min(F.wave, 3)} of 3 · prices drop each wave</div><h2>Free agency${helpBtn('fa')}</h2>
     <p class="lead">Every offer gets an answer right away.</p></div>
     <div class="row">${F.wave <= 3 && !F.decisions.length ? `<button class="btn go lg" data-act="faWave">End wave ${F.wave}</button>` : ''}<button class="btn" data-act="toDraft">${F.wave > 3 ? 'Next: the draft' : 'Skip to the draft'}</button></div></section>
   <div class="kpistrip three"><div class="kpi"><span>Cap space</span><b class="num ${space < 5 ? 'warn' : ''}">${money(space)}</b></div><div class="kpi"><span>Signed</span><b class="num">${mine.length}</b></div><div class="kpi"><span>Biggest need</span><b>${N[0] ? N[0].pos : '–'}</b></div></div>
@@ -2747,6 +2764,9 @@ document.addEventListener('click', e => {
     case 'setMode': UI.mode = el.dataset.k; closeModal(); renderPicker(); renderHeader(); return;
     case 'tAll': UI[el.dataset.k] = !UI[el.dataset.k]; break;
     case 'capRoom': capRoomSheet(); return;
+    case 'fixCap': { const r = E.fixCap(); persist(); render();
+      popup('Cap room', r.ok ? 'Under the cap' : 'Still over the cap', `${vban(r.ok ? 'yes' : 'warn', r.ok ? `${money(E.capSpace(G.user))} of room now` : `${money(-E.capSpace(G.user))} still over`, r.restr.length ? `Restructured ${r.restr.join(', ')}. Their cap hits move into later years.` : 'No contracts left to restructure.')}${r.ok ? '' : '<div class="row"><button class="btn go" data-act="capRoom">Choose who to cut</button></div>'}`, r.ok ? 'win' : '');
+      return; }
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockToggle': {
@@ -2872,6 +2892,7 @@ document.addEventListener('click', e => {
       closeModal(); E.finishFA(); E.refreshOffers(); break;
     }
     case 'toMyPick': E.simDraftToUser(); break;
+    case 'pickSheet': pickSheet(); return;
     case 'draftNext': if (G.draft.order[G.draft.at] && G.draft.order[G.draft.at].owner !== G.user) E.aiPick(); persist(); break;
     case 'draftP': {
       const p = G.draft.pool.find(x => x.rank === +el.dataset.rank); if (!p) return;

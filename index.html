@@ -1443,6 +1443,10 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
   .pickwrap .tcard { padding: 8px 10px; }
   .pickwrap .divh { margin: 14px 0 6px; }
 }
+/* nothing may ever be wider than the phone: a too-wide grid column makes the phone zoom the whole page out */
+.grid > *, .g2 > *, .homegrid > *, .draftgrid > *, .draftmain, .tradecols > * { min-width: 0; }
+#app { overflow-x: clip; }
+.capbar { margin: 0 0 14px; flex-wrap: wrap; } .capbar > div:nth-child(2) { flex: 1; min-width: 180px; } .capbar .row { flex: 0 0 auto; }
 </style>
 </head>
 <body>

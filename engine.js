@@ -2371,6 +2371,7 @@ function userReady() {
   const n = roster(G.user).length;
   if (n > ROSTER_MAX) issues.push(`Cut down to ${ROSTER_MAX} players (you have ${n}).`);
   if (capSpace(G.user) < 0) issues.push(`Get under the ${G.season} cap (you are $${(-capSpace(G.user)).toFixed(1)}M over).`);
+  else if (G.phase === 'offseason' && n < ROSTER_MAX && capSpace(G.user) < (ROSTER_MAX - n) * .9) issues.push(`Leave room to fill ${ROSTER_MAX - n} open spots at the minimum: $${((ROSTER_MAX - n) * .9).toFixed(1)}M needed, $${capSpace(G.user).toFixed(1)}M free.`);
   const d = depth(G.user);
   return issues;
 }
@@ -2426,6 +2427,8 @@ function startSeason2() {
       G.players[id] = {id, n: 'Depth ' + pos, pos, tm: G.user, age: 25, ovr: 52, cap: .9, end: G.season, st25: '', st26: '', inj: false, rook: false};
     }
   }
+  // the fill-ins never put you over the cap: restructure the biggest deals to make the room
+  for (const q of roster(G.user).filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) { if (capSpace(G.user) >= 0) break; restructure(q.id); }
   G.phase = 'season'; G.week = 0; G.step = null;
   startForm();
   G.news.unshift(`${G.season} regular season is underway.`);
@@ -2464,27 +2467,39 @@ function cutPlan() {
   const freshPick = p => p.draft && p.end === G.season + 3;
   const cands = roster(G.user).filter(p => !starters.has(p.id) && !(freshPick(p) && p.draft <= 128))
     .sort((a, b) => (freshPick(a) - freshPick(b)) || playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
+  // open spots get filled at the minimum before kickoff, so that money has to fit too
+  const over = () => pay + Math.max(0, ROSTER_MAX - n) * .9 > cap;
   for (const p of cands) {
-    if (n <= ROSTER_MAX && pay <= cap) break;
+    if (n <= ROSTER_MAX && !over()) break;
     if (counts[p.pos] <= MIN_DEPTH[p.pos]) continue;
     const c = cutCost(p);
-    if (n <= ROSTER_MAX && c.save <= 0) continue;
+    if (n <= ROSTER_MAX && c.save <= .9) continue;      // releasing him only helps if he costs more than his replacement
     plan.push(p.id); counts[p.pos]--; n--; pay -= c.save;
   }
   // still over the cap with every backup gone: the starters who give the least for their money
-  if (pay > cap) for (const p of roster(G.user).filter(x => starters.has(x.id) && x.pos !== 'QB' && !plan.includes(x.id)).sort((a, b) => playerValue(a) / Math.max(1, cutCost(a).save) - playerValue(b) / Math.max(1, cutCost(b).save))) {
-    if (pay <= cap) break;
-    const c = cutCost(p); if (c.save <= .5) continue;
-    plan.push(p.id); pay -= c.save;
+  if (over()) for (const p of roster(G.user).filter(x => starters.has(x.id) && x.pos !== 'QB' && !plan.includes(x.id)).sort((a, b) => playerValue(a) / Math.max(1, cutCost(a).save) - playerValue(b) / Math.max(1, cutCost(b).save))) {
+    if (!over()) break;
+    const c = cutCost(p); if (c.save <= 1.5) continue;
+    plan.push(p.id); pay -= c.save; n--;
   }
   return plan;
+}
+// Restructure the biggest contracts until you are under the cap. Nobody leaves; the money moves into later years.
+function fixCap() {
+  const restr = [];
+  for (const q of roster(G.user).filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
+    if (capSpace(G.user) >= 0) break;
+    if (restructure(q.id)) restr.push(q.n);
+  }
+  return {restr, ok: capSpace(G.user) >= 0};
 }
 // One tap from the final roster screen: restructure first (nobody leaves), then release the suggested players
 function fixRoster() {
   const done = {restr: [], cuts: []};
   const cap = G.cap[G.season];
+  const fill = () => Math.max(0, ROSTER_MAX - roster(G.user).length) * .9;
   for (const q of roster(G.user).filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
-    if (payroll(G.user) <= cap) break;
+    if (payroll(G.user) + fill() <= cap) break;
     if (restructure(q.id)) done.restr.push(q.n);
   }
   for (const id of cutPlan()) { const q = G.players[id]; if (q) { cutPlayer(id); done.cuts.push(q.n); } }
@@ -3242,7 +3257,7 @@ const api = {
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, fixRoster, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);
