@@ -2470,7 +2470,25 @@ function cutPlan() {
     if (n <= ROSTER_MAX && c.save <= 0) continue;
     plan.push(p.id); counts[p.pos]--; n--; pay -= c.save;
   }
+  // still over the cap with every backup gone: the starters who give the least for their money
+  if (pay > cap) for (const p of roster(G.user).filter(x => starters.has(x.id) && x.pos !== 'QB' && !plan.includes(x.id)).sort((a, b) => playerValue(a) / Math.max(1, cutCost(a).save) - playerValue(b) / Math.max(1, cutCost(b).save))) {
+    if (pay <= cap) break;
+    const c = cutCost(p); if (c.save <= .5) continue;
+    plan.push(p.id); pay -= c.save;
+  }
   return plan;
+}
+// One tap from the final roster screen: restructure first (nobody leaves), then release the suggested players
+function fixRoster() {
+  const done = {restr: [], cuts: []};
+  const cap = G.cap[G.season];
+  for (const q of roster(G.user).filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
+    if (payroll(G.user) <= cap) break;
+    if (restructure(q.id)) done.restr.push(q.n);
+  }
+  for (const id of cutPlan()) { const q = G.players[id]; if (q) { cutPlayer(id); done.cuts.push(q.n); } }
+  done.ok = !userReady().length;
+  return done;
 }
 // Team needs: each position group vs the league, with a plain-language need level
 function teamNeeds(t) {
@@ -3189,7 +3207,7 @@ const api = {
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, fixRoster, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);

@@ -145,6 +145,18 @@ function modal(html, wide) {
   modal0(html, wide);
 }
 function modal0(html, wide) { navMark(); clearTimeout(UI.closeT); const had = !!$('#layer .modal:not(.closing)'); const old = $('#layer .sheet'), oldKey = old && (old.querySelector('h3') || {}).textContent, oldTop = old ? old.scrollTop : 0, oldIn = old ? saveScroll(old) : {}; $('#layer').innerHTML = `<div class="modal" data-act="closeModal"><div class="sheet${wide ? ' wide' : ''}" data-stop="1" role="dialog" aria-modal="true">${html}</div></div>`; if (had) { const m = $('#layer .modal'); if (m) m.classList.add('still'); const sh = $('#layer .sheet'); if (sh && oldKey && (sh.querySelector('h3') || {}).textContent === oldKey) { sh.scrollTop = oldTop; restoreScroll(sh, oldIn); } } }
+// Phones: every sheet can always be closed. A close button that stays in view, a swipe down on the sheet, the
+// page behind locked so a scroll never drags the wrong layer, and a sheet without its own close gets one.
+function sheetReady() {
+  const sh = $('#layer .sheet:not([data-ready])'); if (!sh) return;
+  sh.dataset.ready = '1';
+  if (!sh.querySelector('[data-act=closeModal]')) sh.insertAdjacentHTML('afterbegin', '<button class="x xfloat" data-act="closeModal" aria-label="Close">×</button>');
+  let y0 = null, dy = 0;
+  sh.addEventListener('touchstart', e => { y0 = sh.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; }, {passive: true});
+  sh.addEventListener('touchmove', e => { if (y0 == null) return; dy = e.touches[0].clientY - y0; if (dy > 0) sh.style.transform = `translateY(${dy}px)`; else { y0 = null; sh.style.transform = ''; } }, {passive: true});
+  sh.addEventListener('touchend', () => { if (y0 != null && dy > 90) closeModal(); else sh.style.transform = ''; y0 = null; dy = 0; });
+}
+new MutationObserver(() => { document.documentElement.classList.toggle('modal-open', !!$('#layer .modal:not(.closing)')); sheetReady(); }).observe(document.getElementById('layer') || document.body, {childList: true, subtree: true});
 const closeModal = () => {
   UI.sheetStack = []; UI.pushSheet = null;
   const m = $('#layer .modal');
@@ -209,6 +221,7 @@ function simReel(games, kicker, start, done) {
   };
   const tm = setInterval(add, stepMs);
   el.addEventListener('click', () => { while (i < mine.length) add(); finish(); });
+  setTimeout(() => { if (!finished) { clearInterval(tm); while (i < mine.length) add(); finish(); } }, stepMs * mine.length + 4000);   // never leave the reel on screen
 }
 // Runs a sim, then plays the reel, then reports injuries and celebrations.
 function simWithReel(kicker, sim) {
@@ -536,7 +549,7 @@ function nextAction() {
     }
     if (S === 'draft') { const D = G.draft, slot = D.order[D.at]; if (!slot) return {label: 'Next: training camp', act: 'finishDraft', sub: 'Draft complete'}; return slot.owner === G.user ? {label: `You're on the clock: #${slot.no}`, act: 'tabHome', sub: 'Pick from the big board', alt: {label: 'Auto', act: 'finishDraft'}} : {label: 'Sim to my pick', act: 'toMyPick', sub: `Pick #${slot.no}`, alt: {label: 'Auto', act: 'finishDraft'}}; }
     if (S === 'camp') return {label: 'Next: final roster', act: 'toCutdown', sub: 'Training camp is over'};
-    if (S === 'cutdown') { const bad = E.userReady().length; return bad ? (E.roster(G.user).length < 53 ? {label: 'Fill open spots', act: 'fillRoster', sub: E.userReady()[0]} : {label: 'Review cuts', act: 'tabHome', sub: E.userReady()[0]}) : {label: 'Start the 2027 season', act: 'startS2', sub: 'Roster is legal'}; }
+    if (S === 'cutdown') { const bad = E.userReady(); return bad.length ? {label: 'Fix it for me', act: 'fixRoster', sub: bad[0]} : {label: `Start the ${G.season} season`, act: 'startS2', sub: 'Roster is set'}; }
   }
   if (P === 'final') return {label: 'Run it back', act: 'runback', sub: 'Same team, new run', alt: {label: 'Share', act: 'share', k: 'final'}};
   return null;
@@ -556,7 +569,7 @@ function renderBottomNav() {
   const tab = ([k, l]) => `<button data-tab="${k}" class="${UI.tab === k || (k === 'league' && UI.tab === 'resume') ? 'on' : ''}" aria-current="${UI.tab === k ? 'page' : 'false'}"><svg viewBox="0 0 24 24" aria-hidden="true">${TAB_ICON[k]}</svg><span>${l}</span>${k === 'trade' && n ? `<i class="bcount">${n}</i>` : ''}</button>`;
   const a = nextAction();
   const SHORT = {playWeek: 'Week 1', toDeadline: 'Deadline', simRest: 'Sim rest', poNext: 'Play', offseason: 'Offseason', final: 'Results', toResign: 'Re-sign', toFA: 'Free agency', faWave: 'End wave', toDraft: 'Draft', toCutdown: 'Final roster',
-    toMyPick: 'My pick', finishDraft: 'Finish', fillRoster: 'Fill roster', startS2: 'Start season', runback: 'Run back', tabHome: 'Go'};
+    toMyPick: 'My pick', finishDraft: 'Finish', fillRoster: 'Fill roster', fixRoster: 'Fix roster', startS2: 'Start season', runback: 'Run back', tabHome: 'Go'};
   const short = a ? (a.act === 'tabHome' && G.step === 'draft' ? 'Pick' : a.act === 'faWave' ? `Wave ${G.fa.wave}` : SHORT[a.act] || 'Next') : '';
   const center = a ? `<button class="bnext" data-act="${a.act}" aria-label="${esc(a.label)}" title="${esc(a.label)}"><span class="bnext-ring"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></span><span>${esc(short)}</span></button>` : '<span class="bnext off"></span>';
   el.innerHTML = tab(['home', 'Home']) + tab(['roster', 'Roster']) + center + tab(['trade', 'Trade']) + tab(['league', 'League']);
@@ -1317,7 +1330,7 @@ function homeCutdown() {
   const row = (p, on) => { const c = E.cutCost(p); return `<label class="trow cut ${on ? 'sel' : ''}"><input type="checkbox" data-cut="${p.id}" ${on ? 'checked' : ''}>${pRow(p, `${starters.has(p.id) ? '<b>Starter</b> · ' : ''}saves ${money(c.save)}${c.dead ? ` · ${money(c.dead)} dead` : ''}`)}</label>`; };
   return `${stepper(4)}<section class="hero"><div><h2>Final roster${helpBtn('cutdown')}</h2>
     <p class="lead">Get to ${E.ROSTER_MAX} players and under the cap. Suggested cuts are ready.</p></div>
-    <button class="btn go lg" data-act="startS2" ${issues.length ? 'disabled' : ''}>Start the ${G.season} season</button></section>
+    ${issues.length ? '<button class="btn go lg" data-act="fixRoster">Fix it for me</button>' : `<button class="btn go lg" data-act="startS2">Start the ${G.season} season</button>`}</section>
   <div class="cutbar card"><div class="kpis">
     <div><b class="num ${after > 53 ? 'bad' : 'good'}">${after}</b><span>Players${sel.length ? ' after cuts' : ''}</span></div>
     <div><b class="num ${spaceAfter < 0 ? 'bad' : 'good'}">${money(spaceAfter)}</b><span>Cap space</span></div>
@@ -2847,6 +2860,9 @@ document.addEventListener('click', e => {
       UI.tview = 'make'; persist(); go('trade'); return;
     }
     case 'cutAuto': UI.cutSel = E.cutPlan(); break;
+    case 'fixRoster': { const r = E.fixRoster(); UI.cutSel = []; persist(); render();
+      popup('Final roster', r.ok ? 'Roster is set' : 'Almost there', `${vban(r.ok ? 'yes' : 'warn', r.ok ? 'Under the cap and at 53 or fewer' : 'Still not ready', [r.restr.length ? `Restructured ${r.restr.join(', ')}` : '', r.cuts.length ? `Released ${r.cuts.join(', ')}` : ''].filter(Boolean).join('. ') || 'Nothing needed changing.')}${r.ok ? '' : `<p class="small bad">${esc(E.userReady().join(' '))}</p>`}`, r.ok ? 'win' : '');
+      return; }
     case 'cutApply': { const n = UI.cutSel.length; for (const cid of UI.cutSel) E.cutPlayer(cid); UI.cutSel = []; toast(`Released ${n} player${n === 1 ? '' : 's'}.`); break; }
     case 'startS2': { E.startSeason2(); E.refreshOffers(); UI.tview = null; UI.tab = 'home'; UI.proj = null; persist(); render(); if (G.autoFilled && G.autoFilled.length) fillPopup(G.autoFilled, 'Before kickoff'); return; }
     case 'fillRoster': { const r = E.fillRoster(G.user); persist(); render(); if (r.length) fillPopup(r, 'Roster filled'); else toast('No affordable free agents left. Clear cap space first.'); return; }
@@ -2932,7 +2948,8 @@ document.addEventListener('click', e => {
       if (!tradeOpen()) { closeModal(); popup('Trades are closed', 'Not right now', `<p class="lead">${esc(G.phase === 'playoffs' ? 'No trades during the playoffs. They reopen in the offseason.' : `The trade deadline after Week ${E.DEADLINE_WEEK} has passed. Trades reopen in the offseason.`)}</p>`); return; }
       if (g) { UI.give = g; toast('Here is what they would want. Take things out with ×, then make the call.'); UI.tview = 'make'; closeModal(); persist(); go('trade'); return; }
       UI.tview = 'make'; closeModal(); persist(); go('trade');
-      popup(`No deal for ${esc(p.n)}`, 'Why it will not work', `<p class="lead">${esc(E.whyNoDeal(id))}</p><p class="small muted">You can still build a deal by hand below and make the call.</p>`);
+      { const why = E.whyNoDeal(id), cap = /cap/i.test(why);
+        popup(`No deal for ${esc(p.n)}`, 'Why it will not work', `<p class="lead">${esc(why)}</p>${cap ? '<div class="row"><button class="btn go" data-act="capRoom">Make cap room</button></div>' : ''}<p class="small muted">You can still build a deal by hand below and make the call.</p>`); }
       return;
     }
     case 'findFor': { const list = E.findPackages(id).map(x => Object.assign(x, {label: x.label + ' · ' + G.teams[x.partner].nick})); openFound(id, list); return; }
