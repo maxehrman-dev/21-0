@@ -537,9 +537,11 @@ const TAB_ICON = {home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 
 function nextAction() {
   if (!G) return null;
   const P = G.phase, S = G.step;
-  if ((P === 'preseason' || P === 'season') && G.week === 0) return {label: 'Play Week 1', act: 'playWeek', sub: `${G.season} season preview`, alt: {label: 'Sim to deadline', act: 'toDeadline'}};
-  if (P === 'preseason' || P === 'season') return G.week < E.DEADLINE_WEEK ? {label: 'Sim to the trade deadline', act: 'toDeadline', sub: `Week ${G.week + 1} · deadline in ${E.DEADLINE_WEEK - G.week} wk${E.DEADLINE_WEEK - G.week > 1 ? 's' : ''}`} : {label: 'Sim rest of season', act: 'simRest', sub: `${G.season} · Week ${G.week + 1}`};
-  if (P === 'deadline') { const n = offerCount(); return {label: 'Sim rest of season', act: 'simRest', sub: `Trade deadline${n ? ` · ${n} offer${n > 1 ? 's' : ''} waiting` : ': last chance'}`}; }
+  // In season the big button always does the same thing: play the next game. Bigger jumps sit next to it, labeled.
+  if (P === 'preseason' || P === 'season') { const left = E.DEADLINE_WEEK - G.week;
+    return {label: `Play Week ${G.week + 1}`, act: 'playWeek', sub: G.week === 0 ? `${G.season} season preview` : left > 0 ? `Trade deadline in ${left} week${left > 1 ? 's' : ''}` : `${G.season} · ${18 - G.week} games left`,
+      alt: left > 1 ? {label: 'Sim to deadline', act: 'toDeadline'} : {label: 'Sim rest of season', act: 'simRest'}}; }
+  if (P === 'deadline') { const n = offerCount(); return {label: `Play Week ${G.week + 1}`, act: 'playWeek', sub: `Trade deadline${n ? ` · ${n} offer${n > 1 ? 's' : ''} waiting` : ': trades close after this game'}`, alt: {label: 'Sim rest of season', act: 'simRest'}}; }
   if (P === 'playoffs') { const R = G.playoffs[G.season]; return {label: `Play the ${E.ROUND_NAMES[R.round]}`, act: 'poNext', sub: `${G.season} playoffs`, alt: {label: 'Skip', act: 'poSkip'}}; }
   if (P === 'seasondone' && G.fired && !(G.season === 2027 && !G.reported)) return {label: 'Pick a new team', act: 'newgame', sub: 'You were fired'};
   if (P === 'seasondone') return G.season === 2027 && !G.reported ? {label: 'See final results', act: 'final', sub: '2027 is over'} : {label: `Start the ${G.season + 1} offseason`, act: 'offseason', sub: `${G.season} is over`};
@@ -573,7 +575,7 @@ function renderBottomNav() {
   const a = nextAction();
   const SHORT = {playWeek: 'Week 1', toDeadline: 'Deadline', simRest: 'Sim rest', poNext: 'Play', offseason: 'Offseason', final: 'Results', toResign: 'Re-sign', toFA: 'Free agency', faWave: 'End wave', toDraft: 'Draft', toCutdown: 'Final roster',
     toMyPick: 'My pick', finishDraft: 'Finish', fillRoster: 'Fill roster', fixRoster: 'Fix roster', startS2: 'Start season', runback: 'Run back', tabHome: 'Go'};
-  const short = a ? (a.act === 'tabHome' && G.step === 'draft' ? 'Pick' : a.act === 'faWave' ? `Wave ${G.fa.wave}` : SHORT[a.act] || 'Next') : '';
+  const short = a ? (a.act === 'tabHome' && G.step === 'draft' ? 'Pick' : a.act === 'faWave' ? `Wave ${G.fa.wave}` : a.act === 'playWeek' ? `Week ${G.week + 1}` : a.act === 'poNext' ? 'Play' : SHORT[a.act] || 'Next') : '';
   const center = a ? `<button class="bnext" data-act="${a.act}" aria-label="${esc(a.label)}" title="${esc(a.label)}"><span class="bnext-ring"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></span><span>${esc(short)}</span></button>` : '<span class="bnext off"></span>';
   el.innerHTML = tab(['home', 'Home']) + tab(['roster', 'Roster']) + center + tab(['trade', 'Trade']) + tab(['league', 'League']);
 }
@@ -2662,6 +2664,25 @@ function dealsSheet(id) {
     <div class="offers">${list.length ? list.map(deal).join('') : (mine ? `<div class="nobite"><b>Nobody wants him right now.</b><span class="small muted">${esc(E.whyNoMarket(p.id, UI.shopWant || 'any'))}</span></div>` : '<p class="muted">Nobody found a deal that works right now.</p>')}</div>`, true);
 }
 
+// Anything that skips ahead more than one game, closes trades, or lets the computer decide for you asks first,
+// and says exactly what it will skip.
+const BIG = {
+  toDeadline: () => { const n = E.DEADLINE_WEEK - G.week; return n >= 2 ? {title: `Sim ${n} weeks?`, body: `Plays Weeks ${G.week + 1} to ${E.DEADLINE_WEEK} without stopping, then stops at the trade deadline.`, go: `Sim to Week ${E.DEADLINE_WEEK}`} : null; },
+  simRest: () => { const n = 18 - G.week, open = G.phase === 'deadline' || G.week < E.DEADLINE_WEEK, offers = offerCount();
+    return {title: open ? 'Skip the trade deadline?' : `Sim the last ${n} weeks?`, warn: open,
+      body: `Plays Weeks ${G.week + 1} to 18 without stopping.${open ? ` Trades close after Week ${E.DEADLINE_WEEK} and do not reopen until the offseason.` : ''}${offers ? ` Your ${offers} offer${offers > 1 ? 's' : ''} will expire.` : ''}`, go: 'Sim to Week 18'}; },
+  playWeek: () => G.phase === 'deadline' ? {title: `Play Week ${G.week + 1} and close trades?`, warn: true, body: `This is the trade deadline. Once you play, trades close until the offseason.${offerCount() ? ` Your ${offerCount()} offer${offerCount() > 1 ? 's' : ''} will expire.` : ''}`, go: `Play Week ${G.week + 1}`} : null,
+  poSkip: () => { const P = G.playoffs[G.season], alive = P && !Object.prototype.hasOwnProperty.call(P.elim, G.user); return alive ? {title: 'Sim the rest of the playoffs?', body: 'Your games are simmed too, all the way to the Super Bowl or until you are knocked out.', go: 'Sim to the end'} : null; },
+  poRun: () => ({title: 'Sim to the Super Bowl?', body: 'Plays your playoff games without stopping until the Super Bowl or until you are knocked out.', go: 'Sim ahead'}),
+  toDraft: () => { if (!G.fa || G.fa.wave > 3) return null; const d = E.depth(G.user), empty = E.POS_ORDER.filter(pos => d[pos].length < E.STARTERS[pos]);
+    return {title: 'Leave free agency early?', warn: empty.length > 0, body: `Wave ${G.fa.wave} of 3 is still open. The players left sign elsewhere.${empty.length ? ` You still have no starter at ${empty.join(', ')}.` : ''}`, go: 'Go to the draft'}; },
+  finishDraft: () => { const D = G.draft; if (!D) return null; const left = D.order.slice(D.at).filter(o => o.owner === G.user).length; return left ? {title: `Auto-draft your ${left} pick${left > 1 ? 's' : ''}?`, body: 'The computer picks the best player left for you every time, and the draft ends.', go: 'Auto-draft'} : null; },
+};
+function askFirst(c, el) {
+  const keep = Object.entries(el.dataset).map(([k, v]) => `data-${k.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}="${esc(v)}"`).join(' ');
+  modal(`${vban(c.warn ? 'warn' : 'info', c.title, c.body)}
+    <div class="row end"><button class="btn ghost" data-act="closeModal">Not yet</button><button class="btn go" ${keep} data-force="1">${esc(c.go)}</button></div>`);
+}
 document.addEventListener('click', e => {
   if (UI.guide != null && !e.target.closest('#guide')) showGuide(null);
   if (UI.ddOpen && !e.target.closest('.dd')) { UI.ddOpen = null; if (!e.target.closest('[data-act],[data-tab]')) { render(); return; } }
@@ -2676,6 +2697,7 @@ document.addEventListener('click', e => {
   const fromSheet = el.closest('#layer .sheet');
   if (fromSheet && SHEET_NAV.has(a)) UI.pushSheet = {html: fromSheet.innerHTML, wide: fromSheet.classList.contains('wide')};
   else if (a !== 'sheetBack') UI.pushSheet = null;
+  if (BIG[a] && !el.dataset.force) { const c = BIG[a](el); if (c) { askFirst(c, el); return; } }
   switch (a) {
     case 'sheetBack': { const prev = (UI.sheetStack || []).pop(); if (!prev) { closeModal(); return; } UI.backing = true; UI.pushSheet = null; modal(prev.html.replace(/<div class="sbackbar">[\s\S]*?<\/div>/, '').replace(/<button class="sback"[^>]*>‹ Back<\/button>/, ''), prev.wide); return; }
     case 'pick': {
