@@ -1462,6 +1462,22 @@ button.capbox { display: block; padding: 0; }
 .pfeed b { font-family: var(--display); font-size: 18px; } .pfeed span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .pfeed em { font-style: normal; color: var(--muted); font-size: 13px; }
 .activity .news li.fresh { color: var(--chalk); font-weight: 600; }
 .activity .news li.fresh::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); margin-right: 8px; vertical-align: middle; }
+/* one trade screen */
+.tradeflow { display: grid; gap: 22px; }
+.tradeflow > section > .cardh { margin-bottom: 8px; padding: 0 2px; }
+.tradeflow > section > .cardh h3 { font-size: 18px; }
+.farow2.tapfull { cursor: pointer; }
+.farow2.tapfull .chev { color: var(--muted); font-size: 20px; margin-left: 4px; }
+.dealmore { margin-top: 12px; }
+.tradeflow > section { min-width: 0; }
+.tradeflow > section > .cardh { flex-wrap: wrap; gap: 2px 10px; }
+.farow2.tapfull { flex-wrap: nowrap !important; }
+@media (max-width: 760px) { .tradeflow .offers { grid-template-columns: minmax(0, 1fr); } .tradeflow .offer .row.end { flex-wrap: wrap; } }
+.tradepair { display: grid; gap: 22px; }
+@media (min-width: 1100px) { .tradepair { grid-template-columns: 1fr 1fr; } }
+.tradepair > section { min-width: 0; }
+.tradepair > section > .cardh { margin-bottom: 8px; padding: 0 2px; flex-wrap: wrap; gap: 2px 10px; }
+.tradepair > section > .cardh h3 { font-size: 18px; }
 </style>
 </head>
 <body>
