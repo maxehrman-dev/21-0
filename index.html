@@ -1446,7 +1446,16 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 /* nothing may ever be wider than the phone: a too-wide grid column makes the phone zoom the whole page out */
 .grid > *, .g2 > *, .homegrid > *, .draftgrid > *, .draftmain, .tradecols > * { min-width: 0; }
 #app { overflow-x: clip; }
-.capbar { margin: 0 0 14px; flex-wrap: wrap; } .capbar > div:nth-child(2) { flex: 1; min-width: 180px; } .capbar .row { flex: 0 0 auto; }
+.overcap { margin: 0 0 14px; flex-wrap: wrap; } .overcap > div:nth-child(2) { flex: 1; min-width: 180px; } .overcap .row { flex: 0 0 auto; }
+/* cap books */
+button.capbox, button.stat.mobcap { background: none; border: 0; color: inherit; font: inherit; text-align: inherit; cursor: pointer; padding: inherit; width: auto; }
+button.capbox { display: block; padding: 0; }
+.book { display: grid; gap: 2px; margin: 6px 0 12px; }
+.bookrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.bookrow span { display: grid; gap: 2px; } .bookrow b { white-space: nowrap; }
+.bookrow.total { border-bottom: 0; font-size: 17px; }
+.bookrow b.bad { color: var(--bad); } .bookrow b.good { color: var(--good); }
+.booklist { margin: 4px 0 12px; padding-left: 18px; color: var(--muted); }
 </style>
 </head>
 <body>

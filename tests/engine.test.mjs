@@ -352,7 +352,7 @@ test('expiring contracts do not count against the cap while you decide, and cutt
   E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
   E.beginOffseason(); G.phase = 'offseason'; G.step = 'resign';
   const pending = Object.keys(G.resign).map(id => G.players[id]);
-  const counted = E.roster('BUF').filter(p => p.end >= G.season).reduce((a, p) => a + p.cap, 0) + (G.dead.BUF || 0);
+  const counted = E.roster('BUF').filter(p => p.end >= G.season).reduce((a, p) => a + p.cap, 0) + (G.dead.BUF || 0) - (G.credit.BUF || 0);
   assert.ok(Math.abs(E.payroll('BUF') - counted) < .01, 'payroll counts only contracts that run into 2027');
   assert.ok(pending.length > 0 && pending.every(p => p.end < G.season));
   const before = E.capSpace('BUF');
@@ -468,4 +468,18 @@ test('in-season development: streaks move week to week, young players grow, a fe
   const gain = young.reduce((a, p) => a + p.ovr - before[p.id], 0) / young.length;
   assert.ok(gain > 0.2, 'young players improve during the season');
   assert.ok(Object.values(G.streak).some(v => v >= 2) && Object.values(G.streak).some(v => v <= -2), 'hot and cold streaks');
+});
+
+test('the real books: dead money, real cap space and picks traded before the game starts', () => {
+  E.newGame(DATA, 'NYJ', 1);
+  const G = E.G, B = E.capBook('NYJ');
+  assert.ok(B.dead > 50, 'the Jets carry their real dead money');
+  assert.ok(Math.abs(B.space - DATA.realCap.NYJ['2026'].space) < .2, 'cap space matches the real 2026 number');
+  assert.ok(G.picks.some(k => k.yr === 2027 && k.rd === 1 && k.orig === 'IND' && k.owner === 'NYJ'), 'the Colts first from the Gardner trade belongs to the Jets');
+  assert.ok(!G.picks.some(k => k.yr === 2027 && k.rd === 1 && k.orig === 'GB' && k.owner === 'GB'), 'Green Bay no longer has its 2027 first');
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  const before = E.capSpace('NYJ');
+  E.beginOffseason();
+  assert.ok(Math.abs(G.dead.NYJ - DATA.realCap.NYJ['2027'].dead) < .01, '2027 brings 2027 dead money');
+  assert.ok(G.credit.NYJ >= (G.creditBy.NYJ[2027] || 0) + Math.min(60, Math.max(0, before)) - .01, 'unused room carries over');
 });

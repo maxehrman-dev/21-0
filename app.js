@@ -604,10 +604,10 @@ function renderHeader() {
     <div class="hstats">
       <div class="stat"><b class="num">${rec(G.user)}</b><span>${(() => { const k = E.streak(G.user, G.season); return k && G.phase !== 'offseason' ? `<em class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n}</em> streak` : 'Record'; })()}</span></div>
       <div class="stat"><b class="num ${oc(tr.ovr)}">${tr.ovr}</b><span>OVR · #${rank}</span></div>
-      <div class="stat mobcap"><b class="num ${pay > cap ? 'bad' : ''}">${money(cap - pay).replace('.0M', 'M')}</b><span>Cap free</span></div>
+      <button class="stat mobcap" data-act="capBook" aria-label="Cap details"><b class="num ${pay > cap ? 'bad' : ''}">${money(cap - pay).replace('.0M', 'M')}</b><span>Cap free</span></button>
     </div>
-    <div class="capbox"><div class="caprow"><span>${G.season} cap</span><span class="num"><b>${money(cap - pay)}</b> free</span></div>
-      <div class="capbar ${pay > cap ? 'over' : ''}"><i style="width:${Math.min(100, pay / cap * 100)}%"></i></div></div>
+    <button class="capbox" data-act="capBook" aria-label="Cap details"><div class="caprow"><span>${G.season} cap</span><span class="num"><b>${money(cap - pay)}</b> free</span></div>
+      <div class="capbar ${pay > cap ? 'over' : ''}"><i style="width:${Math.min(100, pay / cap * 100)}%"></i></div></button>
   </div>
   <nav class="tabs" aria-label="Sections">
     ${a ? `<button class="sidenext" data-act="${a.act}" ${a.k ? `data-k="${a.k}"` : ''} title="Shortcut: N"><span class="kicker">${esc(a.sub || 'Next')}</span><b>${esc(a.label)}</b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button>` : ''}
@@ -1139,10 +1139,24 @@ function leaveResignSheet() {
     ${R.fits.length < R.starters.length ? `<p class="small warn">${R.fits.length ? `You can afford ${R.fits.length} of them at their asking price.` : 'None of them fit under your cap at their asking price.'} Negotiate for less, or <button class="linkbtn" data-act="capRoom">make cap room</button>.</p>` : ''}
     <div class="row end">${R.fits.length ? `<button class="btn ghost" data-act="toFA" data-force="1">Let them go</button><button class="btn" data-act="closeModal">Decide one by one</button><button class="btn go" data-act="resignStarters" data-then="toFA">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : `<button class="btn" data-act="closeModal">Negotiate</button><button class="btn go" data-act="toFA" data-force="1">Let them go</button>`}</div>`, true);
 }
+// The books: what you pay the players you have, the dead money from players who are gone, and what is left
+function capBookSheet() {
+  const B = E.capBook(G.user), t = G.teams[G.user];
+  const row = (k, v, note, cls) => `<div class="bookrow"><span>${k}${note ? `<em class="small muted">${note}</em>` : ''}</span><b class="num ${cls || ''}">${v}</b></div>`;
+  const pk = B.traded.map(k => k.owner === G.user ? `You own the ${G.teams[k.orig].nick}' ${k.yr} round ${k.rd}` : `The ${G.teams[k.owner].nick} own your ${k.yr} round ${k.rd}`);
+  modal(`<div class="sheeth"><div><div class="kicker">${G.season} salary cap</div><h3>The ${esc(t.nick)}' books</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <div class="book">${row('League cap', money(B.cap))}${row('Players on the roster', '−' + money(B.players))}
+    ${row('Dead money', '−' + money(B.dead), `Players who are gone: released, traded, or contracts that voided${B.made ? `. ${money(B.made)} of it is from your moves` : ''}`, B.dead >= 30 ? 'bad' : '')}
+    ${B.credit ? row(B.credit > 0 ? 'Carryover and adjustments' : 'Adjustments', (B.credit > 0 ? '+' : '−') + money(Math.abs(B.credit)), 'Unused room rolled over, incentives and other league adjustments') : ''}
+    <div class="bookrow total"><span>Cap space</span><b class="num ${B.space < 0 ? 'bad' : 'good'}">${money(B.space)}</b></div></div>
+    ${B.deadNext ? `<p class="small muted">Already on the ${G.season + 1} books: ${money(B.deadNext)} of dead money.</p>` : ''}
+    ${pk.length ? `<h4 class="sub">Picks traded before you took over</h4><ul class="small booklist">${pk.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+    <div class="row end"><button class="btn ghost" data-act="capRoom">Make cap room</button><button class="btn go" data-act="closeModal">Done</button></div>`);
+}
 // Over the cap in the offseason: say it first, and fix it in one tap
 function overCapBar() {
   const sp = E.capSpace(G.user); if (sp >= 0) return '';
-  return `<div class="vban warn capbar" role="status"><span class="vbico" aria-hidden="true"><svg viewBox="0 0 24 24">${VB_ICON.warn}</svg></span><div><b>${money(-sp)} over the ${G.season} cap</b><span>You cannot sign anyone until you are under it.</span></div><div class="row"><button class="btn sm go" data-act="fixCap">Fix it for me</button><button class="btn sm ghost" data-act="capRoom">Choose who to cut</button></div></div>`;
+  return `<div class="vban warn overcap" role="status"><span class="vbico" aria-hidden="true"><svg viewBox="0 0 24 24">${VB_ICON.warn}</svg></span><div><b>${money(-sp)} over the ${G.season} cap</b><span>You cannot sign anyone until you are under it.</span></div><div class="row"><button class="btn sm go" data-act="fixCap">Fix it for me</button><button class="btn sm ghost" data-act="capRoom">Choose who to cut</button></div></div>`;
 }
 function homeResign() {
   const ids = Object.keys(G.resign).filter(id => G.players[id] && (G.players[id].tm === G.user || G.resign[id].done));
@@ -2764,6 +2778,7 @@ document.addEventListener('click', e => {
     case 'setMode': UI.mode = el.dataset.k; closeModal(); renderPicker(); renderHeader(); return;
     case 'tAll': UI[el.dataset.k] = !UI[el.dataset.k]; break;
     case 'capRoom': capRoomSheet(); return;
+    case 'capBook': capBookSheet(); return;
     case 'fixCap': { const r = E.fixCap(); persist(); render();
       popup('Cap room', r.ok ? 'Under the cap' : 'Still over the cap', `${vban(r.ok ? 'yes' : 'warn', r.ok ? `${money(E.capSpace(G.user))} of room now` : `${money(-E.capSpace(G.user))} still over`, r.restr.length ? `Restructured ${r.restr.join(', ')}. Their cap hits move into later years.` : 'No contracts left to restructure.')}${r.ok ? '' : '<div class="row"><button class="btn go" data-act="capRoom">Choose who to cut</button></div>'}`, r.ok ? 'win' : '');
       return; }
@@ -2803,8 +2818,8 @@ document.addEventListener('click', e => {
     case 'poNext': simWithReel(`${G.season} playoffs`, () => { E.simPlayoffRound(); endSeasonIfDone(); }); return;
     case 'poRun': simWithReel(`${G.season} playoffs`, () => { const P = G.playoffs[G.season]; while (!P.champ && P.round < 3 && !Object.prototype.hasOwnProperty.call(P.elim, G.user)) E.simPlayoffRound(); endSeasonIfDone(); }); return;
     case 'poSkip': simWithReel(`${G.season} playoffs`, () => { while (E.simPlayoffRound()); endSeasonIfDone(); }); return;
-    case 'keepGoing': G.reported = true; G.phase = 'seasondone'; UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; G.dead[G.user] = 0; E.refreshOffers(); toast(`On to ${G.season}. Your run's score is saved; this is a bonus season.`); break;
-    case 'offseason': UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; G.dead[G.user] = 0; E.refreshOffers(); break;
+    case 'keepGoing': G.reported = true; G.phase = 'seasondone'; UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; E.refreshOffers(); toast(`On to ${G.season}. Your run's score is saved; this is a bonus season.`); break;
+    case 'offseason': UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; E.refreshOffers(); break;
     case 'final': G.reported = true; G.phase = 'final'; recordRun(true); if ([2026, 2027].some(y => G.history[y] && G.history[y].finish && G.history[y].finish.perfect)) UI.celebrate = true; break;
     case 'toResign': G.step = 'resign'; E.refreshOffers(); break;
     case 'rookieReport': draftRecap(); return;

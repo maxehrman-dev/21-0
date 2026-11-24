@@ -34,8 +34,9 @@ const poisson = l => { let L = Math.exp(-Math.max(0, l)), k = 0, p = 1; do { k++
 
 // ---------- state ----------
 let G = null;
-let POOL = {};          // college players for the future draft boards (data.json "pool"), kept out of the save file
-function attachData(DATA) { POOL = (DATA && DATA.pool) || {}; }
+let POOL = {};
+let REALCAP = {};       // each team's real dead money and cap space by year (data.json "realCap")          // college players for the future draft boards (data.json "pool"), kept out of the save file
+function attachData(DATA) { POOL = (DATA && DATA.pool) || {}; REALCAP = (DATA && DATA.realCap) || {}; }
 
 function newGame(DATA, userTeam, seed) {
   attachData(DATA);
@@ -68,7 +69,6 @@ function newGame(DATA, userTeam, seed) {
   startForm();
   G.start = snapshot(roster(userTeam), DATA.cap26);
   G.signings = [];
-  for (const t of teamList()) G.dead[t] = 0;
   // the other 31 teams trim their camp rosters to 53 before Week 1; the players they cut are the street free agents
   // you can sign during the season. Starters are never cut, so the season plays the same.
   for (const t of teamList()) {
@@ -82,7 +82,65 @@ function newGame(DATA, userTeam, seed) {
       counts[p.pos]--; p.fromTeam = t; p.tm = 'FA'; p.cap = 0; p.end = 2025; p.ask = askFor(p);
     }
   }
+  startRealCap();
+  applyPickTrades(DATA.pickTrades || []);
   return G;
+}
+
+// ---------- the real books ----------
+// Every team starts with its real dead money (players released or traded, voided contract years) and its real cap
+// space. The game's contract numbers are not exact cap hits, so a per-team adjustment (carryover, incentives, and the
+// difference between the game's numbers and the real ones) is set so each team's cap space matches the real one for
+// 2026, 2027 and 2028. In later years unused room carries over, as it does in the league.
+const realYear = (t, y) => ((REALCAP[t] || {})[String(y)]) || null;
+function projectedPay(t, y) {
+  return roster(t).reduce((s, p) => s + (p.end >= y ? (y > 2026 && p.apy != null ? p.apy : p.cap) : 0), 0);
+}
+function startRealCap() {
+  G.dead = {}; G.credit = {}; G.creditBy = {}; G.madeDead = 0;
+  const caps = {2026: G.cap[2026], 2027: G.cap[2027], 2028: Math.round(G.cap[2027] * 1.07 * 10) / 10};
+  for (const t of teamList()) {
+    G.creditBy[t] = {};
+    for (const y of [2026, 2027, 2028]) {
+      const r = realYear(t, y); if (!r || r.space == null) continue;
+      G.creditBy[t][y] = Math.round((r.space - (caps[y] - projectedPay(t, y) - r.dead)) * 10) / 10;
+    }
+    G.dead[t] = (realYear(t, 2026) || {}).dead || 0;
+    G.credit[t] = G.creditBy[t][2026] || 0;
+  }
+}
+// at the new league year: that year's real dead money, its adjustment, and whatever cap room went unused
+function rollCap(next) {
+  if (!G.credit) return;
+  const roll = {};
+  for (const t of teamList()) roll[t] = Math.max(0, Math.min(60, capSpace(t)));
+  for (const t of teamList()) {
+    const r = realYear(t, next);
+    G.dead[t] = (r ? r.dead : 0) + ((G.deadNext || {})[t] || 0);
+    G.credit[t] = ((G.creditBy || {})[t] || {})[next] != null ? G.creditBy[t][next] + roll[t] : roll[t];
+  }
+  G.deadNext = {};
+}
+// A team's books for this year, and the dead money already on next year's
+function capBook(t) {
+  const players = roster(t).reduce((s, p) => s + (p.end >= G.season ? p.cap : 0), 0);
+  const r = realYear(t, G.season + 1);
+  return {cap: G.cap[G.season], players: Math.round(players * 10) / 10, dead: Math.round((G.dead[t] || 0) * 10) / 10, credit: Math.round(((G.credit || {})[t] || 0) * 10) / 10,
+    space: Math.round(capSpace(t) * 10) / 10, deadNext: r ? r.dead : 0, made: t === G.user ? Math.round((G.madeDead || 0) * 10) / 10 : 0,
+    traded: G.picks.filter(k => k.real && (k.orig === t || k.owner === t)).map(k => ({id: k.id, yr: k.yr, rd: k.rd, orig: k.orig, owner: k.owner}))};
+}
+// Picks already traded in the real league before the game starts: each hop moves one pick of that round the
+// sender holds, his own first
+function applyPickTrades(moves) {
+  let left = moves.slice();
+  for (let pass = 0; pass < 4 && left.length; pass++) {
+    const later = [];
+    for (const [yr, rd, from, to] of left) {
+      const own = G.picks.find(k => k.yr === yr && k.rd === rd && k.owner === from && k.orig === from) || G.picks.find(k => k.yr === yr && k.rd === rd && k.owner === from);
+      if (own) { own.owner = to; own.real = 1; } else later.push([yr, rd, from, to]);
+    }
+    left = later;
+  }
 }
 
 // Each season every player gets a hidden form: a breakout year, a normal year, or a slump.
@@ -163,7 +221,7 @@ function roster(t) {
   return (CACHE.r[t] || []).slice();
 }
 // Contracts that ended before this season do not count, so expiring players you are still deciding on cost nothing until you re-sign them
-const payroll = t => roster(t).reduce((s, p) => s + (p.end >= G.season ? p.cap : 0), 0) + (G.dead[t] || 0);
+const payroll = t => roster(t).reduce((s, p) => s + (p.end >= G.season ? p.cap : 0), 0) + (G.dead[t] || 0) - ((G.credit || {})[t] || 0);
 const capSpace = t => G.cap[G.season] - payroll(t);
 const activeRoster = t => roster(t).filter(p => !p.inj);
 
@@ -584,7 +642,7 @@ function doTrade(partner, give, get, how) {
   const rec = {season: G.season, when, partner, gave: give.map(assetName), got: get.map(assetName), giveIds: give.slice(), getIds: get.slice(),
     vGive: give.reduce((s, id) => s + assetValue(id), 0), vGet: get.reduce((s, id) => s + assetValue(id), 0)};
   const ch = chemTrade(give, get);
-  if (G.season > 2026 || G.phase === 'offseason') G.dead[G.user] = (G.dead[G.user] || 0) + (ev.deadOut || 0);
+  if (ev.deadOut) { G.dead[G.user] = (G.dead[G.user] || 0) + ev.deadOut; G.madeDead = (G.madeDead || 0) + ev.deadOut; }
   for (const e of ev.ext || []) { const q = G.players[e.id]; if (q) { q.cap = e.apy; q.end = G.season + e.yrs - (G.phase === 'offseason' ? 1 : 0); G.news.unshift(`${q.n} signed an extension as part of the trade: ${e.yrs} yr at $${e.apy}M.`); } }
   for (const id of give) if (G.players[id]) delete G.players[id].restr;
   for (const id of give) { if (G.players[id]) G.players[id].tm = partner; else { pickById(id).owner = partner; syncDraftSlot(id, partner); } }
@@ -1668,6 +1726,7 @@ function beginOffseason() {
   const prev = G.season, next = prev + 1;
   G.history[prev] = G.history[prev] || {finish: userFinish(prev), champ: G.playoffs[prev].champ, ovr: teamRating(G.user).ovr};
   G.draftOrder = draftOrder(prev);
+  rollCap(next);
   G.phase = 'offseason'; G.step = 'resign'; G.season = next; G.week = 0; G.draftDone = false; G.draft = null;
   // a new season: a decision to start someone stands; rotations and showcases end
   for (const id of Object.keys(G.plans || {})) if (G.plans[id].plan !== 'start') delete G.plans[id];
@@ -1767,7 +1826,7 @@ function cutPlayer(id) {
   if (!p || p.tm !== G.user) return;
   const left = p.end - G.season + 1;
   const dead = left <= 0 ? 0 : Math.round(p.cap * (left >= 2 ? .5 : .25) * 10) / 10;
-  G.dead[G.user] = (G.dead[G.user] || 0) + (G.season > 2026 ? dead : 0);
+  G.dead[G.user] = (G.dead[G.user] || 0) + dead; G.madeDead = (G.madeDead || 0) + dead;
   chemShift(chemCut(p), `Released ${p.n}`);
   p.fromTeam = p.tm; p.tm = 'FA'; p.cap = 0; p.end = G.season - 1;
   G.news.unshift(`Released ${p.n}. Dead money: $${dead.toFixed(1)}M.`);
@@ -3196,7 +3255,7 @@ function rebuildReport() {
   const tradeS = avgR == null ? null : Math.round(clamp(70 + (avgR - .95) * 120, 15, 100));
   const ageS = clamp(100 - (age - 26) * 15, 0, 100), pickS = clamp(50 + (pw - 6.5) * 8, 0, 100), coreS = clamp(25 + core.length * 20, 0, 100);
   const future = Math.round((ageS + pickS + coreS) / 3);
-  const dead = G.dead[u] || 0;
+  const dead = G.madeDead || 0;
   const capS = Math.round(clamp(40 + (space < 0 ? space * 3 : Math.min(space, 30)) + (1 - commit28 / proj28) * 60 - dead * 2, 0, 100));
 
   const cats = [
@@ -3257,7 +3316,7 @@ const api = {
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, capBook, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);
