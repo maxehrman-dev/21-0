@@ -1456,6 +1456,12 @@ button.capbox { display: block; padding: 0; }
 .bookrow.total { border-bottom: 0; font-size: 17px; }
 .bookrow b.bad { color: var(--bad); } .bookrow b.good { color: var(--good); }
 .booklist { margin: 4px 0 12px; padding-left: 18px; color: var(--muted); }
+/* time passing: the draft reel and recent activity */
+.pickfeed { display: grid; gap: 6px; width: min(360px, 86vw); margin: 14px auto 0; }
+.pfeed { display: grid; grid-template-columns: 44px auto 1fr auto; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; background: rgba(255,255,255,.06); text-align: left; animation: rise .25s ease-out both; }
+.pfeed b { font-family: var(--display); font-size: 18px; } .pfeed span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .pfeed em { font-style: normal; color: var(--muted); font-size: 13px; }
+.activity .news li.fresh { color: var(--chalk); font-weight: 600; }
+.activity .news li.fresh::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); margin-right: 8px; vertical-align: middle; }
 </style>
 </head>
 <body>

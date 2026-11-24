@@ -266,7 +266,7 @@ test('the upgrade finder offers fits, budget options and splashes', () => {
   for (const t of T.tr) for (const x of t.list) assert.ok(x.gain > 0);
 });
 
-test('a call takes some negotiating: a fair first offer gets a small ask, an overpay gets a yes, and every answer says why', () => {
+test('a call: lowballs cost patience and get reasons, and a deal the trade screen calls fair is a yes as is', () => {
   E.newGame(DATA, 'NYJ', 10);
   E.simTo(9); E.G.phase = 'deadline';
   const tgt = E.roster('WAS').filter(p => p.ovr >= 74 && p.ovr <= 86 && p.cap < 12 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr)[0];
@@ -275,15 +275,15 @@ test('a call takes some negotiating: a fair first offer gets a small ask, an ove
   assert.ok(['laugh', 'close', 'counter'].includes(low.kind), low.kind);
   assert.ok(low.why && low.why.length >= 2 && /worth/.test(low.why.join(' ')), 'the answer comes with reasons');
   assert.ok(E.talkWith('WAS').patience < 3, 'a lowball costs patience');
-  const big = E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]);
-  assert.equal(big.kind, 'yes', big.line);
   while (E.talkWith('WAS').patience > 0) E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]);
-  assert.equal(E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]).kind, 'done', 'out of patience means no more calls');
-  // a fresh call at a fair price: they want one more piece first
+  assert.equal(E.proposeTrade('WAS', [picks[picks.length - 1]], [tgt.id]).kind, 'done', 'out of patience, lowballs end the call');
+  const big = E.proposeTrade('WAS', picks.slice(0, 2), [tgt.id]);
+  assert.equal(big.kind, 'yes', 'even after hanging up on you, a GM takes a deal that works for him');
+  // a fresh call: whatever the trade screen says they would take, they take as is
   E.newGame(DATA, 'NYJ', 12); E.simTo(9); E.G.phase = 'deadline';
   const t2 = E.roster('WAS').filter(p => p.ovr >= 74 && p.ovr <= 86 && p.cap < 12 && p.pos !== 'K' && p.pos !== 'P').sort((a, b) => b.ovr - a.ovr)[0];
   const fair = E.balanceTrade('WAS', [], [t2.id]);
-  if (fair) { const r = E.proposeTrade('WAS', fair, [t2.id]); assert.notEqual(r.kind, 'yes', 'a merely fair first offer is not an instant yes'); }
+  if (fair && E.evalTrade('WAS', fair, [t2.id]).ok) assert.equal(E.proposeTrade('WAS', fair, [t2.id]).kind, 'yes', 'a fair deal is a yes as is');
 });
 
 test('team quality drives wins about as much as in the real NFL, and a perfect season is possible but rare', () => {
@@ -425,12 +425,12 @@ test('free agents answer right away: a fair offer signs, a near miss gets a coun
   assert.equal(E.faBid(c.id, E.faPrice(c, y(c)), y(c)).result, 'walked');
 });
 
-test('the cut plan never suggests this year’s early draft picks, and players can cover a neighbouring position', () => {
+test('the cut plan can include rookies but never this year’s first two rounds, and players can cover a neighbouring position', () => {
   E.newGame(DATA, 'DAL', 22);
   E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound()); E.G.phase = 'seasondone';
   E.beginOffseason(); E.G.phase = 'offseason'; E.finishResign(); E.finishFA(); E.finishDraft();
   const plan = E.cutPlan().map(id => E.G.players[id]);
-  assert.ok(!plan.some(p => p.draft && p.draft <= 128 && p.end === E.G.season + 3), 'an early-round rookie was suggested');
+  assert.ok(!plan.some(p => p.draft && p.draft <= 64 && p.end === E.G.season + 3), 'a first- or second-round rookie was suggested');
   const ot = E.cached(() => E.depth('DAL').OT[2])();
   E.setFlex(ot.id, 'IOL');
   assert.ok(E.cached(() => E.depth('DAL').IOL.includes(ot))());

@@ -792,15 +792,10 @@ function talkRespond(partner, free) {
   const cost = n => { if (!free) T.patience -= n; };
   let r;
   const why = talkWhy(partner, give, get);
+  // a deal that works for them gets a yes, as is: the trade screen said they would take it, so they do.
+  // Haggling is yours to do; they never hold out for more on a fair deal.
   if (E2.ok && E2.ratio >= T.firm + .3) r = {kind: 'yes', line: say('eager'), why: ['That is more than we hoped for.', ...why]};
-  else if (E2.ok && E2.ratio >= T.firm) r = {kind: 'yes', line: say('yes'), why};
-  else if (E2.ok) {
-    // fair, but not yet over their bar: they ask for one small thing, and the bar comes down a little anyway
-    const n = nibble(partner, give, get, T.firm);
-    r = n ? {kind: 'counter', line: say('nibble'), counters: [{label: 'Add one piece', give: [...give, n.id], get: get.slice()}], why: [`We are close. Add ${assetName(n.id)} and it is done.`, ...why]} : {kind: 'close', line: say('close'), why};
-    T.firm = Math.max(1, T.firm - .05);
-    if (r) return r;
-  }
+  else if (E2.ok) r = {kind: 'yes', line: say('yes'), why};
   else if (E2.ratio >= 1 && E2.blocking.length && !E2.ev.fleece) r = {kind: 'issue', line: `We would do it, but the league will not. ${E2.blocking[0]}`, why};
   else if (E2.ev.fleece) { cost(1); r = {kind: 'laugh', line: say('fleece'), why: ['We know what we are giving up, and that deal is too good for you.', ...why]}; }
   else if (E2.ratio < .55) { cost(1); r = {kind: 'laugh', line: say('laugh'), why: [`You are offering about ${Math.round(E2.ratio * 100)}% of what we need.`, ...why]}; }
@@ -823,7 +818,9 @@ function proposeTrade(partner, give, get) {
   const T = talkWith(partner);
   T.deal = {give: give.slice(), get: get.slice()}; T.boost = 0; T.used = {};
   T.log.push({me: true, give: give.slice(), get: get.slice()});
-  return hungUp(T) || talkReply(partner, talkRespond(partner));
+  // even a GM who hung up on you earlier this week takes a deal that works for him
+  if (!talkEval(partner, give, get).ok) { const h = hungUp(T); if (h) return h; }
+  return talkReply(partner, talkRespond(partner));
 }
 // Everything you can say once the call is going
 const TALK_MOVES = {ask: 'What would it take?', add: 'Sweeten it', more: 'Ask for more', remove: 'Take something off', drop: 'Leave something out', middle: 'Meet me in the middle', alt: 'Who else would you move?', walk: 'I am walking away', work: 'Let us work from your number', swap: 'What about him instead?', bluff: 'Another team is interested', fit: 'He fills a need for you', final: 'That is my final offer', squeeze: 'Throw in a little more?'};
@@ -1595,7 +1592,7 @@ function injuries(t, tr) {
     if (t === G.user) {
       (G.injLog = G.injLog || []).push({id: p.id, wk, season: G.season, week: G.week + 1});
       G.news.unshift(`${p.n} (${p.pos}) is hurt: ${wk === 99 ? 'out for the season' : `out about ${wk} week${wk > 1 ? 's' : ''}`}.`);
-    }
+    } else if (p.ovr >= 85 && wk >= 4) G.news.unshift(`${G.teams[t].nick} lose ${p.n} (${p.pos} ${p.ovr}) ${wk === 99 ? 'for the season' : `for about ${wk} weeks`}.`);
   }
   return out;
 }
@@ -1611,6 +1608,7 @@ function simWeekRaw(w) {
     out.push(g);
   }
   planWeek(out);
+  weekNews(w, out);
   inSeasonGrowth(w);
   for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
   G.week = w;
@@ -2193,6 +2191,7 @@ function faEndWave() {
       signFA(p, best.t, best.apy, best.yrs); signedBy[best.t] = (signedBy[best.t] || 0) + 1;
       if (mine || F.met[p.id] || (F.tries && F.tries[p.id])) { res.lost.push({id: p.id, t: best.t, apy: best.apy, yrs: best.yrs, offered: !!mine}); if (mine) G.fa.log.unshift(`${p.n} chose the ${G.teams[best.t].nick} over you.`); }
       else if (p.ovr >= 80) res.notable.push({id: p.id, t: best.t, apy: best.apy, yrs: best.yrs});
+      if (p.ovr >= 80) G.news.unshift(`Free agency: ${p.n} (${p.pos} ${p.ovr}) signs with the ${G.teams[best.t].nick}, ${best.yrs} yr at $${best.apy}M.`);
     }
   }
   F.offers = {};
@@ -2522,10 +2521,11 @@ function cutPlan() {
   const counts = {}; for (const p of roster(G.user)) counts[p.pos] = (counts[p.pos] || 0) + 1;
   let n = roster(G.user).length, pay = payroll(G.user);
   const cap = G.cap[G.season], plan = [];
-  // this year's draft picks get a season before anyone judges them: rounds 1-4 are never suggested, late-rounders go last
+  // rookies are judged like everyone else (their upside is in their value), except this year's first two rounds:
+  // nobody cuts a fresh first- or second-round pick at his first camp
   const freshPick = p => p.draft && p.end === G.season + 3;
-  const cands = roster(G.user).filter(p => !starters.has(p.id) && !(freshPick(p) && p.draft <= 128))
-    .sort((a, b) => (freshPick(a) - freshPick(b)) || playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
+  const cands = roster(G.user).filter(p => !starters.has(p.id) && !(freshPick(p) && p.draft <= 64))
+    .sort((a, b) => playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
   // open spots get filled at the minimum before kickoff, so that money has to fit too
   const over = () => pay + Math.max(0, ROSTER_MAX - n) * .9 > cap;
   for (const p of cands) {
@@ -2999,6 +2999,23 @@ function chemGame(g) {
   const opp = g.h === G.user ? g.a : g.h;
   if (me > op) chemShift(g.po ? 3 : 2, g.po ? 'Playoff win' : `Beat the ${G.teams[opp].nick}`);
   else { const steady = leadership() >= 1.5 ? 1 : 0; chemShift(-((op - me >= 17 ? 3 : 2) - steady), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}${steady ? ', the captains kept the room together' : ''}`); }
+}
+
+// ---------- the week in a few lines ----------
+function weekNews(w, games) {
+  const g = games.find(x => x.h === G.user || x.a === G.user), r = record(G.user, G.season);
+  if (g) { const home = g.h === G.user, us = home ? g.hs : g.as, them = home ? g.as : g.hs, opp = G.teams[home ? g.a : g.h].nick;
+    G.news.unshift(`Week ${w}: ${us > them ? 'beat' : us < them ? 'lost to' : 'tied'} the ${opp}, ${Math.max(us, them)}-${Math.min(us, them)}. You are ${r.w}-${r.l}.`); }
+  else G.news.unshift(`Week ${w}: bye. You are ${r.w}-${r.l}.`);
+  if (w >= 4) {
+    const L = teamList().map(t => ({t, r: record(t, G.season)}));
+    const unbeaten = L.filter(x => x.r.l === 0 && x.r.w > 0).map(x => G.teams[x.t].nick), winless = L.filter(x => x.r.w === 0 && x.r.l > 0).map(x => G.teams[x.t].nick);
+    // only when the list changes: a streak ending is news, the same names every week are not
+    const ku = unbeaten.join(), kw = winless.join(); G.wk = G.wk || {};
+    if (ku !== G.wk.u) { if (unbeaten.length && unbeaten.length <= 4) G.news.unshift(`Still unbeaten after Week ${w}: ${unbeaten.join(', ')}.`); else if (!unbeaten.length && G.wk.u) G.news.unshift(`Nobody is unbeaten anymore. The last perfect season ended in Week ${w}.`); G.wk.u = ku; }
+    if (kw !== G.wk.w) { if (winless.length && winless.length <= 3) G.news.unshift(`Still winless after Week ${w}: ${winless.join(', ')}.`); G.wk.w = kw; }
+  }
+  if (G.news.length > 150) G.news.length = 150;
 }
 
 // ---------- in-season development ----------

@@ -159,6 +159,7 @@ function sheetReady() {
 new MutationObserver(() => { document.documentElement.classList.toggle('modal-open', !!$('#layer .modal:not(.closing)')); sheetReady(); }).observe(document.getElementById('layer') || document.body, {childList: true, subtree: true});
 const closeModal = () => {
   UI.sheetStack = []; UI.pushSheet = null;
+  if (UI.reelAfter != null) { const at = UI.reelAfter; UI.reelAfter = null; setTimeout(() => pickReel(at), 260); }   // the picks made after yours
   const m = $('#layer .modal');
   if (!m || reducedMotion()) { $('#layer').innerHTML = ''; return; }
   m.classList.add('closing'); clearTimeout(UI.closeT);
@@ -222,6 +223,33 @@ function simReel(games, kicker, start, done) {
   const tm = setInterval(add, stepMs);
   el.addEventListener('click', () => { while (i < mine.length) add(); finish(); });
   setTimeout(() => { if (!finished) { clearInterval(tm); while (i < mine.length) add(); finish(); } }, stepMs * mine.length + 4000);   // never leave the reel on screen
+}
+// The draft clock moving: each pick made since `from` slides in, then the bar says who is up. Tap to skip.
+function pickReel(from) {
+  const D = G.draft; if (!D) return;
+  const made = D.order.slice(from, D.at).filter(o => o.sel);
+  if (!made.length) return;
+  if (made.length === 1 || reducedMotion()) { const o = made[made.length - 1]; toast(`#${o.no} ${G.teams[o.owner].nick}: ${o.sel.n}, ${o.sel.pos}`); return; }
+  const el = document.createElement('div');
+  el.className = 'reel'; el.setAttribute('role', 'status');
+  const slot = D.order[D.at];
+  el.innerHTML = `<div class="reel-in"><div class="reel-k">${G.season} draft · picks ${made[0].no} to ${made[made.length - 1].no}</div><div class="reel-rec">#${made[0].no}</div><div class="reel-sub">${made.length} picks</div><div class="pickfeed"></div><div class="reel-skip">Tap to skip</div></div>`;
+  document.body.appendChild(el);
+  const rec = el.querySelector('.reel-rec'), sub = el.querySelector('.reel-sub'), feed = el.querySelector('.pickfeed');
+  let i = 0, done = false;
+  const step = Math.max(70, Math.min(260, 2200 / made.length));
+  const finish = () => { if (done) return; done = true; clearInterval(tm); el.classList.add('out'); setTimeout(() => el.remove(), 260); if (slot) toast(slot.owner === G.user ? `You are on the clock at #${slot.no}` : `#${slot.no}: ${G.teams[slot.owner].nick} are up`); };
+  const add = () => {
+    const o = made[i++];
+    rec.textContent = '#' + o.no; sub.textContent = `${G.teams[o.owner].nick} take ${o.sel.n}`;
+    const c = document.createElement('div'); c.className = 'pfeed';
+    c.innerHTML = `<b>#${o.no}</b>${badge(o.owner, 1)}<span>${esc(o.sel.n)}</span><em>${o.sel.pos}</em>`;
+    feed.prepend(c); while (feed.children.length > 6) feed.lastChild.remove();
+    if (i >= made.length) { clearInterval(tm); setTimeout(finish, 900); }
+  };
+  const tm = setInterval(add, step);
+  el.addEventListener('click', () => { while (i < made.length) add(); finish(); });
+  setTimeout(() => { if (!done) { while (i < made.length) add(); finish(); } }, step * made.length + 4000);
 }
 // Runs a sim, then plays the reel, then reports injuries and celebrations.
 function simWithReel(kicker, sim) {
@@ -960,7 +988,20 @@ function needsCard() {
 }
 // Home layout: on a computer, the next game and your to-do list on the left, needs and the division on the right.
 // On a phone the cards fall into one column in order of importance: next game, to-do, needs, results, division.
-const sideCards = () => { const b = divisionCard(), c = needsCard(); return b || c ? `<div class="homeside">${c ? c.replace('class="card needscard"', 'class="card needscard o3"') : ''}${b ? b.replace('class="card', 'class="card o5') : ''}</div>` : ''; };
+const sideCards = () => { const b = divisionCard(), c = needsCard(), a = activityCard(); return b || c || a ? `<div class="homeside">${a}${c ? c.replace('class="card needscard"', 'class="card needscard o3"') : ''}${b ? b.replace('class="card', 'class="card o5') : ''}</div>` : ''; };
+// What happened around the league since you last looked. New items are marked, then count as seen.
+function activityCard() {
+  const N = G.news || []; if (!N.length) return '';
+  // new = everything that happened since your last step forward (a game, a sim, a wave, a pick)
+  const fresh = Math.max(0, N.length - (G.newsMark == null ? N.length : G.newsMark));
+  return `<div class="card activity o2"><div class="cardh"><h3>Recent activity</h3><span class="small muted">${fresh ? `${fresh} new` : 'Nothing new'}</span></div>
+    <ul class="news">${N.slice(0, 6).map((n, i) => `<li class="${i < fresh ? 'fresh' : ''}">${esc(n)}</li>`).join('')}</ul>
+    ${N.length > 6 ? '<button class="linkbtn" data-act="wireSheet">All activity</button>' : ''}</div>`;
+}
+function wireSheet() {
+  modal(`<div class="sheeth"><div><div class="kicker">${G.season}</div><h3>League wire</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <ul class="news">${(G.news || []).slice(0, 80).map(n => `<li>${esc(n)}</li>`).join('')}</ul><div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`);
+}
 const goalsCard = season => { const gs = E.goalStatus(season); return gs.length ? `<div class="card goalscard o2"><div class="cardh"><h3>Season goals</h3><span class="small muted">${gs.filter(x => x.done).length} of ${gs.length} done</span></div>${goalsList(season)}</div>` : ''; };
 const homeMain = (season, extra) => `<div class="homemain">${(nextGameCard() || '').replace('class="card nextgame"', 'class="card nextgame o1"')}${homeRows(season).replace('class="card slist"', 'class="card slist o2"')}${goalsCard(season)}${extra || ''}${(resultsStrip(season) || '').replace(/^<div class="card/, '<div class="card o4')}</div>`;
 const userGameIn = (s, w) => (G.results[s] || []).find(g => !g.po && g.wk === w && (g.a === G.user || g.h === G.user));
@@ -2697,6 +2738,7 @@ function dealsSheet(id) {
 
 // Anything that skips ahead more than one game, closes trades, or lets the computer decide for you asks first,
 // and says exactly what it will skip.
+const TIME_ACTS = new Set(['playWeek', 'toDeadline', 'simRest', 'poNext', 'poSkip', 'poRun', 'offseason', 'toResign', 'toFA', 'faWave', 'toDraft', 'toMyPick', 'draftNext', 'draftP', 'finishDraft', 'toCutdown', 'startS2']);
 const BIG = {
   toDeadline: () => { const n = E.DEADLINE_WEEK - G.week; return n >= 2 ? {title: `Sim ${n} weeks?`, body: `Plays Weeks ${G.week + 1} to ${E.DEADLINE_WEEK} without stopping, then stops at the trade deadline.`, go: `Sim to Week ${E.DEADLINE_WEEK}`} : null; },
   simRest: () => { const n = 18 - G.week, open = G.phase === 'deadline' || G.week < E.DEADLINE_WEEK, offers = offerCount();
@@ -2729,6 +2771,7 @@ document.addEventListener('click', e => {
   if (fromSheet && SHEET_NAV.has(a)) UI.pushSheet = {html: fromSheet.innerHTML, wide: fromSheet.classList.contains('wide')};
   else if (a !== 'sheetBack') UI.pushSheet = null;
   if (BIG[a] && !el.dataset.force) { const c = BIG[a](el); if (c) { askFirst(c, el); return; } }
+  if (TIME_ACTS.has(a) && G) G.newsMark = (G.news || []).length;
   switch (a) {
     case 'sheetBack': { const prev = (UI.sheetStack || []).pop(); if (!prev) { closeModal(); return; } UI.backing = true; UI.pushSheet = null; modal(prev.html.replace(/<div class="sbackbar">[\s\S]*?<\/div>/, '').replace(/<button class="sback"[^>]*>‹ Back<\/button>/, ''), prev.wide); return; }
     case 'pick': {
@@ -2749,6 +2792,7 @@ document.addEventListener('click', e => {
     case 'setPlan': setPlanDone(id, el.dataset.k); return;
     case 'restructure': { const r = E.restructure(id); if (r) { persist(); render(); openPlayer(id); toast(`${money(r.save)} of cap room now.`); } return; }
     case 'leagueTrades': leagueTradesSheet(); return;
+    case 'wireSheet': wireSheet(); return;
     case 'bidWar': bidSheet(id); return;
     case 'bidTake': { const w = UI.bidWin; if (!w) return; const r = E.doTrade(w.t, w.give, w.get, 'accepted'); closeModal(); if (r.ok) { persist(); render(); tradePopup(w.t, w.give, w.get, 'Sold to the highest bidder'); return; } popup('Trade', 'It fell apart', vban('no', 'No deal', r.issues[0] || 'Something changed.')); return; }
     case 'captSheet': captSheet(el.dataset.k); return;
@@ -2906,13 +2950,13 @@ document.addEventListener('click', e => {
       }
       closeModal(); E.finishFA(); E.refreshOffers(); break;
     }
-    case 'toMyPick': E.simDraftToUser(); break;
+    case 'toMyPick': { const at = G.draft.at; E.simDraftToUser(); persist(); render(); pickReel(at); return; }
     case 'pickSheet': pickSheet(); return;
-    case 'draftNext': if (G.draft.order[G.draft.at] && G.draft.order[G.draft.at].owner !== G.user) E.aiPick(); persist(); break;
+    case 'draftNext': { const at = G.draft.at; if (G.draft.order[G.draft.at] && G.draft.order[G.draft.at].owner !== G.user) E.aiPick(); persist(); render(); pickReel(at); return; }
     case 'draftP': {
       const p = G.draft.pool.find(x => x.rank === +el.dataset.rank); if (!p) return;
       const slot = G.draft.order[G.draft.at];
-      E.makePick(p); E.simDraftToUser(); persist(); render(); revealPopup(slot.sel, slot.no); return;
+      E.makePick(p); const at = G.draft.at; E.simDraftToUser(); persist(); render(); revealPopup(slot.sel, slot.no); UI.reelAfter = at; return;
     }
     case 'finishDraft': { const live = G.draft.at < G.draft.order.length; E.finishDraft(); UI.cutSel = null; E.refreshOffers(); UI.tab = 'home'; persist(); render(); window.scrollTo(0, 0); if (live || myClass().length) setTimeout(() => { if (G.step === 'camp' && !$('#layer .modal:not(.closing)')) draftRecap(); }, 1100); return; }
     case 'prospect': prospectModal(+el.dataset.rank); return;
