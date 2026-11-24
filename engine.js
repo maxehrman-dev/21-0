@@ -88,10 +88,10 @@ function newGame(DATA, userTeam, seed) {
 // Each season every player gets a hidden form: a breakout year, a normal year, or a slump.
 // It drives his sim stats and, after the season, his progression.
 function startForm() {
-  G.form = {};
+  G.form = {}; G.streak = {};
   for (const p of Object.values(G.players)) { const sd = p.age <= 24 ? 4 : p.age <= 28 ? 3 : 2.5; G.form[p.id] = Math.round(randn() * sd * 10) / 10; }
 }
-const formOf = p => (G.form && G.form[p.id]) || 0;
+const formOf = p => ((G.form && G.form[p.id]) || 0) + ((G.streak && G.streak[p.id]) || 0);
 function formLabel(p) {
   if (G.phase === 'preseason' || G.phase === 'offseason' || G.phase === 'final' || (G.phase === 'season' && (G.week || 0) < 3)) return null;
   const f = formOf(p);
@@ -1553,6 +1553,7 @@ function simWeekRaw(w) {
     out.push(g);
   }
   planWeek(out);
+  inSeasonGrowth(w);
   for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
   G.week = w;
   // the league's own trades: a trickle early, a rush the week of the deadline
@@ -1692,16 +1693,16 @@ function beginOffseason() {
     const a = ageAdj(p), f = formOf(p);
     const st = (G.stats[prev] || {})[p.id], gp = st ? st.gp || 0 : 0;
     const played = Math.min(1, gp / 8);
-    const age = a <= 22 ? 2.6 : a <= 24 ? 2 : a <= 26 ? 1 : a <= 28 ? .6 : a <= 30 ? -.4 : a <= 32 ? -2 : -4 - Math.max(0, a - 34);
+    const age = a <= 22 ? 2 : a <= 24 ? 1.5 : a <= 26 ? .8 : a <= 28 ? .5 : a <= 30 ? .1 : a <= 32 ? -1.1 : a <= 34 ? -2.4 : -3.8 - Math.max(0, a - 35);
     // the first years are about development: a young player's stats move him less than his age and his upside
     const young = a <= 24, fw = young ? .45 : a <= 26 ? .75 : 1;
     const parts = {age, dev: 0, form: f * fw * played, track: 0};
-    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .3 : a <= 26 ? .2 : .06);
+    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .22 : a <= 26 ? .15 : .05);
     if (p.devShare && a <= 26) parts.dev = parts.dev * (1 + .7 * Math.min(1, p.devShare / 12)) + Math.min(1, p.devShare / 12);   // a coach plan put him on the field
     const prior = p.prior || p.ovr;
     if (prior > p.ovr && f > 0) parts.track = (prior - p.ovr) * .5 * played;        // proved himself again
     else if (prior < p.ovr && f < -1 && !young) parts.track = -(p.ovr - prior) * .4 * played; // fell back to his track record
-    let d = parts.age + parts.dev + parts.form + parts.track + (p.rook ? 1.2 : 0);     // the jump after year one is the biggest
+    let d = parts.age + parts.dev + parts.form + parts.track + (p.rook ? .8 : 0) - (p.inGain || 0) * .6;   // what he already gained during the season counts
     if (d > 0 && p.ovr >= 86) d *= p.ovr >= 90 ? .35 : .6;                            // the top is hard to reach and harder to climb
     return {parts, d, prior};
   };
@@ -1709,13 +1710,13 @@ function beginOffseason() {
   const drift = rostered.reduce((s, p) => s + progParts(p).d, 0) / Math.max(1, rostered.length);
   for (const p of Object.values(G.players)) {
     const {parts, prior} = progParts(p);
-    let d = progParts(p).d - drift * .5 + randn() * (ageAdj(p) >= 25 && ageAdj(p) <= 30 ? .9 : 1.2);
+    let d = progParts(p).d - drift * .3 + randn() * (ageAdj(p) >= 25 && ageAdj(p) <= 30 ? .9 : 1.2);
     d = clamp(Math.round(d), -10, 8);
     const why = d >= 4 && parts.track >= 2 ? 'Proved himself' : d >= 4 && parts.form >= 2 ? 'Breakout season' : d >= 3 && parts.dev >= 1.5 ? 'Development'
       : d <= -4 && parts.form <= -2 ? 'Down year' : d <= -2 && parts.age <= -2.5 ? 'Age decline' : d <= -3 && parts.track < 0 ? 'Regressed' : d > 0 ? 'Improved' : d < 0 ? 'Slipped' : 'Steady';
     p.campD = clamp(p.ovr + d, 40, 99) - p.ovr; p.campWhy = why; p.campPrior = prior;
     p.age = Math.round((p.age + 1) * 10) / 10;
-    p.inj = false; delete p.injW; delete p.injPre; p.rook = false; delete p.devShare;
+    p.inj = false; delete p.injW; delete p.injPre; p.rook = false; delete p.devShare; delete p.inGain;
     // retirement: rare before 30, likely by 36; fringe players go sooner, stars hang on; nobody signing you is a hint
     const ra = p.pos === 'K' || p.pos === 'P' ? p.age - 6 : ageAdj(p);
     let rp = ra >= 36 ? .65 : ra >= 34 ? .35 : ra >= 32 ? .15 : ra >= 30 ? .05 : 0;
@@ -2924,6 +2925,40 @@ function chemGame(g) {
   const opp = g.h === G.user ? g.a : g.h;
   if (me > op) chemShift(g.po ? 3 : 2, g.po ? 'Playoff win' : `Beat the ${G.teams[opp].nick}`);
   else { const steady = leadership() >= 1.5 ? 1 : 0; chemShift(-((op - me >= 17 ? 3 : 2) - steady), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}${steady ? ', the captains kept the room together' : ''}`); }
+}
+
+// ---------- in-season development ----------
+// Players change during the season too. Streaks come and go week to week; young players who play and have room to
+// grow pick up a point here and there; a hot young player can break out in the middle of a season; and the oldest
+// veterans wear down late in the year. Gains during the season count toward the offseason, so nobody grows twice.
+function inSeasonGrowth(w) {
+  G.streak = G.streak || {};
+  const starters = {};
+  for (const t of teamList()) { const d = depth(t); for (const pos of POS_ORDER) for (const p of d[pos].slice(0, STARTERS[pos])) starters[p.id] = 1; }
+  for (const p of Object.values(G.players)) {
+    if (!G.teams[p.tm] || p.inj) continue;
+    const s = (G.streak[p.id] || 0) * .75 + randn() * .9;
+    G.streak[p.id] = Math.round(s * 10) / 10;
+    const a = ageAdj(p), room = (p.pot || p.ovr) - p.ovr, plays = starters[p.id] || (p.devShare || 0) > w * .2, f = formOf(p);
+    if (a <= 26 && room > 0 && plays && rand() < Math.min(.16, room * .011 + (f > 2 ? .03 : 0))) bump(p, 1);
+    // a breakout: young, real upside, playing hot
+    if (a <= 26 && room >= 5 && plays && f >= 2.5 && w >= 3 && p.brk !== G.season && rand() < .016) {
+      p.brk = G.season;
+      const j = 3 + Math.floor(rand() * 3), old = p.ovr;
+      bump(p, j);
+      if (p.ovr > p.pot) p.pot = p.ovr + 1;
+      (p.hist = p.hist || []).push([G.season, p.ovr, `Breakout, Week ${w}`]);
+      G.form[p.id] = Math.max(G.form[p.id] || 0, 3);
+      (G.brkLog = G.brkLog || []).push({id: p.id, old, now: p.ovr, s: G.season, w});
+      if (p.tm === G.user || p.ovr >= 80) G.news.unshift(`${p.n} (${p.tm} ${p.pos}) is breaking out: ${old} → ${p.ovr}.`);
+    }
+    if (a >= 32 && w >= 10 && rand() < .012) bump(p, -1);
+  }
+}
+function bump(p, d) {
+  const old = p.ovr;
+  p.ovr = clamp(p.ovr + d, 40, 99);
+  p.inGain = (p.inGain || 0) + (p.ovr - old);
 }
 
 // ---------- coach plans ----------

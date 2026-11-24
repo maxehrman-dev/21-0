@@ -1424,6 +1424,25 @@ body { overflow-x: clip; }
   .sheet::before { z-index: 7; }
   .x { width: 40px; height: 40px; }
 }
+/* team picker: every team on one screen */
+.pickwrap .tcard .tn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (min-width: 761px) {
+  .picker-hero { margin-bottom: 4px; padding-top: 8px; }
+  .picker-hero h1.display { font-size: 60px; line-height: 1; }
+  .pickwrap .tcard { min-height: 0; }
+  .pickwrap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 14px; }
+  .pickwrap .divh { margin: 12px 0 6px; font-size: 13px; }
+  .pickwrap .teams { grid-template-columns: 1fr; gap: 6px; }
+  .pickwrap .tcard { padding: 6px 10px; gap: 10px; border-radius: 10px; }
+  .pickwrap .tcard .tn { font-size: 14px; }
+  .pickwrap .tcard .to b { font-size: 22px; line-height: 1; }
+  .pickwrap .tcard .to span { font-size: 11px; }
+  .pickwrap .tcard .badge, .pickwrap .tcard .tbadge { transform: scale(.85); }
+}
+@media (max-width: 760px) {
+  .pickwrap .tcard { padding: 8px 10px; }
+  .pickwrap .divh { margin: 14px 0 6px; }
+}
 </style>
 </head>
 <body>

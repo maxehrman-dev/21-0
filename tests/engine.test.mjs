@@ -202,7 +202,7 @@ test('fifth-year options, captains, and ratings that do not inflate', () => {
   const ch = Object.keys(before).filter(id => G.players[id] && G.teams[G.players[id].tm]).map(id => G.players[id].ovr - before[id]);
   const avg = ch.reduce((a, b) => a + b, 0) / ch.length;
   assert.ok(Math.abs(avg) < 1.2, `the league average moved ${avg.toFixed(2)}`);
-  assert.ok(Math.max(...ch) <= 8, 'nobody jumps more than 8 in one offseason');
+  assert.ok(Math.max(...ch) <= 13, 'nobody jumps more than 13 in a year, a mid-season breakout included');
   const L = E.optionList();
   assert.ok(L.length >= 1, 'a 2024 first-rounder is due for his option in 2027');
   const x = L[0], end = x.p.end;
@@ -456,4 +456,16 @@ test('coach plans: phasing a young player in takes four games, banks playing tim
   assert.ok(young.devShare > 1, 'his playing time counts toward his growth');
   const L = E.depth('NYJ')[young.pos];
   if (L.includes(vet) && L.includes(young)) assert.ok(L.indexOf(young) < L.indexOf(vet), 'he is ahead of the veteran on the depth chart');
+});
+
+test('in-season development: streaks move week to week, young players grow, a few break out', () => {
+  E.newGame(DATA, 'KC', 7);
+  const G = E.G, before = Object.fromEntries(Object.values(G.players).map(p => [p.id, p.ovr]));
+  G.phase = 'season'; E.simTo(18);
+  const brk = Object.values(G.players).filter(p => p.brk === 2026);
+  assert.ok(brk.length >= 3 && brk.length <= 30, `breakouts this season: ${brk.length}`);
+  const young = Object.values(G.players).filter(p => G.teams[p.tm] && p.age <= 23);
+  const gain = young.reduce((a, p) => a + p.ovr - before[p.id], 0) / young.length;
+  assert.ok(gain > 0.2, 'young players improve during the season');
+  assert.ok(Object.values(G.streak).some(v => v >= 2) && Object.values(G.streak).some(v => v <= -2), 'hot and cold streaks');
 });

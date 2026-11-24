@@ -225,7 +225,7 @@ function simReel(games, kicker, start, done) {
 }
 // Runs a sim, then plays the reel, then reports injuries and celebrations.
 function simWithReel(kicker, sim) {
-  const s = G.season, n0 = (G.results[s] || []).length, mark = (G.injLog || []).length;
+  const s = G.season, n0 = (G.results[s] || []).length, mark = (G.injLog || []).length, bmark = (G.brkLog || []).length;
   const r0 = E.record(G.user, s), start = {w: r0.w, l: r0.l, seasonL: r0.l};
   const po = G.phase === 'playoffs';
   if (po) { const pw = poWins(s); start.w = pw; start.l = 0; }
@@ -236,6 +236,9 @@ function simWithReel(kicker, sim) {
     UI.reel = false;
     if (UI.celebrate) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 100); }
     injuryPopup(mark);
+    // your own breakouts, the moment they happen
+    const nb = (G.brkLog || []).slice(bmark).filter(x => G.players[x.id] && G.players[x.id].tm === G.user);
+    if (nb.length) toast(`Breakout: ${nb.map(x => `${G.players[x.id].n} ${x.old} → ${x.now}`).join(', ')}`);
   });
 }
 function poWins(s) { return (G.results[s] || []).filter(g => g.po && ((g.h === G.user && g.hs > g.as) || (g.a === G.user && g.as > g.hs))).length; }
@@ -989,6 +992,8 @@ function gameCard(s, w, mark, last) {
     <div class="grec"><span><b class="num">${r.w}-${r.l}</b> record</span>${k ? `<span class="${k.win ? 'good' : 'bad'}">${k.win ? 'W' : 'L'}${k.n} streak</span>` : ''}</div>
     ${mine && gameScore(mine.st) > 0 ? `<div class="potg">${face(G.players[mine.id], 'sm')}<div><div class="kicker">Your star</div><b>${esc(G.players[mine.id].n)}</b><div class="small">${perfLine(mine.st)}</div></div></div>` : ''}
     ${hurt.length ? `<button class="srow bad" data-act="injurySheet"><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO.hurt}</svg></span><span class="slabel">${esc(G.players[hurt[0].id].n)} hurt</span><span class="sval">${hurt.length > 1 ? `+${hurt.length - 1} more` : hurt[0].wk === 99 ? 'Season' : hurt[0].wk + ' wk'}</span><span class="chev" aria-hidden="true">›</span></button>` : ''}
+    ${(() => { const L = (G.brkLog || []).filter(x => x.s === s && x.w === w && G.players[x.id] && G.players[x.id].tm === G.user);
+      return L.map(x => `<button class="srow hot" data-act="player" data-id="${esc(x.id)}"><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO.target}</svg></span><span class="slabel">${esc(G.players[x.id].n)} is breaking out</span><span class="sval">${x.old} → ${x.now}</span></button>`).join(''); })()}
     ${afterGame()}
     <div class="row end"><button class="btn" data-act="box" data-k="${gameKey(g)}" data-s="${s}">Box score</button>${next}</div>`);
 }
@@ -1084,7 +1089,7 @@ function homeCamp() {
     <p class="lead">Camp is over. Your rookies' real ratings are in, and the rest of the roster got better or worse over the offseason.</p></div>
     <button class="btn go lg" data-act="toCutdown">Next: final roster</button></section>
   <div class="kpistrip three"><div class="kpi"><span>Improved</span><b class="num good">${up.length}</b></div><div class="kpi"><span>Declined</span><b class="num bad">${down.length}</b></div><div class="kpi"><span>Team now</span><b class="num">${E.teamRating(G.user).ovr}</b></div></div>
-  ${rk.length ? `<div class="card"><h3>Rookies</h3><div class="plist">${rk.map(rkRow).join('')}</div></div>` : ''}
+  ${rk.length ? `<div class="card"><div class="cardh"><h3>Rookies</h3>${G.draft ? '<button class="btn sm ghost" data-act="rookieReport">Rookie report</button>' : ''}</div><div class="plist">${rk.map(rkRow).join('')}</div></div>` : ''}
   <div class="grid g2"><div class="card"><h3>Got better</h3><div class="plist">${list(up, 6, 'campup') || '<p class="muted small">Nobody.</p>'}</div></div>
   <div class="card"><h3>Got worse</h3><div class="plist">${list(down, 6, 'campdown') || '<p class="muted small">Nobody.</p>'}</div></div></div>
   ${C.retired.length ? `<div class="card"><h3>Retired</h3><p class="small muted">${C.retired.map(x => `${esc(x.n)} (${x.pos})`).join(', ')}</p></div>` : ''}`;
@@ -2760,6 +2765,7 @@ document.addEventListener('click', e => {
     case 'offseason': UI.tview = null; E.beginOffseason(); G.phase = 'offseason'; G.dead[G.user] = 0; E.refreshOffers(); break;
     case 'final': G.reported = true; G.phase = 'final'; recordRun(true); if ([2026, 2027].some(y => G.history[y] && G.history[y].finish && G.history[y].finish.perfect)) UI.celebrate = true; break;
     case 'toResign': G.step = 'resign'; E.refreshOffers(); break;
+    case 'rookieReport': draftRecap(); return;
     case 'toCutdown': E.toCutdown(); UI.cutSel = null; UI.tab = 'home'; break;
     case 'resign': {
       const yrs = E.yearsFor(G.players[id]), price = E.resignPrice(G.players[id], yrs);
@@ -2850,7 +2856,7 @@ document.addEventListener('click', e => {
       const slot = G.draft.order[G.draft.at];
       E.makePick(p); E.simDraftToUser(); persist(); render(); revealPopup(slot.sel, slot.no); return;
     }
-    case 'finishDraft': { const live = G.draft.at < G.draft.order.length; E.finishDraft(); UI.cutSel = null; E.refreshOffers(); persist(); render(); if (live || myClass().length) draftRecap(); return; }
+    case 'finishDraft': { const live = G.draft.at < G.draft.order.length; E.finishDraft(); UI.cutSel = null; E.refreshOffers(); UI.tab = 'home'; persist(); render(); window.scrollTo(0, 0); if (live || myClass().length) setTimeout(() => { if (G.step === 'camp' && !$('#layer .modal:not(.closing)')) draftRecap(); }, 1100); return; }
     case 'prospect': prospectModal(+el.dataset.rank); return;
     case 'tradeUp': {
       const pk = G.picks.find(x => x.id === id); if (!pk) return;
