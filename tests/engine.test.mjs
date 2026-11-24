@@ -102,6 +102,9 @@ test('a full two-season run reaches the final report', () => {
   E.finishFA();
   assert.equal(G.step, 'draft');
   E.finishDraft();
+  assert.equal(G.step, 'camp', 'training camp comes after the draft');
+  assert.ok(G.camp && G.camp.changes.length > 10, 'camp shows how the roster changed');
+  E.toCutdown();
   assert.equal(G.step, 'cutdown');
   for (const id of E.cutPlan()) E.cutPlayer(id);
   E.fillRoster('LAC');
@@ -195,7 +198,7 @@ test('fifth-year options, captains, and ratings that do not inflate', () => {
   if (plain) assert.ok(E.chemTrade([c.off], []).d < E.chemTrade([plain.id], []).d, 'trading a captain costs more');
   const before = Object.fromEntries(Object.values(G.players).filter(p => G.teams[p.tm]).map(p => [p.id, p.ovr]));
   E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
-  E.beginOffseason();
+  E.beginOffseason(); E.runCamp();
   const ch = Object.keys(before).filter(id => G.players[id] && G.teams[G.players[id].tm]).map(id => G.players[id].ovr - before[id]);
   const avg = ch.reduce((a, b) => a + b, 0) / ch.length;
   assert.ok(Math.abs(avg) < 1.2, `the league average moved ${avg.toFixed(2)}`);
@@ -414,7 +417,7 @@ test('free agents answer right away: a fair offer signs, a near miss gets a coun
   const pool = E.faPool().filter(p => E.faPrice(p) * 1.1 < E.capSpace(E.G.user)).slice(0, 3);
   const [a, b, c] = pool, y = p => E.yearsFor(p);
   assert.equal(E.faBid(a.id, E.faPrice(a, y(a)), y(a)).result, 'signed');
-  const r = E.faBid(b.id, E.faPrice(b, y(b)) * .85, y(b));
+  const r = E.faBid(b.id, E.faFloor(b, y(b)) * .95, y(b));          // just under what he will take
   assert.equal(r.result, 'counter');
   assert.equal(E.faBid(b.id, r.counter, y(b)).result, 'signed');
   for (let i = 0; i < 2; i++) assert.equal(E.faBid(c.id, 1, y(c)).result, 'no');
@@ -434,4 +437,23 @@ test('the cut plan never suggests this year’s early draft picks, and players c
   assert.equal(E.flexPen(ot, 'IOL'), 2);
   E.setFlex(ot.id, null);
   assert.ok(E.cached(() => E.depth('DAL').OT.includes(ot))());
+});
+
+test('coach plans: phasing a young player in takes four games, banks playing time, and teams pay less for the benched starter', () => {
+  E.newGame(DATA, 'NYJ', 3);
+  const G = E.G;
+  const young = E.roster('NYJ').find(p => E.coachPlans(p.id) && p.pos === 'TE') || E.roster('NYJ').find(p => E.coachPlans(p.id));
+  const C = E.coachPlans(young.id);
+  assert.equal(C.opts.length, 4);
+  assert.equal(C.opts.filter(o => o.pick).length, 1, 'the coach has one pick');
+  const vet = C.v, other = E.teamList().find(t => t !== 'NYJ');
+  const before = E.valueParts(vet, other).total;
+  E.setCoachPlan(young.id, 'phase');
+  assert.ok(E.valueParts(vet, other).total < before, 'a starter being phased out is worth less to other teams');
+  G.phase = 'season';
+  for (let w = 1; w <= 5; w++) E.simWeek(w);
+  assert.equal(G.plans[young.id].plan, 'start', 'after four games he has the job');
+  assert.ok(young.devShare > 1, 'his playing time counts toward his growth');
+  const L = E.depth('NYJ')[young.pos];
+  if (L.includes(vet) && L.includes(young)) assert.ok(L.indexOf(young) < L.indexOf(vet), 'he is ahead of the veteran on the depth chart');
 });

@@ -1377,6 +1377,42 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
 .cwhy { color: var(--chalk); margin: 2px 0 8px; line-height: 1.4; }
 .eggnote { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; margin: 6px 0 12px; border-radius: 12px; border: 1px solid rgba(243,181,47,.45); background: rgba(243,181,47,.08); }
 .eggnote .kicker { color: var(--gold); } .eggnote span:last-child { color: var(--chalk); line-height: 1.45; }
+/* coach plans */
+.planline { display: flex; align-items: center; gap: 10px; margin: 10px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); }
+.planline > span:nth-child(2) { flex: 1; font-weight: 600; }
+.coachsays { display: flex; gap: 10px; padding: 12px 14px; border-left: 3px solid var(--gold); background: var(--panel2); border-radius: 8px; margin-bottom: 14px; line-height: 1.45; }
+.coachsays b { color: var(--gold); flex: none; }
+.planopts { display: grid; gap: 8px; margin-bottom: 14px; }
+.planopt { display: grid; gap: 4px; text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: inherit; font: inherit; cursor: pointer; min-height: 44px; }
+.planopt:hover { border-color: var(--gold); }
+.planopt.on { border-color: var(--good); }
+.planopt .pot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.campd { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14px; }
+.campd.good b { color: var(--good); } .campd.bad b { color: var(--bad); }
+/* game preview + playoffs */
+.pvhead { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.pvside { display: grid; justify-items: start; gap: 3px; min-width: 0; }
+.pvside.r { justify-items: end; text-align: right; }
+.pvside b { font-size: 16px; }
+.pvmid { display: grid; justify-items: center; gap: 2px; }
+.pvmid b { font-family: var(--display); font-size: 34px; line-height: 1; }
+.pvmid b.good { color: var(--good); } .pvmid b.bad { color: var(--bad); }
+.pvbar { height: 6px; border-radius: 3px; background: var(--panel2); overflow: hidden; margin-bottom: 12px; }
+.pvbar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; }
+.pvfacts { margin: 10px 0 0; }
+.pomatch { display: grid; gap: 6px; }
+.porow { display: grid; grid-template-columns: 34px 1fr auto 1fr auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); }
+.porow.me { outline: 1px solid var(--gold); }
+.poteam { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.poteam b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+@media (max-width: 560px) {
+  .porow { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .porow > .small.muted:first-child { display: none; }
+  .porow > span:nth-child(3) { display: none; }
+  .porow .poteam:nth-of-type(2) { grid-column: 1; }
+  .pvmid b { font-size: 28px; }
+  .bracket { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
