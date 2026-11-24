@@ -436,6 +436,8 @@ function valueParts(p, forTeam) {
     const cf = p.cap >= 15 && space < 12 ? .85 : p.cap >= 15 && space > 45 ? 1.05 : 1;
     if (cf !== 1) { v *= cf; steps.push({k: 'Cap room', note: `${nick} have ${space < 12 ? 'little' : 'lots of'} cap space for a $${p.cap.toFixed(1)}M deal: ×${cf}`, m: cf, v}); }
     if (p.inj) { const ri = .85 + gm.risk * .3; v *= ri; steps.push({k: 'Risk', note: `${nick} ${gm.risk > .5 ? 'will gamble on' : 'shy away from'} injured players: ×${ri.toFixed(2)}`, m: ri, v}); }
+    const req = forTeam !== G.user && p.tm === G.user && (G.requests || {})[p.id] && !G.requests[p.id].done;
+    if (req) { v *= .92; steps.push({k: 'Wants out', note: `He asked to be traded, and the ${G.teams[forTeam].nick} know it: ×0.92`, m: .92, v}); }
     const pl = forTeam !== G.user && p.tm === G.user ? planForVet(p.id) : null;
     if (pl && (pl.plan === 'start' || pl.plan === 'phase')) { v *= .9; steps.push({k: 'On his way out', note: `Everyone saw ${G.players[pl.young].n} take his snaps. Teams know you have to move him: ×0.90`, m: .9, v}); }
     else if (pl && pl.plan === 'showcase' && pl.wk >= 2) { v *= 1.06; steps.push({k: 'Showcased', note: `Your coach has featured him for ${pl.wk} games and scouts noticed: ×1.06`, m: 1.06, v}); }
@@ -985,6 +987,8 @@ function offerFresh(t, ids) {
   const tick = G.offerTick || 0;
   return m.no ? tick - m.at >= 8 : tick - m.at >= 3;
 }
+// the same player of yours is not the subject of a call week after week, whoever is calling
+function playerFresh(id) { const t = (G.offerAbout || {})[id]; return t == null || (G.offerTick || 0) - t >= 3; }
 function noteDecline(o) { G.offerSeen = G.offerSeen || {}; G.offerSeen[offerKey(o.from, o.kind === 'sell' ? o.get : o.give)] = {at: G.offerTick || 0, no: 1}; }
 function genOffers(n, minimum) {
   n = n || 3; minimum = minimum == null ? 1 : minimum;
@@ -1012,7 +1016,7 @@ function genOffers(n, minimum) {
         }
       }
     }
-    const targets = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && needBoost(t, p) > 1 && (!rb || ageAdj(p) <= 26)).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t));
+    const targets = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && playerFresh(p.id) && needBoost(t, p) > 1 && (!rb || ageAdj(p) <= 26)).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t));
     const tgt = targets[Math.min(targets.length - 1, rint(0, 2))];
     if (!tgt) continue;
     const pkg = buildPackage(t, tgt.id);
@@ -1023,7 +1027,7 @@ function genOffers(n, minimum) {
   // second pass: looser terms so you always hear from a few teams
   for (const t of shuffle(teamList().filter(x => x !== G.user && !offers.some(o => o.from === x)))) {
     if (offers.length >= minimum) break;
-    const tgt = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && needBoost(t, p) >= 1).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t))[rint(0, 3)];
+    const tgt = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && playerFresh(p.id) && needBoost(t, p) >= 1).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t))[rint(0, 3)];
     if (!tgt) continue;
     const pkg = buildPackage(t, tgt.id, true);
     if (!pkg || !offerSense([tgt.id], pkg, evalTrade(t, [tgt.id], pkg).fair).ok) continue;
@@ -1038,7 +1042,8 @@ function genOffers(n, minimum) {
 }
 function markOffers() {
   G.offerTick = (G.offerTick || 0) + 1; G.offerSeen = G.offerSeen || {};
-  for (const o of G.offers) { const k = offerKey(o.from, o.kind === 'sell' ? o.get : o.give); if (!(G.offerSeen[k] && G.offerSeen[k].no)) G.offerSeen[k] = {at: G.offerTick}; }
+  G.offerAbout = G.offerAbout || {};
+  for (const o of G.offers) { const k = offerKey(o.from, o.kind === 'sell' ? o.get : o.give); if (!(G.offerSeen[k] && G.offerSeen[k].no)) G.offerSeen[k] = {at: G.offerTick}; if (o.kind !== 'sell') for (const id of o.give) if (G.players[id]) G.offerAbout[id] = G.offerTick; }
   return G.offers;
 }
 function refreshOffers() { G.offers = [...blockOffers(), ...genOffers(3, 1)]; return markOffers(); }
@@ -1609,6 +1614,7 @@ function simWeekRaw(w) {
   }
   planWeek(out);
   weekNews(w, out);
+  tradeRequests(w);
   inSeasonGrowth(w);
   for (const p of Object.values(G.players)) if (p.injW !== undefined && p.injW !== 99) { p.injW--; if (p.injW <= 0) { p.inj = false; delete p.injW; delete p.injPre; } }
   G.week = w;
@@ -1853,14 +1859,17 @@ function interest(p, t) {
   const home = p.fromTeam || (p.tm !== 'FA' ? p.tm : null);
   const loyal = home === t ? 1 : .35;
   const meet = t === G.user && G.fa && G.fa.met && G.fa.met[p.id] ? G.fa.met[p.id].boost / 100 : 0;
-  const non = clamp((win * w.win + role * w.role + loyal * w.loyal) / (w.win + w.role + w.loyal) + meet, 0, 1);
+  // the locker room: players talk, and a room that is tight makes your team an easier sell (every other team counts as average)
+  const room = t === G.user ? chemOf() / 100 : .6;
+  const non = clamp(((win * w.win + role * w.role + loyal * w.loyal) / (w.win + w.role + w.loyal)) * .85 + room * .15 + meet, 0, 1);
   const parts = [
     {k: 'Winning', v: win, w: w.win, note: win >= 1 ? 'You are a contender' : win >= .6 ? 'You are on the bubble' : 'You are rebuilding'},
     {k: 'Role', v: role, w: w.role, note: role >= 1 ? 'He would start' : role >= .5 ? 'He would rotate in' : 'He would be a backup'},
     {k: 'Loyalty', v: loyal, w: w.loyal, note: home === t ? 'This is his team' : 'No ties to you'},
   ];
+  if (t === G.user) parts.push({k: 'Locker room', v: room, w: .15, note: room >= .75 ? 'Your locker room has a great reputation' : room >= .55 ? 'Your locker room is solid' : room >= .35 ? 'He has heard your locker room is uneasy' : 'He has heard your locker room is fractured'});
   if (meet) parts.push({k: 'Meeting', v: meet > 0 ? 1 : 0, w: 0, note: meet > 0 ? `Your pitch landed (+${Math.round(meet * 100)})` : `Your pitch missed (${Math.round(meet * 100)})`});
-  let mult = 1.15 - .3 * non;
+  let mult = 1.15 - .3 * non - (room - .6) * .2;   // a tight room takes up to 8% off what players ask you; a fractured one adds it
   if (w.win >= .3 && win < .3 && p.ovr >= 78) mult += .1; // ring chasers do not join rebuilds cheaply
   return {score: Math.round(non * 100), mult: Math.round(mult * 100) / 100, parts, persona, w};
 }
@@ -2150,10 +2159,15 @@ function faBid(id, apy, yrs) {
   if (apy + .001 >= floor) { delete F.counter[id]; delete F.offers[id]; signFA(p, G.user, apy, yrs); return {ok: true, result: 'signed', apy, yrs, msg: `${p.n} signed: ${yrs} yr at $${apy}M per year.`}; }
   F.tries[id] = (F.tries[id] || 0) + 1;
   if (apy >= floor * .9) {
-    const c = Math.ceil((floor + (price - floor) * .35) * 10) / 10;
+    // a real back-and-forth: the first counter sits between his floor and his ask; when you move up, he comes down
+    const prev = F.counter[id] && F.counter[id].yrs === yrs ? F.counter[id].apy : null;
+    const c = prev ? Math.max(Math.ceil(floor * 10) / 10, Math.ceil((prev - (prev - apy) * .4) * 10) / 10) : Math.ceil((floor + (price - floor) * .35) * 10) / 10;
     F.counter[id] = {apy: c, yrs};
-    if (F.tries[id] >= 3) F.walked[id] = true;
-    return {ok: true, result: 'counter', counter: c, yrs, msg: `Close. He will sign for $${c}M per year over ${yrs} years.`};
+    if (F.tries[id] >= 4) F.walked[id] = true;
+    const line = !prev ? `Close. He will sign for $${c}M per year over ${yrs} year${yrs > 1 ? 's' : ''}.`
+      : c < prev ? `He came down to $${c}M a year. ${c <= floor + .05 ? 'That is as low as he goes.' : 'Getting close.'}`
+      : `He is holding at $${c}M a year.`;
+    return {ok: true, result: 'counter', counter: c, yrs, msg: F.walked[id] ? line + ' That is his last word this wave.' : line};
   }
   if (F.tries[id] >= 3) { F.walked[id] = true; return {ok: false, result: 'walked', msg: `${p.n} is insulted and stops taking your calls this wave.`}; }
   return {ok: false, result: 'no', msg: `Not close. He is looking for about $${price}M per year.`};
@@ -2930,6 +2944,8 @@ function aiOptions() {
 // Chemistry runs 0-100. Winning builds it; trading away or cutting players the room trusts costs it.
 // It is worth up to about 2 points a game either way, a bit under a win a season at the extremes.
 const chemOf = () => G.chem == null ? 60 : G.chem;
+// the room's effect on what players ask from you: .3 x .15 of the interest score, against an average room
+const chemPrice = () => Math.round(-(.3 * .15 + .2) * (chemOf() - 60) / 100 * 100) || 0;
 const chemLabel = c => c >= 75 ? 'Tight' : c >= 55 ? 'Solid' : c >= 35 ? 'Uneasy' : 'Fractured';
 const chemEdge = () => (chemOf() - 50) / 25;
 function chemShift(d, why) {
@@ -2999,6 +3015,53 @@ function chemGame(g) {
   const opp = g.h === G.user ? g.a : g.h;
   if (me > op) chemShift(g.po ? 3 : 2, g.po ? 'Playoff win' : `Beat the ${G.teams[opp].nick}`);
   else { const steady = leadership() >= 1.5 ? 1 : 0; chemShift(-((op - me >= 17 ? 3 : 2) - steady), op - me >= 17 ? `Blown out by the ${G.teams[opp].nick}` : `Lost to the ${G.teams[opp].nick}${steady ? ', the captains kept the room together' : ''}`); }
+}
+
+// ---------- trade requests ----------
+// Now and then a veteran asks out: benched for a younger player, stuck on a losing team at his age, or in a room
+// that has gone sour. Rare (at most two a season, one at a time), and it always comes with choices: shop him, talk
+// him down once, or tell him no. Until it is settled the room frets a little each week and teams know he wants out.
+const activeRequest = () => Object.entries(G.requests || {}).find(([id, r]) => !r.done && G.players[id] && G.players[id].tm === G.user);
+function tradeRequests(w) {
+  G.requests = G.requests || {};
+  for (const [id, r] of Object.entries(G.requests)) if (!r.done && (!G.players[id] || G.players[id].tm !== G.user)) r.done = 'traded';
+  const open = activeRequest();
+  if (open) { chemShift(-1, `${G.players[open[0]].n} still wants out`); return; }
+  if (Object.values(G.requests).filter(r => r.s === G.season).length >= 2 || w < 4) return;
+  const rec = record(G.user, G.season), losing = rec.w + rec.l >= 4 && rec.w / (rec.w + rec.l) < .35, room = chemOf();
+  for (const p of roster(G.user).filter(x => ageAdj(x) >= 27 && x.ovr >= 78 && !x.inj && x.pos !== 'K' && x.pos !== 'P')) {
+    if (G.requests[p.id]) continue;
+    const vp = planForVet(p.id), benched = vp && (vp.plan === 'start' || vp.plan === 'phase');
+    const why = benched ? `He lost his job to ${G.players[vp.young].n} and wants to start somewhere` : losing && ageAdj(p) >= 29 ? 'He is running out of time to win and does not see it happening here' : room < 35 ? 'He is fed up with the locker room' : null;
+    if (!why) continue;
+    const pr = (benched ? .07 : .025) * (room < 35 ? 2 : 1) * (isCaptain(p.id) ? .5 : 1);
+    if (rand() < pr) {
+      G.requests[p.id] = {s: G.season, w, why, talked: 0};
+      if (!(G.block && G.block.ids && G.block.ids.includes(p.id))) toggleBlock(p.id);
+      G.news.unshift(`${p.n} has asked to be traded. ${why}.`);
+      return;
+    }
+  }
+}
+// talk him down: works best when the room is good and he is not benched; you only get one try
+function requestTalk(id) {
+  const r = (G.requests || {})[id], p = G.players[id]; if (!r || r.done || !p || r.talked) return null;
+  r.talked = 1;
+  const vp = planForVet(id), benched = vp && (vp.plan === 'start' || vp.plan === 'phase');
+  const ok = rand() < clamp(.35 + (chemOf() - 50) / 100 + (isCaptain(id) ? .15 : 0) - (benched ? .25 : 0), .1, .85);
+  if (ok) { r.done = 'talked'; chemShift(1, `${p.n} took back his trade request`); if (G.block && G.block.ids.includes(id)) toggleBlock(id); G.news.unshift(`${p.n} took back his trade request after a talk.`); }
+  else chemShift(-2, `Talks with ${p.n} went nowhere`);
+  return {ok};
+}
+// tell him no: he stays, the room takes a hit now, and he plays a little flat for a while
+function requestRefuse(id) {
+  const r = (G.requests || {})[id], p = G.players[id]; if (!r || r.done || !p) return null;
+  r.done = 'refused';
+  chemShift(-3, `You refused ${p.n}'s trade request`);
+  G.streak = G.streak || {}; G.streak[id] = (G.streak[id] || 0) - 2;
+  if (G.block && G.block.ids.includes(id)) toggleBlock(id);
+  G.news.unshift(`You told ${p.n} he is not going anywhere.`);
+  return {ok: true};
 }
 
 // ---------- the week in a few lines ----------
@@ -3333,7 +3396,7 @@ const api = {
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, capBook, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, requestTalk, requestRefuse, activeRequest: () => activeRequest(), chemPrice, capBook, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);
