@@ -1492,6 +1492,52 @@ button.capbox { display: block; padding: 0; }
 .chemfx > div { display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .chemfx b { font-family: var(--display); font-size: 20px; } .chemfx b.good { color: var(--good); } .chemfx b.bad { color: var(--bad); }
 .chemfx span { font-size: 14px; color: var(--muted); }
+/* game cast: watch a playoff game drive by drive */
+.cast { position: fixed; inset: 0; z-index: 60; background: var(--ink, #070c16); display: flex; justify-content: center; overflow: hidden; }
+.cast.out { opacity: 0; transition: opacity .2s; }
+.cast-in { width: min(560px, 100%); display: grid; grid-template-rows: auto auto 1fr auto; gap: 12px; padding: calc(18px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); height: 100%; box-sizing: border-box; }
+.cast-board { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; padding: 12px; border-radius: 14px; background: var(--panel2); border: 1px solid var(--line); }
+.cteam { display: flex; align-items: center; gap: 8px; min-width: 0; } .cteam.r { justify-content: flex-end; }
+.cteam b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs { font-family: var(--display); font-size: 38px; line-height: 1; }
+.cclock { font-size: 12px; color: var(--muted); text-align: center; min-width: 64px; }
+.cast-feed { overflow-y: auto; display: grid; align-content: start; gap: 6px; min-height: 0; }
+.cq { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); margin-top: 6px; }
+.cdrive { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,.04); animation: rise .25s ease-out both; }
+.cdrive > div { display: grid; gap: 2px; min-width: 0; } .cdrive b { font-size: 14px; font-weight: 600; }
+.cdrive.big { background: rgba(243,181,47,.1); } .cdrive.big b { font-weight: 800; }
+.cdrive.me { border-left: 3px solid var(--gold); }
+.cscore { font-size: 13px; color: var(--muted); }
+.cast-btns { justify-content: center; gap: 10px; flex-wrap: wrap; }
+.cast-final { display: grid; text-align: center; gap: 2px; width: 100%; } .cast-final b { font-family: var(--display); font-size: 30px; } .cast-final.w b { color: var(--good); } .cast-final.l b { color: var(--bad); }
+/* the phone call, made for a phone */
+.why1 { margin: 6px 0 0; color: var(--muted); }
+.sayrow { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.sayrow::-webkit-scrollbar { display: none; }
+.talkchip3 { flex: none; height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2); background: var(--panel); color: var(--chalk); font: inherit; font-size: 14px; white-space: nowrap; cursor: pointer; }
+.talkchip3:hover { border-color: var(--gold); }
+.talkpick2 { display: grid; gap: 4px; margin: 6px 0 10px; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); }
+.pickrow { display: grid; grid-template-columns: 1fr auto 52px; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px; border-radius: 10px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.pickrow:hover, .pickrow:active { background: rgba(255,255,255,.05); }
+.pkname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.pkv { text-align: right; } .pkv.good { color: var(--good); }
+@media (max-width: 760px) {
+  .tread .treadtags { display: none; }
+  .talk .bub.me .talkdeal .lbl { font-size: 10px; }
+  .talksay { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; }
+  .talktable { gap: 8px; }
+  .talkfoot { margin-top: 6px; }
+}
+/* the coach's take and the inbox */
+.coachline { display: flex; gap: 8px; align-items: baseline; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: var(--panel); border-left: 3px solid var(--line2); font-size: 14px; line-height: 1.35; }
+.coachline .cl-k { font-weight: 800; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); flex: none; }
+.coachline.love, .coachline.like { border-left-color: var(--good); } .coachline.love .cl-k, .coachline.like .cl-k { color: var(--good); }
+.coachline.hate { border-left-color: var(--bad); } .coachline.hate .cl-k { color: var(--bad); }
+.mails { display: grid; gap: 8px; }
+.mail { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); display: grid; gap: 6px; }
+.mail.new { border-color: rgba(243,181,47,.45); }
+.mail p { margin: 0; line-height: 1.45; } .mailh { display: flex; justify-content: space-between; gap: 10px; }
+.mail .btn { justify-self: start; }
 </style>
 </head>
 <body>
