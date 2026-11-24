@@ -1414,10 +1414,10 @@ body.ingame header#hdr .sidenext { background: var(--gold); box-shadow: none; }
   .bracket { grid-template-columns: 1fr; }
 }
 /* phones: sheets that never trap you */
-html.modal-open, html.modal-open body { overflow: hidden; }
-.sheet { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal { touch-action: none; } .modal .sheet { touch-action: auto; }
+.sheet, .modal { overscroll-behavior: contain; }
+.sheet { -webkit-overflow-scrolling: touch; }
 .x.xfloat { position: sticky; top: 0; float: right; z-index: 6; margin: -4px -4px 4px 8px; }
-body { overflow-x: clip; }
 @media (max-width: 760px) {
   .sheet, .sheet.wide { max-height: 88vh; max-height: 88dvh; transition: transform .12s ease-out; }
   .sheet > .sheeth:first-child { position: sticky; top: -26px; z-index: 5; margin: -26px -16px 10px; padding: 26px 16px 8px; background: var(--panel2); border-bottom: 1px solid var(--line); }
