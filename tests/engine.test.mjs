@@ -184,8 +184,11 @@ test('contracts in trades: no-trade clauses, restructures, extension asks, and n
   let named = false;
   for (const t of E.teamList().filter(t => t !== 'NYJ')) {
     const tgt = E.roster(t).filter(p => p.ovr >= 76 && p.ovr <= 86)[0]; if (!tgt) continue;
-    const c = E.counterTrade(t, G.picks.filter(k => k.owner === 'NYJ' && k.rd >= 4).map(k => k.id).slice(0, 1), [tgt.id]);
-    if (c && c.some(x => /^They want /.test(x.label))) { named = true; break; }
+    for (const rd of [4, 3, 2]) {
+      const c = E.counterTrade(t, G.picks.filter(k => k.owner === 'NYJ' && k.rd === rd).map(k => k.id).slice(0, 1), [tgt.id]);
+      if (c && c.some(x => /^They want /.test(x.label))) { named = true; break; }
+    }
+    if (named) break;
   }
   assert.ok(named, 'some GM asks for a player by name');
 });

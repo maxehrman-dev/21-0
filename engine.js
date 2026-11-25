@@ -3143,29 +3143,113 @@ function weekNews(w, games) {
 // Players change during the season too. Streaks come and go week to week; young players who play and have room to
 // grow pick up a point here and there; a hot young player can break out in the middle of a season; and the oldest
 // veterans wear down late in the year. Gains during the season count toward the offseason, so nobody grows twice.
+// What a player produced so far this season, per game, in the numbers that matter at his position
+function prodMetric(p, st, team) {
+  const g = Math.max(1, st.gp || 0);
+  switch (p.pos) {
+    case 'QB': return st.att >= 30 ? (st.py + 20 * (st.ptd || 0) - 45 * (st.int || 0) - 6 * (st.sacked || 0)) / st.att : null;
+    case 'RB': return st.car >= 15 ? ((st.ry || 0) + 20 * (st.rtd || 0) + .6 * (st.recy || 0)) / g / 10 : null;
+    case 'WR': case 'TE': return st.tgt >= 8 ? ((st.recy || 0) + 20 * (st.rectd || 0)) / g / 10 + ((st.recy || 0) / st.tgt) * .3 : null;
+    case 'EDGE': case 'DT': return g >= 2 ? (4 * (st.sk || 0) + .6 * (st.tkl || 0) + (st.pd || 0)) / g : null;
+    case 'LB': return g >= 2 ? ((st.tkl || 0) + 3 * (st.sk || 0) + 4 * (st.dint || 0) + 1.5 * (st.pd || 0)) / g : null;
+    case 'CB': case 'S': return g >= 2 ? (5 * (st.dint || 0) + 1.8 * (st.pd || 0) + .4 * (st.tkl || 0)) / g : null;
+    case 'OT': case 'IOL': return team ? team.ol : null;     // linemen: how the line protects and opens holes
+    default: return null;
+  }
+}
+// The line's work, per team: fewer sacks allowed and more yards a carry
+function lineByTeam() {
+  const S = G.stats[G.season] || {}, out = {};
+  for (const t of teamList()) {
+    let sk = 0, ry = 0, car = 0, gp = 0;
+    for (const p of roster(t)) { const st = S[p.id]; if (!st) continue; if (p.pos === 'QB') { sk += st.sacked || 0; gp = Math.max(gp, st.gp || 0); } if (p.pos === 'RB') { ry += st.ry || 0; car += st.car || 0; } }
+    out[t] = {ol: gp ? -sk / gp + (car ? ry / car : 4) * .8 : null};
+  }
+  return out;
+}
+// Each week from Week 3: how every regular is producing against what his rating says he should, at his position
+// (a z-score of his production after allowing for his overall). Good tape moves a rating up, bad tape down.
+function perfScores() {
+  const S = G.stats[G.season] || {}, line = lineByTeam(), byPos = {};
+  for (const p of Object.values(G.players)) {
+    if (!G.teams[p.tm]) continue;
+    const st = S[p.id]; if (!st || (st.gp || 0) < 2) continue;
+    const m = prodMetric(p, st, line[p.tm]); if (m == null || !isFinite(m)) continue;
+    (byPos[p.pos] = byPos[p.pos] || []).push({p, m});
+  }
+  const z = {};
+  for (const L of Object.values(byPos)) {
+    if (L.length < 8) continue;
+    const n = L.length, mx = L.reduce((a, x) => a + x.p.ovr, 0) / n, my = L.reduce((a, x) => a + x.m, 0) / n;
+    const sxx = L.reduce((a, x) => a + (x.p.ovr - mx) ** 2, 0) || 1, b = L.reduce((a, x) => a + (x.p.ovr - mx) * (x.m - my), 0) / sxx;
+    const res = L.map(x => x.m - (my + b * (x.p.ovr - mx))), sd = Math.sqrt(res.reduce((a, r) => a + r * r, 0) / n) || 1;
+    L.forEach((x, k) => { z[x.p.id] = Math.round(res[k] / sd * 100) / 100; });
+  }
+  return z;
+}
+// How set in stone a player's rating is: rookies and young players move the most, veterans with a long record little
+function establishment(p) {
+  const a = ageAdj(p);
+  const e = a <= 23 || p.rook ? 1 : a <= 25 ? .75 : a <= 28 ? .4 : .25;
+  // a proven star is established at any age; linemen are judged as a unit, so each moves less
+  return (p.ovr >= 86 ? Math.min(e, .4) : p.ovr >= 82 ? Math.min(e, .6) : e) * (p.pos === 'OT' || p.pos === 'IOL' ? .5 : 1);
+}
+// How his production compares with his rating this year, and how far his rating has moved because of it
+function perfTrend(p) {
+  const z = (G.perfZ || {})[p.id], mv = p.perfMove && p.perfMove.s === G.season ? p.perfMove.n : 0;
+  if (z == null && !mv) return null;
+  const label = z == null ? (mv > 0 ? 'Played above his rating' : 'Played below his rating') : z >= 1.2 ? 'Playing well above his rating' : z >= .5 ? 'Playing above his rating' : z <= -1.2 ? 'Playing well below his rating' : z <= -.5 ? 'Playing below his rating' : 'Playing to his rating';
+  return {label, z: z || 0, moved: mv, good: (z || mv) > 0 && Math.abs(z || 1) >= .5, bad: (z || mv) < 0 && Math.abs(z || 1) >= .5};
+}
 function inSeasonGrowth(w) {
   G.streak = G.streak || {};
-  const starters = {};
-  for (const t of teamList()) { const d = depth(t); for (const pos of POS_ORDER) for (const p of d[pos].slice(0, STARTERS[pos])) starters[p.id] = 1; }
+  // hot and cold streaks come and go week to week
   for (const p of Object.values(G.players)) {
     if (!G.teams[p.tm] || p.inj) continue;
     const s = (G.streak[p.id] || 0) * .75 + randn() * .9;
     G.streak[p.id] = Math.round(s * 10) / 10;
-    const a = ageAdj(p), room = (p.pot || p.ovr) - p.ovr, plays = starters[p.id] || (p.devShare || 0) > w * .2, f = formOf(p);
-    if (a <= 26 && room > 0 && plays && rand() < Math.min(.16, room * .011 + (f > 2 ? .03 : 0))) bump(p, 1);
-    // a breakout: young, real upside, playing hot
-    if (a <= 26 && room >= 5 && plays && f >= 2.5 && w >= 3 && p.brk !== G.season && rand() < .016) {
+  }
+  // young players with room to grow and real snaps keep developing through the year, a little
+  const starters = {};
+  for (const t of teamList()) { const d = depth(t); for (const pos of POS_ORDER) for (const p of d[pos].slice(0, STARTERS[pos])) starters[p.id] = 1; }
+  for (const p of Object.values(G.players)) {
+    if (!G.teams[p.tm] || p.inj) continue;
+    const a = ageAdj(p), room = (p.pot || p.ovr) - p.ovr, plays = starters[p.id] || (p.devShare || 0) > w * .2;
+    if (a <= 25 && room > 0 && plays && rand() < Math.min(.08, room * .006)) bump(p, 1);
+  }
+  if (w < 3) return;
+  const Z = perfScores();
+  G.perfZ = Z;
+  for (const [id, z] of Object.entries(Z)) {
+    const p = G.players[id]; if (!p || p.inj) continue;
+    const est = establishment(p), cap = est >= 1 ? 6 : est >= .75 ? 5 : est >= .4 ? 3 : 2, ol = p.pos === 'OT' || p.pos === 'IOL';
+    const moved = p.perfMove && p.perfMove.s === G.season ? p.perfMove.n : 0;
+    // the further his tape is from his rating, the likelier a point moves, and young players move most
+    const pr = Math.min(.35, Math.max(0, Math.abs(z) - .5) * .22 * est);
+    if (Math.abs(z) > .5 && rand() < pr) {
+      const dir = z > 0 ? 1 : -1;
+      if (dir > 0 && moved >= cap) continue;
+      if (dir < 0 && moved <= -cap) continue;
+      if (dir > 0 && p.ovr >= (p.pot || p.ovr) + 2 && est < 1) continue;          // a veteran does not climb past what he is
+      bump(p, dir);
+      p.inGain -= dir * .6;                                  // a change earned on the field mostly sticks into next year
+      if (dir > 0 && p.ovr > (p.pot || 0)) p.pot = p.ovr;
+      p.perfMove = {s: G.season, n: moved + dir};
+    }
+    // a breakout: young, playing far above his rating for weeks
+    if (!ol && est >= .75 && p.ovr < 82 && z >= 1.8 && w >= 5 && p.brk !== G.season && rand() < .06) {
       p.brk = G.season;
       const j = 3 + Math.floor(rand() * 3), old = p.ovr;
       bump(p, j);
-      if (p.ovr > p.pot) p.pot = p.ovr + 1;
+      if (p.ovr > (p.pot || 0)) p.pot = p.ovr + 1;
       (p.hist = p.hist || []).push([G.season, p.ovr, `Breakout, Week ${w}`]);
       G.form[p.id] = Math.max(G.form[p.id] || 0, 3);
       (G.brkLog = G.brkLog || []).push({id: p.id, old, now: p.ovr, s: G.season, w});
       if (p.tm === G.user || p.ovr >= 80) G.news.unshift(`${p.n} (${p.tm} ${p.pos}) is breaking out: ${old} → ${p.ovr}.`);
     }
-    if (a >= 32 && w >= 10 && rand() < .012) bump(p, -1);
   }
+  // the oldest legs wear down late in the year, whatever the tape says
+  if (w >= 10) for (const p of Object.values(G.players)) if (G.teams[p.tm] && !p.inj && ageAdj(p) >= 32 && rand() < .012) bump(p, -1);
 }
 function bump(p, d) {
   const old = p.ovr;
@@ -3450,11 +3534,11 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return markOffers(); }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
-  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, coachTake, inboxMail: (f, t, a) => mail(f, t, a), requestTalk, requestRefuse, activeRequest: () => activeRequest(), chemPrice, capBook, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
+  userReady, startSeason2, scoutedClass, nextDraftYear, classFor, tradeGrades, rebuildReport, snapshotFromData, save, load, attachData, perfScores, coachTake, inboxMail: (f, t, a) => mail(f, t, a), requestTalk, requestRefuse, activeRequest: () => activeRequest(), chemPrice, capBook, fixRoster, fixCap, playoffMatchups, homeWinP, toCutdown, runCamp, noteDecline, dealFix, makeFixed, coachPlans, setCoachPlan, planOf, planForVet, planTarget, seasonGames, winPct, askFor, yearsFor, rookieOvr, rebuilding, projectedSlot,
 };
 if (typeof module !== 'undefined') module.exports = api; else root.E = api;
 })(this);
