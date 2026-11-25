@@ -1827,13 +1827,18 @@ function tradeBlock() {
       ${L.length ? L.map((x, i) => `<div class="bpoffer">${badge(x.partner, 1)}<span class="bpget">${x.get.map(g => esc(E.assetName(g))).join(' + ')}</span><button class="btn sm ghost" data-act="blockEdit" data-id="${id}" data-i="${i}">Edit</button><button class="btn sm go" data-act="blockAccept" data-id="${id}" data-i="${i}">Take it</button></div>`).join('')
         : `<div class="small muted bpnone">${esc(E.whyNoMarket(id, B.want))}</div>`}
       ${L.length >= 2 ? `<div class="row end"><button class="btn sm" data-act="bidWar" data-id="${id}">Start a bidding war</button></div>` : ''}</div>`; }).join('');
-  const pos = UI.tposBlock || 'ALL';
-  const mine = E.roster(G.user).filter(p => p.pos !== 'K' && p.pos !== 'P' && p.ovr >= 60 && !B.ids.includes(p.id) && inGroup(p.pos, pos)).sort((a, b) => E.playerValue(b) - E.playerValue(a)).slice(0, pos === 'ALL' ? 10 : 30);
-  const add = `${posChips('tposBlock', pos)}<div class="alist">${mine.map(p => `<div class="trow">${pRow(p)}<button class="btn sm" data-act="blockToggle" data-id="${p.id}">+ Block</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div>`;
   return `<div class="card">
-    <div class="row blockwant"><span class="small muted">What you want back</span>${wantPicker('blockWant', B.want)}</div>
-    ${yours || '<p class="muted">Nobody on the block yet. Add a player and the teams that need him make offers here.</p>'}
-    ${B.ids.length ? `<details class="fold" data-fold="blockadd" ${foldOpen('blockadd')}><summary>Add a player to the block</summary>${add}</details>` : `<div class="lbl" style="margin-top:10px">Add a player</div>${add}`}</div>`;
+    ${B.ids.length ? `<div class="row blockwant"><span class="small muted">What you want back</span>${wantPicker('blockWant', B.want)}</div>${yours}` : '<p class="muted" style="margin:0 0 10px">Nobody on the block yet. Put a player up and the teams that need him make offers right here.</p>'}
+    <div class="row"><button class="btn ${B.ids.length ? '' : 'go'}" data-act="blockAddSheet">${B.ids.length ? 'Add another player' : 'Put a player on the block'}</button></div></div>`;
+}
+// Picking who to shop: a sheet, not a list on the trade screen
+function blockAddSheet() {
+  const B = E.blockOf(), pos = UI.tposBlock || 'ALL';
+  const mine = E.roster(G.user).filter(p => p.pos !== 'K' && p.pos !== 'P' && p.ovr >= 60 && !B.ids.includes(p.id) && inGroup(p.pos, pos)).sort((a, b) => E.playerValue(b) - E.playerValue(a)).slice(0, 30);
+  modal(`<div class="sheeth"><div><div class="kicker">Trade block</div><h3>Who do you want to shop?</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    ${posChips('tposBlock', pos)}
+    <div class="alist">${mine.map(p => `<div class="trow">${pRow(p)}<button class="btn sm go" data-act="blockPick" data-id="${p.id}">Shop him</button></div>`).join('') || '<p class="small muted">Nobody at that position.</p>'}</div>
+    <div class="row end"><button class="btn" data-act="closeModal">Done</button></div>`, true);
 }
 // Your weak spots as chips, worst first; each opens the best trade targets and free agents for that spot
 function upgradeChips() {
@@ -2921,7 +2926,7 @@ document.addEventListener('click', e => {
     case 'depthSheet': modal(`<div class="sheeth"><h3>Your team</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel(null).replace('<details class="fold dfold" data-fold="depth" ', '<details class="fold dfold" open ')}`, true); return;
     case 'injurySheet': injurySheet(); return;
     case 'midSign': { const r = E.signMidseason(id); if (!r.ok) { toast(r.msg); return; } persist(); render(); signPopup(id, r.price, 1); return; }
-    case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } break;
+    case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } if (el.dataset.k === 'tposBlock' && $('#layer .modal:not(.closing)')) { blockAddSheet(); return; } break;
     case 'tPartner': UI.partner = el.dataset.t || null; UI.get = []; UI.tposGet = 'ALL'; UI.tview = UI.partner ? 'make' : null; window.scrollTo(0, 0); break;
     case 'tradeHome': UI.tview = null; UI.partner = null; UI.give = []; UI.get = []; window.scrollTo(0, 0); break;
     case 'tradeTeams': UI.tview = 'teams'; window.scrollTo(0, 0); break;
@@ -2949,6 +2954,11 @@ document.addEventListener('click', e => {
       return; }
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
+    case 'blockAddSheet': blockAddSheet(); return;
+    case 'blockPick': { const p = G.players[id]; if (!p) return; if (!E.blockOf().ids.includes(id)) E.toggleBlock(id); closeModal(); persist(); render();
+      const n = E.cached(() => E.shopPlayer(id, E.blockOf().want))().length;
+      toast(n ? `${p.n} is on the block. The best offers are right under him.` : `${p.n} is on the block. Nobody bit yet: ${E.whyNoMarket(id, 'any')}`);
+      setTimeout(() => { const s = [...document.querySelectorAll('.tradeflow section')].find(x => /Your trade block/.test(x.textContent)); if (s) s.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 80); return; }
     case 'blockToggle': {
       const p = G.players[id]; if (!p) return;
       const on = E.toggleBlock(id);
