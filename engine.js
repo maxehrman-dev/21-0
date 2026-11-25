@@ -1464,7 +1464,7 @@ function simGame(a, h, opts = {}) {
     put(t, k, 'fga', 1); clock -= 5;
     if (rand() < pr) { score[t] += 3; put(t, k, 'fg', 1); sc.push([fmt(), t, `${lastNameE(k)} ${Math.round(dist)}-yd field goal`]); dres = `${lastNameE(k)} ${Math.round(dist)}-yd field goal`; newDrive(opp(t), 35); return true; }
     dres = `Missed ${Math.round(dist)}-yd field goal`; newDrive(opp(t), Math.max(20, 100 - (yl + 8))); return false; };
-  const lastNameE = p => p ? p.n.split(' ').slice(-1)[0] : 'Kicker';
+  const lastNameE = p => p ? surname(p.n) : 'Kicker';
   // play-calling: the coach's lean, then down and distance, the score and the clock
   const callPass = t => {
     const s = S[t], c = s.coach, diff = score[t] - score[opp(t)], left = (4 - Math.min(4, q)) * 900 + clock;
@@ -1757,34 +1757,40 @@ function beginOffseason() {
   for (const yr of [next, next + 1]) for (let rd = 1; rd <= ROUNDS; rd++) for (const t of teamList()) if (!G.picks.some(k => k.yr === yr && k.rd === rd && k.orig === t)) G.picks.push({id: `${yr}-${rd}-${t}`, yr, rd, orig: t, owner: t});
   // contracts that step up after this season (extensions, back-loaded deals) now pay their real average
   for (const p of Object.values(G.players)) if (p.apy != null) { if (p.end >= next) p.cap = p.apy; delete p.apy; }
-  // progression: age, hidden potential, how the season went, and the player's track record.
-  // The league as a whole does not get better every year: young players rise, veterans fall, and the average holds.
+  // progression. Most of a rating's movement happens during the season, on the field. The offseason then asks how much
+  // of that was real: a young player's jump mostly sticks, a veteran's bad year or a one-year spike is pulled back toward
+  // his track record. Age and development add their own change on top, and the league as a whole does not inflate.
   const prog = [];
   const progParts = p => {
-    const a = ageAdj(p), f = formOf(p);
+    const a = ageAdj(p);
     const st = (G.stats[prev] || {})[p.id], gp = st ? st.gp || 0 : 0;
-    const played = Math.min(1, gp / 8);
-    const age = a <= 22 ? 2 : a <= 24 ? 1.5 : a <= 26 ? .8 : a <= 28 ? .5 : a <= 30 ? .1 : a <= 32 ? -1.1 : a <= 34 ? -2.4 : -3.8 - Math.max(0, a - 35);
-    // the first years are about development: a young player's stats move him less than his age and his upside
-    const young = a <= 24, fw = young ? .45 : a <= 26 ? .75 : 1;
-    const parts = {age, dev: 0, form: f * fw * played, track: 0};
-    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .22 : a <= 26 ? .15 : .05);
+    const start = p.ovr - (p.inGain || 0), move = p.ovr - start, prior = p.prior || start;
+    // how much of the season's move is the real player
+    let keep = p.rook || a <= 23 ? .8 : a <= 25 ? .68 : a <= 28 ? .5 : .4;
+    if (start >= 86) keep = Math.min(keep, .4);                                // a star's off year does not define him
+    if (move > 0 && prior >= p.ovr - 1) keep = .95;                            // he has been this good before
+    if (move < 0 && prior <= p.ovr + 1) keep = .85;                            // he has been this player before
+    if (gp < 6) keep = Math.min(keep, .6);                                     // a small sample proves little
+    const back = Math.round(move * (keep - 1) * 10) / 10;                     // negative after a hot year, positive after a cold one
+    const age = (a <= 22 ? 1.2 : a <= 24 ? .9 : a <= 26 ? .5 : a <= 28 ? .3 : a <= 30 ? 0 : a <= 32 ? -1.1 : a <= 34 ? -2.4 : -3.8 - Math.max(0, a - 35));
+    const parts = {age, dev: 0, back, move};
+    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .16 : a <= 26 ? .1 : .03);
     if (p.devShare && a <= 26) parts.dev = parts.dev * (1 + .7 * Math.min(1, p.devShare / 12)) + Math.min(1, p.devShare / 12);   // a coach plan put him on the field
-    const prior = p.prior || p.ovr;
-    if (prior > p.ovr && f > 0) parts.track = (prior - p.ovr) * .5 * played;        // proved himself again
-    else if (prior < p.ovr && f < -1 && !young) parts.track = -(p.ovr - prior) * .4 * played; // fell back to his track record
-    let d = parts.age + parts.dev + parts.form + parts.track + (p.rook ? .8 : 0) - (p.inGain || 0) * .6;   // what he already gained during the season counts
-    if (d > 0 && p.ovr >= 86) d *= p.ovr >= 90 ? .35 : .6;                            // the top is hard to reach and harder to climb
-    return {parts, d, prior};
+    let d = parts.age + parts.dev + (p.rook ? .6 : 0);
+    if (d > 0 && p.ovr >= 86) d *= p.ovr >= 90 ? .35 : .6;                   // the top is hard to reach and harder to climb
+    d += back;
+    return {parts, d, prior, start};
   };
   const rostered = Object.values(G.players).filter(p => G.teams[p.tm]);
   const drift = rostered.reduce((s, p) => s + progParts(p).d, 0) / Math.max(1, rostered.length);
   for (const p of Object.values(G.players)) {
-    const {parts, prior} = progParts(p);
-    let d = progParts(p).d - drift * .3 + randn() * (ageAdj(p) >= 25 && ageAdj(p) <= 30 ? .9 : 1.2);
-    d = clamp(Math.round(d), -10, 8);
-    const why = d >= 4 && parts.track >= 2 ? 'Proved himself' : d >= 4 && parts.form >= 2 ? 'Breakout season' : d >= 3 && parts.dev >= 1.5 ? 'Development'
-      : d <= -4 && parts.form <= -2 ? 'Down year' : d <= -2 && parts.age <= -2.5 ? 'Age decline' : d <= -3 && parts.track < 0 ? 'Regressed' : d > 0 ? 'Improved' : d < 0 ? 'Slipped' : 'Steady';
+    const {parts, prior, start} = progParts(p);
+    let d = progParts(p).d - drift * .3 + randn() * (ageAdj(p) >= 25 && ageAdj(p) <= 30 ? .7 : 1);
+    d = clamp(Math.round(d), -9, 7);
+    const why = parts.back >= 1.5 && d > 0 ? 'Bounced back' : parts.back <= -1.5 && d < 0 ? 'Came back to earth' : parts.move >= 3 && d >= 0 ? 'Proved it was real'
+      : d >= 3 && parts.dev >= 1.2 ? 'Development' : d <= -2 && parts.age <= -2.5 ? 'Age decline' : d > 0 ? 'Improved' : d < 0 ? 'Slipped' : 'Steady';
+    // the season's story stays on his card: where he started, where he finished
+    if (Math.abs(p.inGain || 0) >= 2 && G.teams[p.tm]) { histInit(p, start, prev); p.hist.push([prev, p.ovr, 'End of season']); }
     p.campD = clamp(p.ovr + d, 40, 99) - p.ovr; p.campWhy = why; p.campPrior = prior;
     p.age = Math.round((p.age + 1) * 10) / 10;
     p.inj = false; delete p.injW; delete p.injPre; p.rook = false; delete p.devShare; delete p.inGain;
@@ -2385,6 +2391,8 @@ function finishDraft() {
   G.step = 'camp';
   aiCleanup();
 }
+// A player's rating history starts at the rating he had in his first Week 1 here
+function histInit(p, start, season) { if (!p.hist || !p.hist.length) p.hist = [[season, start, 'Week 1']]; }
 function runCamp() {
   const changes = [];
   for (const p of Object.values(G.players)) {
@@ -2393,7 +2401,7 @@ function runCamp() {
     p.ovr = clamp(p.ovr + p.campD, 40, 99);
     p.prior = Math.round((p.campPrior || old) * .6 + p.ovr * .4);
     if (p.pot < p.ovr) p.pot = p.ovr;
-    (p.hist = p.hist || [[2026, old, 'Week 1']]).push([G.season, p.ovr, p.campWhy || 'Training camp']);
+    histInit(p, old, G.season - 1); p.hist.push([G.season, p.ovr, p.campWhy || 'Training camp']);
     if (p.tm === G.user) changes.push({id: p.id, n: p.n, pos: p.pos, old, now: p.ovr, why: p.campWhy});
     delete p.campD; delete p.campWhy; delete p.campPrior;
   }
@@ -3194,6 +3202,13 @@ function establishment(p) {
   // a proven star is established at any age; linemen are judged as a unit, so each moves less
   return (p.ovr >= 86 ? Math.min(e, .4) : p.ovr >= 82 ? Math.min(e, .6) : e) * (p.pos === 'OT' || p.pos === 'IOL' ? .5 : 1);
 }
+// How far and how often a rating can swing in-season. Everyone moves with how he plays; the young move most.
+function swing(p) {
+  const a = ageAdj(p), ol = p.pos === 'OT' || p.pos === 'IOL';
+  const rate = (a <= 23 || p.rook ? 1 : a <= 25 ? .85 : a <= 28 ? .7 : .6) * (ol ? .6 : 1);
+  const cap = (a <= 23 || p.rook ? 8 : a <= 25 ? 7 : 6) - (p.ovr >= 86 ? 1 : 0) - (ol ? 2 : 0);
+  return {rate, cap};
+}
 // How his production compares with his rating this year, and how far his rating has moved because of it
 function perfTrend(p) {
   const z = (G.perfZ || {})[p.id], mv = p.perfMove && p.perfMove.s === G.season ? p.perfMove.n : 0;
@@ -3215,34 +3230,32 @@ function inSeasonGrowth(w) {
   for (const p of Object.values(G.players)) {
     if (!G.teams[p.tm] || p.inj) continue;
     const a = ageAdj(p), room = (p.pot || p.ovr) - p.ovr, plays = starters[p.id] || (p.devShare || 0) > w * .2;
-    if (a <= 25 && room > 0 && plays && rand() < Math.min(.08, room * .006)) bump(p, 1);
+    if (a <= 25 && room > 0 && plays && (p.inGain || 0) < 9 && rand() < Math.min(.12, room * .009) * (a <= 23 ? 1 : .7)) bump(p, 1);
   }
   if (w < 3) return;
   const Z = perfScores();
   G.perfZ = Z;
   for (const [id, z] of Object.entries(Z)) {
     const p = G.players[id]; if (!p || p.inj) continue;
-    const est = establishment(p), cap = est >= 1 ? 6 : est >= .75 ? 5 : est >= .4 ? 3 : 2, ol = p.pos === 'OT' || p.pos === 'IOL';
+    const est = establishment(p), sw = swing(p), cap = sw.cap, ol = p.pos === 'OT' || p.pos === 'IOL';
     const moved = p.perfMove && p.perfMove.s === G.season ? p.perfMove.n : 0;
     // the further his tape is from his rating, the likelier a point moves, and young players move most
-    const pr = Math.min(.35, Math.max(0, Math.abs(z) - .5) * .22 * est);
+    const pr = Math.min(.5, Math.max(0, Math.abs(z) - .4) * .34 * sw.rate);
     if (Math.abs(z) > .5 && rand() < pr) {
       const dir = z > 0 ? 1 : -1;
-      if (dir > 0 && moved >= cap) continue;
+      if (dir > 0 && (moved >= cap || (p.inGain || 0) >= 9)) continue;
       if (dir < 0 && moved <= -cap) continue;
-      if (dir > 0 && p.ovr >= (p.pot || p.ovr) + 2 && est < 1) continue;          // a veteran does not climb past what he is
       bump(p, dir);
-      p.inGain -= dir * .6;                                  // a change earned on the field mostly sticks into next year
       if (dir > 0 && p.ovr > (p.pot || 0)) p.pot = p.ovr;
       p.perfMove = {s: G.season, n: moved + dir};
     }
     // a breakout: young, playing far above his rating for weeks
-    if (!ol && est >= .75 && p.ovr < 82 && z >= 1.8 && w >= 5 && p.brk !== G.season && rand() < .06) {
+    if (!ol && est >= .75 && p.ovr < 82 && (p.inGain || 0) <= 4 && z >= 1.8 && w >= 5 && p.brk !== G.season && rand() < .06) {
       p.brk = G.season;
       const j = 3 + Math.floor(rand() * 3), old = p.ovr;
       bump(p, j);
       if (p.ovr > (p.pot || 0)) p.pot = p.ovr + 1;
-      (p.hist = p.hist || []).push([G.season, p.ovr, `Breakout, Week ${w}`]);
+      histInit(p, old - (p.inGain || 0) + j, G.season); p.hist.push([G.season, p.ovr, `Breakout, Week ${w}`]);
       G.form[p.id] = Math.max(G.form[p.id] || 0, 3);
       (G.brkLog = G.brkLog || []).push({id: p.id, old, now: p.ovr, s: G.season, w});
       if (p.tm === G.user || p.ovr >= 80) G.news.unshift(`${p.n} (${p.tm} ${p.pos}) is breaking out: ${old} → ${p.ovr}.`);

@@ -1547,6 +1547,17 @@ button.capbox { display: block; padding: 0; }
 .upchip .ng { grid-row: 1 / span 2; } .upchip b { font-size: 15px; } .upchip .small { grid-column: 2; }
 .upchip.hi { border-color: rgba(239,91,81,.5); } .upchip.md { border-color: rgba(232,163,60,.45); }
 .upchip:hover { border-color: var(--gold); }
+/* trade tools: three ways in, each opens its own sheet */
+.ttools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ttool { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; min-height: 84px; border-radius: 14px; border: 1px solid var(--line2); background: var(--panel); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.ttool:hover { border-color: var(--gold); }
+.ttool b { font-size: 14px; line-height: 1.2; }
+.ttool .small { line-height: 1.25; overflow-wrap: anywhere; }
+.tticon { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(255,255,255,.06); margin-bottom: 4px; }
+.tticon svg { width: 16px; height: 16px; fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.morelink { display: block; margin: 8px auto 0; }
+.bpfoot { justify-content: space-between; align-items: center; margin-top: 6px; }
+@media (max-width: 420px) { .ttool { padding: 10px; min-height: 78px; } .ttool b { font-size: 13px; } .ttool .small { font-size: 11px; } }
 </style>
 </head>
 <body>

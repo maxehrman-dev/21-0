@@ -818,7 +818,7 @@ function offerCard(o, draft) {
 }
 // ---------- home building blocks ----------
 // Four numbers at a glance, then one row per thing that might need you. Every row opens the full detail.
-const ICO = {flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>', trade: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>', hurt: '<path d="M12 5v14M5 12h14"/>', target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+const ICO = {phone: '<path d="M6.6 3.5h3l1.5 4-2 1.3a11 11 0 0 0 5.6 5.6l1.3-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/>', search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>', flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>', trade: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>', hurt: '<path d="M12 5v14M5 12h14"/>', target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
   goal: '<path d="M4 12.5l4.5 4.5L20 6"/>', chem: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2.5 19c.5-3 2.8-5 5.5-5 1.6 0 3 .7 4 1.8 1-1.1 2.4-1.8 4-1.8 2.7 0 5 2 5.5 5"/>',
   money: '<path d="M12 3v18M16.5 7.5c-.8-1.2-2.4-2-4.5-2-2.6 0-4 1.3-4 3s1.6 2.5 4 3 4 1.3 4 3-1.6 3-4.3 3c-2 0-3.6-.8-4.4-2"/>', list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'};
 const srow = (ico, label, value, attrs, tone) => `<button class="srow ${tone || ''}" ${attrs}><span class="sicon"><svg viewBox="0 0 24 24" aria-hidden="true">${ICO[ico]}</svg></span><span class="slabel">${label}</span><span class="sval">${value}</span><span class="chev" aria-hidden="true">›</span></button>`;
@@ -1605,7 +1605,7 @@ function playerCard(id) {
       <div class="small muted">Age ${Math.floor(p.age)} · ${p.tm === 'FA' ? `asks ${money(p.ask || E.market(p))}` : `${money(p.cap)} per year through ${p.end} (${yrsLeft} yr left)`}${p.draft ? ` · drafted #${p.draft}` : ''}</div></div>
       ${inCamp(p) ? `<div class="pcovr proj"><b>${p.proj[0]}–${p.proj[1]}</b><span>Scouts</span></div>` : `<div class="pcovr ${oc(p.ovr)}"><b>${p.ovr}</b><span>OVR</span></div>`}<button class="x" data-act="closeModal" aria-label="Close">×</button></div>
     <div class="ratingrow">
-      ${inCamp(p) ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Scouts' range</span><b>${p.proj[0]}–${p.proj[1]}</b><span class="small muted">Real rating after training camp, at final cuts</span></div>` : `${(p.hist || []).map((h, i) => `<div class="rh"><span class="kicker" style="color:var(--muted)">${h[0]}${i === 0 ? ' start' : ''}</span><b class="${oc(h[1])}">${h[1]}</b><span class="small muted">${esc(i ? h[2] : 'Week 1')}</span></div>`).join('<span class="rarrow">→</span>')}
+      ${inCamp(p) ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Scouts' range</span><b>${p.proj[0]}–${p.proj[1]}</b><span class="small muted">Real rating after training camp, at final cuts</span></div>` : `${(p.hist || []).map((h, i) => [h, i]).filter(([h, i], _, L) => i === 0 || i >= L.length - 3).map(([h, i]) => `<div class="rh"><span class="kicker" style="color:var(--muted)">${h[0]}${i === 0 ? ' start' : h[2] === 'End of season' ? ' end' : ''}</span><b class="${oc(h[1])}">${h[1]}</b><span class="small muted">${esc(i ? (h[2] === 'End of season' ? 'How he finished' : h[2]) : 'Week 1')}</span></div>`).join('<span class="rarrow">→</span>')}
       ${winsBlock(p)}<div class="rh"><span class="kicker" style="color:var(--muted)">Track record</span><b class="${oc(p.prior || p.ovr)}">${p.prior || p.ovr}</b><span class="small muted">Last 4 seasons</span></div>`}
       ${p.age <= 27 ? `<div class="rh"><span class="kicker" style="color:var(--muted)">Potential</span><b class="${(p.pot || p.ovr) - p.ovr >= 8 ? 'good' : (p.pot || p.ovr) - p.ovr >= 4 ? 'gold' : ''}">${(p.pot || p.ovr) - p.ovr >= 8 ? 'High' : (p.pot || p.ovr) - p.ovr >= 4 ? 'Medium' : 'Low'}</b><span class="small muted">${esc(p.potWhy || "Scouts' read")}</span></div>` : ''}
       ${(t => t && G.phase === 'season' || t && t.moved ? `<div class="rh"><span class="kicker" style="color:var(--muted)">On tape</span><b class="${t.good ? 'good' : t.bad ? 'bad' : ''}">${t.moved ? (t.moved > 0 ? '+' : '') + t.moved + ' OVR' : 'Steady'}</b><span class="small muted">${esc(t.label)}</span></div>` : '')(E.perfTrend(p))}
@@ -1808,13 +1808,16 @@ function renderTrade() {
   UI.partner = null;
   if (UI.tview === 'teams') return head + `<button class="btn ghost sm" data-act="tradeHome">‹ Back</button>` + teamGrid(others, S);
   const all = [...(G.offers || []).filter(o => o.kind !== 'block').map(o => offerCard(o)), ...draftOffers.map(o => offerCard(o, true))];
+  const shown = UI.offersAll ? all : all.slice(0, 2);
+  const shopping = E.cached(() => others.reduce((n, t) => n + E.onBlock(t, 2).length, 0))();
+  const tool = (act, ico, t, sub) => `<button class="ttool" data-act="${act}"><span class="tticon"><svg viewBox="0 0 24 24" aria-hidden="true">${ico}</svg></span><b>${t}</b><span class="small muted">${sub}</span></button>`;
   return head + `
     <div class="tradeflow">
-    <section id="offersfor"><div class="cardh"><h3>Offers</h3><button class="btn sm go" data-act="moreOffers">Ask for offers</button></div>
-      ${all.length ? `<p class="small muted">${all.length} on the table. Every one would go through as is.</p><div class="offers">${all.join('')}</div>` : `<div class="card empty"><p class="muted" style="margin:0">No offers right now. Ask for offers, or put players on your trade block below and teams will call.</p></div>`}</section>
-    <section><div class="cardh"><h3>Your trade block</h3><span class="small muted">Players you are shopping, with what teams would give</span></div>${tradeBlock()}</section>
-    <section><div class="cardh"><h3>Upgrade a position</h3><span class="small muted">Tap a spot: the best players you could trade for or sign</span></div>${upgradeChips()}</section>
-    <p class="small muted">Have a deal in mind? <button class="linkbtn" data-act="tradeTeams">Call a team directly</button></p>
+    <div class="ttools">${tool('tradeTeams', ICO.phone, 'Call a team', 'Make your own deal')}${tool('finderSheet', ICO.search, 'Find a player', 'Anyone in the league')}${tool('leagueBlockSheet', ICO.list, 'Other teams\' blocks', shopping ? `${shopping} being shopped` : 'Who is available')}</div>
+    <section id="offersfor"><div class="cardh"><h3>Offers${all.length ? ` <span class="small muted">${all.length}</span>` : ''}</h3><button class="btn sm go" data-act="moreOffers">Ask for offers</button></div>
+      ${all.length ? `<div class="offers">${shown.join('')}</div>${all.length > 2 ? `<button class="linkbtn morelink" data-act="offersAll">${UI.offersAll ? 'Show fewer' : `See all ${all.length} offers`}</button>` : ''}` : `<div class="card empty"><p class="muted" style="margin:0">No offers right now. Ask for offers, or put a player on your trade block and teams will call.</p></div>`}</section>
+    <section><div class="cardh"><h3>Your trade block</h3></div>${tradeBlock()}</section>
+    <section><div class="cardh"><h3>Upgrade a position</h3></div>${upgradeChips()}</section>
     </div>`;
 }
 // The trade block: each player you are shopping, the best offers for him right there, and one tap to add more
@@ -1825,12 +1828,33 @@ function tradeBlock() {
   const yours = B.ids.filter(id => G.players[id]).map(id => { const p = G.players[id], L = offersFor(id); UI.blockDeals[id] = L;
     const req = (G.requests || {})[id] && !G.requests[id].done;
     return `<div class="blockplayer"><div class="bphead">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)}${req ? ' <span class="tag bad">Wants out</span>' : ''}</div><div class="psub">${p.pos} · ${Math.floor(p.age)} · ${ovrNum(p)} OVR · ${money(p.cap)} thru ${p.end}</div></div><button class="xs" data-act="blockToggle" data-id="${id}" aria-label="Take ${esc(p.n)} off the block">×</button></div>
-      ${L.length ? L.map((x, i) => `<div class="bpoffer">${badge(x.partner, 1)}<span class="bpget">${x.get.map(g => esc(E.assetName(g))).join(' + ')}</span><button class="btn sm ghost" data-act="blockEdit" data-id="${id}" data-i="${i}">Edit</button><button class="btn sm go" data-act="blockAccept" data-id="${id}" data-i="${i}">Take it</button></div>`).join('')
+      ${L.length ? L.slice(0, (UI.bpOpen || {})[id] ? 3 : 1).map((x, i) => `<div class="bpoffer">${badge(x.partner, 1)}<span class="bpget">${x.get.map(g => esc(E.assetName(g))).join(' + ')}</span><button class="btn sm ghost" data-act="blockEdit" data-id="${id}" data-i="${i}">Edit</button><button class="btn sm go" data-act="blockAccept" data-id="${id}" data-i="${i}">Take it</button></div>`).join('')
         : `<div class="small muted bpnone">${esc(E.whyNoMarket(id, B.want))}</div>`}
-      ${L.length >= 2 ? `<div class="row end"><button class="btn sm" data-act="bidWar" data-id="${id}">Start a bidding war</button></div>` : ''}</div>`; }).join('');
+      ${L.length >= 2 ? `<div class="row bpfoot">${(UI.bpOpen || {})[id] ? '' : `<button class="linkbtn" data-act="bpMore" data-id="${id}">${L.length - 1} more offer${L.length > 2 ? 's' : ''}</button>`}<button class="btn sm" data-act="bidWar" data-id="${id}">Start a bidding war</button></div>` : ''}</div>`; }).join('');
   return `<div class="card">
-    ${B.ids.length ? `<div class="row blockwant"><span class="small muted">What you want back</span>${wantPicker('blockWant', B.want)}</div>${yours}` : '<p class="muted" style="margin:0 0 10px">Nobody on the block yet. Put a player up and the teams that need him make offers right here.</p>'}
+    ${B.ids.length ? `<div class="blockwant">${wantPicker('blockWant', B.want)}</div>${yours}` : '<p class="muted" style="margin:0 0 10px">Nobody on the block yet. Put a player up and the teams that need him make offers right here.</p>'}
     <div class="row"><button class="btn ${B.ids.length ? '' : 'go'}" data-act="blockAddSheet">${B.ids.length ? 'Add another player' : 'Put a player on the block'}</button></div></div>`;
+}
+// Find a player: anyone in the league, by name or position. Tap one for the deals his team would take.
+function finderList() {
+  const q = (UI.tsq || '').trim().toLowerCase(), pos = UI.tfPos || 'ALL', d = E.depth(G.user);
+  let L = Object.values(G.players).filter(p => G.teams[p.tm] && p.tm !== G.user && p.pos !== 'P' && inGroup(p.pos, pos));
+  if (q) L = L.filter(p => p.n.toLowerCase().includes(q) || p.pos.toLowerCase() === q || G.teams[p.tm].nick.toLowerCase().includes(q));
+  L = L.sort((a, b) => b.ovr - a.ovr).slice(0, 25);
+  return L.map(p => { const st = d[p.pos] && d[p.pos][E.STARTERS[p.pos] - 1], up = st ? p.ovr - st.ovr : p.ovr;
+    return `<div role="button" tabindex="0" class="farow2 tapfull" data-act="findFor" data-id="${p.id}">${face(p, 'sm')}<div class="pmain"><div class="pn">${pname(p)}</div><div class="psub">${p.pos} · ${Math.floor(p.age)} · ${esc(G.teams[p.tm].nick)} · ${money(p.cap)} thru ${p.end}${up > 0 ? ` · <span class="good">+${up} on your starter</span>` : ''}</div></div>${ovrBadge(p)}<span class="chev" aria-hidden="true">›</span></div>`; }).join('') || '<p class="muted">Nobody matches.</p>';
+}
+function finderSheet() {
+  modal(`<div class="sheeth"><div><div class="kicker">Trades</div><h3>Find a player</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <label class="search fasearch"><span class="sr">Search players</span><input id="tsq2" type="search" placeholder="Name, position or team" value="${esc(UI.tsq || '')}" autocomplete="off"></label>
+    ${posChips('tfPos', UI.tfPos || 'ALL')}
+    <div class="falist" id="findlist">${finderList()}</div>`, true);
+}
+function leagueBlockSheet() {
+  const L = E.cached(() => E.teamList().filter(t => t !== G.user).flatMap(t => E.onBlock(t, 2).map(x => ({...x, t}))).sort((a, b) => b.v - a.v).slice(0, 20))();
+  modal(`<div class="sheeth"><div><div class="kicker">Around the league</div><h3>Other teams' trade blocks</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
+    <p class="small muted" style="margin-top:0">Teams are shopping these players now, so they come cheaper than asking for someone they want to keep.</p>
+    <div class="falist">${L.map(x => `<div role="button" tabindex="0" class="farow2 tapfull" data-act="findFor" data-id="${x.p.id}">${face(x.p, 'sm')}<div class="pmain"><div class="pn">${pname(x.p)}</div><div class="psub">${x.p.pos} · ${Math.floor(x.p.age)} · ${esc(G.teams[x.t].nick)}${x.why ? ' · ' + esc(x.why) : ''}</div></div>${ovrBadge(x.p)}<span class="chev" aria-hidden="true">›</span></div>`).join('') || '<p class="muted">Nobody is being shopped right now.</p>'}</div>`, true);
 }
 // Picking who to shop: a sheet, not a list on the trade screen
 function blockAddSheet() {
@@ -2927,7 +2951,7 @@ document.addEventListener('click', e => {
     case 'depthSheet': modal(`<div class="sheeth"><h3>Your team</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div>${teamPanel(null).replace('<details class="fold dfold" data-fold="depth" ', '<details class="fold dfold" open ')}`, true); return;
     case 'injurySheet': injurySheet(); return;
     case 'midSign': { const r = E.signMidseason(id); if (!r.ok) { toast(r.msg); return; } persist(); render(); signPopup(id, r.price, 1); return; }
-    case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } if (el.dataset.k === 'tposBlock' && $('#layer .modal:not(.closing)')) { blockAddSheet(); return; } break;
+    case 'posFilter': UI[el.dataset.k] = el.dataset.v; if (el.dataset.k === 'faSheetPos') { faSheet(); return; } if (el.dataset.k === 'tposBlock' && $('#layer .modal:not(.closing)')) { blockAddSheet(); return; } if (el.dataset.k === 'tfPos' && $('#layer .modal:not(.closing)')) { const l = $('#findlist'); if (l) { l.innerHTML = finderList(); document.querySelectorAll('#layer [data-k=tfPos]').forEach(b => b.classList.toggle('on', b.dataset.v === UI.tfPos)); } return; } break;
     case 'tPartner': UI.partner = el.dataset.t || null; UI.get = []; UI.tposGet = 'ALL'; UI.tview = UI.partner ? 'make' : null; window.scrollTo(0, 0); break;
     case 'tradeHome': UI.tview = null; UI.partner = null; UI.give = []; UI.get = []; window.scrollTo(0, 0); break;
     case 'tradeTeams': UI.tview = 'teams'; window.scrollTo(0, 0); break;
@@ -2956,6 +2980,10 @@ document.addEventListener('click', e => {
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockAddSheet': blockAddSheet(); return;
+    case 'finderSheet': finderSheet(); return;
+    case 'leagueBlockSheet': leagueBlockSheet(); return;
+    case 'offersAll': UI.offersAll = !UI.offersAll; break;
+    case 'bpMore': UI.bpOpen = Object.assign({}, UI.bpOpen, {[id]: 1}); break;
     case 'blockPick': { const p = G.players[id]; if (!p) return; if (!E.blockOf().ids.includes(id)) E.toggleBlock(id); closeModal(); persist(); render();
       const n = E.cached(() => E.shopPlayer(id, E.blockOf().want))().length;
       toast(n ? `${p.n} is on the block. The best offers are right under him.` : `${p.n} is on the block. Nobody bit yet: ${E.whyNoMarket(id, 'any')}`);
@@ -3256,6 +3284,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('asset')) { e.preventDefault(); e.target.click(); }
 });
 document.addEventListener('input', e => {
+  if (e.target.id === 'tsq2') { UI.tsq = e.target.value; const l = $('#findlist'); if (l) l.innerHTML = finderList(); return; }
   if (e.target.id === 'tsq') { UI.tsq = e.target.value; const pos = e.target.selectionStart; render(); const i = $('#tsq'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (err) { /* search inputs may not support it */ } } return; }
   if (e.target.id === 'faQ') { UI.faQ = e.target.value; const pos = e.target.selectionStart; render(); const i = $('#faQ'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (err) { /* search inputs may not support it */ } } return; } if (e.target.id && e.target.id.startsWith('apy-')) { const pid = e.target.id.slice(4); UI.faApy[pid] = +e.target.value; const p = G && G.players[pid], b = document.querySelector(`[data-act=faSubmit][data-id="${pid}"]`); if (p && b && G.fa) { const yrs = UI.faYrs[pid] || E.yearsFor(p); b.textContent = +e.target.value + .001 >= E.faPrice(p, yrs) ? 'Sign him now' : 'Make offer'; const o = document.getElementById('faodds-' + pid); if (o) { const od = +e.target.value > E.capSpace(G.user) ? 'Over your cap' : E.faOdds(p, +e.target.value, yrs); o.textContent = od; o.className = 'small ' + (od === 'Long shot' || od === 'Over your cap' ? 'bad' : od === 'He may counter' ? 'warn' : 'good'); } } } if (e.target.id === 'tq' && !e.target.value && UI.tq) { UI.tq = ''; render(); } });
 
