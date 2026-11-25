@@ -1538,6 +1538,15 @@ button.capbox { display: block; padding: 0; }
 .mail.new { border-color: rgba(243,181,47,.45); }
 .mail p { margin: 0; line-height: 1.45; } .mailh { display: flex; justify-content: space-between; gap: 10px; }
 .mail .btn { justify-self: start; }
+/* trade screen: offers, the block, upgrading a position */
+.tradeflow > section > .cardh .btn { flex: none; }
+.blockwant { align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.bpnone { padding: 6px 2px 2px; }
+.upchips { display: flex; flex-wrap: wrap; gap: 8px; }
+.upchip { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; padding: 8px 12px; min-height: 52px; border-radius: 12px; border: 1px solid var(--line2); background: var(--panel); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.upchip .ng { grid-row: 1 / span 2; } .upchip b { font-size: 15px; } .upchip .small { grid-column: 2; }
+.upchip.hi { border-color: rgba(239,91,81,.5); } .upchip.md { border-color: rgba(232,163,60,.45); }
+.upchip:hover { border-color: var(--gold); }
 </style>
 </head>
 <body>
