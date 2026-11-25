@@ -1717,7 +1717,7 @@ const TALK_HINT = {ask: 'They name their price', middle: 'Split the gap, they ma
 function theirRead(P) {
   const T = E.talkWith(P), d = T.deal || {give: [], get: []};
   if (!d.get.length) return '';
-  const ev = E.evalTrade(P, d.give, d.get), you = ev.vIn * (1 + T.boost), bar = ev.need * T.firm, top = Math.max(you, bar) * 1.15 || 1;
+  const ev = E.evalTrade(P, d.give, d.get), you = ev.vIn * (1 + T.boost), bar = E.talkBar(P, d.give, d.get), top = Math.max(you, bar) * 1.15 || 1;
   const fmt = v => v < 20 ? v.toFixed(1) : String(Math.round(v));
   const sit = E.situations()[P], tmp = E.temperament(P), gm = E.gmOf(P);
   const prefer = sit.status === 'Contender' ? 'proven players who help now' : sit.status === 'Bubble' ? 'starters at their needs' : 'picks and young players';
@@ -1896,10 +1896,13 @@ function tradeBuilder(others, S, draftOffers) {
   const mine = E.roster(G.user).filter(p => (p.ovr >= 60 || want.has(p.id)) && inGroup(p.pos, UI.tposGive)).sort((a, b) => (want.has(b.id) - want.has(a.id)) || b.ovr - a.ovr);
   const theirs = E.roster(P).filter(p => inGroup(p.pos, UI.tposGet)).sort((a, b) => b.ovr - a.ovr);
   const picks = t => G.picks.filter(x => x.owner === t).sort((a, b) => a.yr - b.yr || a.rd - b.rd);
-  const ev = E.evalTrade(P, UI.give, UI.get);
+  const ev0 = E.evalTrade(P, UI.give, UI.get);
   const ready = UI.give.length && UI.get.length;
+  // only your own cap or roster count in the way: the call settles that with the usual fix, so say they would take it
+  const fx = ready && ev0.issues.length && ev0.issues.every(i => /^Your? /.test(i)) && ev0.ratio >= 1 && !ev0.fleece && E.acceptPlan(UI.give, UI.get).ok;
+  const ev = fx ? Object.assign({}, ev0, {issues: [], ok: true}) : ev0;
   const v1 = x => x < 20 ? x.toFixed(1) : String(Math.round(x));
-  const mood = !UI.get.length ? 'Pick what you want from them.' : !UI.give.length ? 'Now pick what you send, or tap Ask what they want.' : ev.issues.length ? `Can't happen: ${ev.issues[0]}` : ev.fleece ? 'They know that deal is too good for you.' : ev.ok && ev.badLook ? `They would take it, but that is ${ev.badLook} for less than a star's return.` : ev.ok ? 'They would take this deal.'
+  const mood = !UI.get.length ? 'Pick what you want from them.' : !UI.give.length ? 'Now pick what you send, or tap Ask what they want.' : ev.issues.length ? `Can't happen: ${ev.issues[0]}` : ev.fleece ? 'They know that deal is too good for you.' : ev.ok && ev.badLook ? `They would take it, but that is ${ev.badLook} for less than a star's return.` : ev.ok ? (fx ? 'They would take it. You make the cap room when you shake on it.' : 'They would take this deal.')
     : `${ev.ratio >= .85 ? 'Close' : 'Not close yet'}: your side is worth ${v1(ev.vIn)} to them and they want ${v1(ev.need)}.`;
   const dState = !ready ? '' : ev.issues.length ? 'no' : ev.fleece ? 'warn' : ev.ok ? 'yes' : ev.ratio >= .85 ? 'counter' : 'no';
   const pillMood = ready && ev.issues.length ? "Can't happen: tap Review" : ready && !ev.ok && !ev.fleece ? `${ev.ratio >= .85 ? 'Close' : 'Short'} · ${v1(ev.vIn)} of ${v1(ev.need)}` : mood;
@@ -3172,11 +3175,13 @@ document.addEventListener('click', e => {
     case 'dNeedPos': UI.dboardPos = el.dataset.k === 'ALL' || UI.dboardPos === el.dataset.k ? 'ALL' : el.dataset.k; UI.dtab = 'board'; break;
     case 'tNeedPos': UI.tposGet = el.dataset.k === 'ALL' ? 'ALL' : el.dataset.k; UI.tpos = el.dataset.k === 'ALL' ? null : el.dataset.k; if (UI.tmob === 'panel') UI.tmob = 'get'; break;
     case 'dealSheet': {
-      const P = UI.partner, ev = E.evalTrade(P, UI.give, UI.get), ready = UI.give.length && UI.get.length;
+      const P = UI.partner, ev0 = E.evalTrade(P, UI.give, UI.get), ready = UI.give.length && UI.get.length;
+      const fx = ready && ev0.issues.length && ev0.issues.every(i => /^Your? /.test(i)) && ev0.ratio >= 1 && !ev0.fleece && E.acceptPlan(UI.give, UI.get).ok;
+      const ev = fx ? Object.assign({}, ev0, {issues: [], ok: true}) : ev0;
       modal(`<div class="sheeth"><div><div class="kicker">Trade with the ${esc(tname(P))}</div><h3>${ready ? (ev.ok ? 'They would take this' : ev.fleece ? 'Too good for you' : ev.ratio >= .85 ? 'Close' : 'Not close yet') : 'Build the deal'}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
         <div class="offerb dealsheet"><div><div class="lbl">You send</div>${dockSide(UI.give, 'give')}</div><div><div class="lbl">You get</div>${dockSide(UI.get, 'get')}</div></div>
         ${ready ? `<div class="meter ${ev.ok ? 'yes' : ev.ratio >= .85 ? 'close' : ''}"><i style="width:${Math.min(100, ev.ratio * 80)}%"></i></div>${fairTag(ev.fair)} <span class="small muted">For your team: <b>${winsTxt(E.winsDelta(G.user, UI.get, UI.give))}</b> a season</span>` : ''}
-        ${ev.issues.filter(i => !i.startsWith('Both')).map(i => `<div class="small bad">${esc(i)}</div>`).join('')}
+        ${fx ? '<div class="small muted">You make the cap room when you shake on it.</div>' : ev.issues.filter(i => !i.startsWith('Both')).map(i => `<div class="small bad">${esc(i)}</div>`).join('')}
         <div class="row end"><button class="btn" data-act="balance" ${UI.get.length ? '' : 'disabled'}>Ask what they want</button><button class="btn go" data-act="callTeam" ${ready ? '' : 'disabled'}>Make the call</button></div>`, true);
       return;
     }
@@ -3204,7 +3209,7 @@ document.addEventListener('click', e => {
     case 'talkDeal': {
       const T = E.talkWith(UI.partner), last = T.log[T.log.length - 1];
       if (!last || last.kind !== 'yes') return;
-      const r = E.doTrade(UI.partner, last.give, last.get, 'offer'); closeModal();
+      const r = E.makeFixed(UI.partner, last.give, last.get, 'offer'); closeModal();
       if (r.ok) { UI.give = []; UI.get = []; persist(); render(); tradePopup(UI.partner, last.give, last.get); return; }
       toast(r.issues[0] || 'It fell apart at the last second.'); break;
     }

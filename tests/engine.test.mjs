@@ -486,3 +486,19 @@ test('the real books: dead money, real cap space and picks traded before the gam
   assert.ok(Math.abs(G.dead.NYJ - DATA.realCap.NYJ['2027'].dead) < .01, '2027 brings 2027 dead money');
   assert.ok(G.credit.NYJ >= (G.creditBy.NYJ[2027] || 0) + Math.min(60, Math.max(0, before)) - .01, 'unused room carries over');
 });
+
+test('an offer a team made is a yes when you call them with the same deal', () => {
+  let n = 0;
+  for (const [team, seed] of [['DAL', 1], ['NYJ', 2], ['KC', 3]]) {
+    E.newGame(DATA, team, seed); E.G.phase = 'season';
+    for (let w = 1; w <= 5; w++) {
+      E.simTo(w); E.refreshOffers();
+      for (const o of E.G.offers || []) {
+        n++;
+        assert.ok(E.evalTrade(o.from, o.give, o.get).ok, 'the trade screen says they would take their own offer');
+        assert.equal(E.proposeTrade(o.from, o.give.slice(), o.get.slice()).kind, 'yes', `the ${o.from} said no to their own offer`);
+      }
+    }
+  }
+  assert.ok(n >= 5, `offers checked: ${n}`);
+});
