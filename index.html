@@ -1565,6 +1565,46 @@ button.capbox { display: block; padding: 0; }
 .switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .switch input:checked { background: var(--gold); }
 .switch input:checked::after { transform: translateX(16px); }
+/* the call, phone first */
+.callh { align-items: center; gap: 10px; }
+.callh .callwho { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+.callh .callwho h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.callh .pdots { flex: none; }
+.callstat { display: grid; gap: 8px; padding: 10px 12px; margin-bottom: 10px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); border-left-width: 4px; }
+.callstat.yes { border-left-color: var(--green, #3fc07f); } .callstat.no { border-left-color: var(--red, #ef5b51); } .callstat.warn, .callstat.counter { border-left-color: var(--gold); }
+.cshead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cverd { font-family: "Big Shoulders Display", Impact, sans-serif; font-size: 20px; letter-spacing: .02em; text-transform: uppercase; line-height: 1; }
+.callstat.yes .cverd { color: var(--green, #3fc07f); } .callstat.no .cverd { color: var(--red, #ef5b51); } .callstat.warn .cverd, .callstat.counter .cverd { color: var(--gold); }
+.callhist { margin-bottom: 6px; font-size: 13px; } .callhist summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.callhist .talk { max-height: none; }
+#layer .talk { max-height: none; overflow: visible; }
+.bub.me .bubl { font-size: 14px; line-height: 1.35; }
+.calldeal { padding: 10px 12px; margin: 10px 0 8px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); }
+.calldeal .bubt { margin-bottom: 6px; }
+.cdcols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.cdcols > div { min-width: 0; }
+.callchg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.callchg .btn { width: 100%; justify-content: center; } .callchg .btn.on { border-color: var(--gold); color: var(--gold); }
+.callsay { margin-top: 10px; }
+.saygrid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+.saygrid2 .talkchip3 { height: auto; min-height: 52px; padding: 8px 12px; border-radius: 12px; white-space: normal; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.saygrid2 .talkchip3 b { font-size: 14px; font-weight: 600; line-height: 1.2; }
+.saygrid2 .talkchip3 span { font-size: 11.5px; color: var(--muted); line-height: 1.25; }
+.callabout { margin-top: 12px; font-size: 13px; } .callabout summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.callabout .treadtags { display: flex !important; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.callfoot { position: sticky; bottom: calc(-1 * var(--sheetpad, 18px)); display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin: 12px calc(-1 * var(--sheetpad, 18px)) calc(-1 * var(--sheetpad, 18px)); padding: 12px var(--sheetpad, 18px) calc(12px + env(safe-area-inset-bottom)); background: var(--ink); border-top: 1px solid var(--line); z-index: 2; }
+.callfoot .btn.go { flex: 1; justify-content: center; }
+@media (min-width: 761px) { .saygrid2 { grid-template-columns: repeat(3, 1fr); } }
+.cdcols .amini { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 1px; align-items: center; }
+.cdcols .amini .face { grid-row: 1 / span 2; }
+.cdcols .amini .an { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
+.cdcols .amini > .muted.small { grid-column: 2; grid-row: 2; font-size: 11px; }
+.cdcols .amini > :last-child:not(.an):not(.small) { grid-column: 3; grid-row: 1 / span 2; }
+.cdcols .xitem { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.callh .pwrap { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; }
+.callh .pwrap .plab { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.sheet { --sheetpad: 18px; }
+@media (max-width: 760px) { .sheet { --sheetpad: 16px; } .callfoot { bottom: calc(-16px - env(safe-area-inset-bottom, 0px)); } }
 </style>
 </head>
 <body>

@@ -502,3 +502,27 @@ test('an offer a team made is a yes when you call them with the same deal', () =
   }
   assert.ok(n >= 5, `offers checked: ${n}`);
 });
+
+test('later seasons follow the NFL scheduling formula, not a copy of 2026', () => {
+  E.newGame(DATA, 'DAL', 3);
+  const G = E.G;
+  E.simTo(18); E.startPlayoffs(); while (E.simPlayoffRound());
+  E.beginOffseason();
+  const S = E.seasonGames(2027), T = G.teams;
+  assert.equal(S.length, 272);
+  const per = {}, home = {}, weeks = {};
+  for (const [w, a, h] of S) for (const t of [a, h]) { per[t] = (per[t] || 0) + 1; weeks[t] = weeks[t] || new Set(); assert.ok(!weeks[t].has(w), `${t} plays twice in week ${w}`); weeks[t].add(w); }
+  for (const [, , h] of S) home[h] = (home[h] || 0) + 1;
+  for (const t in T) {
+    assert.equal(per[t], 17, `${t} plays 17`);
+    const bye = [...Array(18).keys()].map(i => i + 1).filter(w => !weeks[t].has(w));
+    assert.ok(bye.length === 1 && bye[0] >= 5 && bye[0] <= 14, `${t} has one bye in weeks 5-14`);
+    assert.ok(home[t] === 8 || home[t] === 9);
+    const opp = S.filter(g => g[1] === t || g[2] === t).map(g => g[1] === t ? g[2] : g[1]);
+    assert.equal(opp.filter(o => T[o].div === T[t].div).length, 6, 'six division games');
+  }
+  assert.ok(S.filter(g => g[0] === 18).every(([, a, h]) => T[a].div === T[h].div), 'Week 18 is all division games');
+  const o26 = new Set(G.games.filter(g => g[1] === 'DAL' || g[2] === 'DAL').map(g => g[1] === 'DAL' ? g[2] : g[1]).filter(o => T[o].div !== 'NFC East'));
+  const o27 = S.filter(g => g[1] === 'DAL' || g[2] === 'DAL').map(g => g[1] === 'DAL' ? g[2] : g[1]).filter(o => T[o].div !== 'NFC East');
+  assert.ok(o27.filter(o => o26.has(o)).length <= 4, 'mostly new opponents');
+});

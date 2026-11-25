@@ -1284,18 +1284,134 @@ function draftDeal(partner, give, get) { return doTrade(partner, give, get, 'off
 // ---------- season sim ----------
 function seasonGames(season) {
   if (season === 2026) return G.games;
-  // 2027: same opponents, home and away flipped
-  if (season === 2027) return G.games.map(([w, a, h]) => [w, h, a]);
-  // later seasons: home and away alternate each year and the weeks are reshuffled, so no two years look alike
   G.sched = G.sched || {};
-  if (!G.sched[season]) {
-    const flip = (season - 2026) % 2 === 1, rng = makeRng(hashStr('sched' + season + G.user));
-    const weeks = [...new Set(G.games.map(g => g[0]))].sort((a, b) => a - b), perm = weeks.slice();
-    for (let i = perm.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
-    const to = {}; weeks.forEach((w, i) => { to[w] = perm[i]; });
-    G.sched[season] = G.games.map(([w, a, h]) => [to[w], flip ? h : a, flip ? a : h]).sort((x, y) => x[0] - y[0]);
+  if (G.sched[season]) return G.sched[season];
+  // a save from before the formula, already partway through this season: keep the schedule it was playing
+  if ((G.results[season] || []).some(g => !g.po)) {
+    if (season === 2027) return G.games.map(([w, a, h]) => [w, h, a]);
+    return legacySchedule(season);
   }
-  return G.sched[season];
+  const prevDone = (G.results[season - 1] || []).filter(g => !g.po).length >= 272;
+  const S = nflSchedule(season);
+  if (prevDone || !(G.results[season - 1] || []).length) G.sched[season] = S;
+  return S;
+}
+function legacySchedule(season) {
+  const flip = (season - 2026) % 2 === 1, rng = makeRng(hashStr('sched' + season + G.user));
+  const weeks = [...new Set(G.games.map(g => g[0]))].sort((a, b) => a - b), perm = weeks.slice();
+  for (let i = perm.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  const to = {}; weeks.forEach((w, i) => { to[w] = perm[i]; });
+  return G.games.map(([w, a, h]) => [to[w], flip ? h : a, flip ? a : h]).sort((x, y) => x[0] - y[0]);
+}
+// ---------- the NFL scheduling formula ----------
+// 17 games: 6 in the division (home and away), 4 against a division in the conference on a three-year rotation,
+// 4 against a division in the other conference on a four-year rotation, 2 against the teams that finished in the
+// same place in the other two divisions of the conference, and a 17th against a same-place team from the other
+// conference (the AFC hosts it in odd years). The rotations pick up from the real 2026 schedule.
+const DIVS = ['East', 'North', 'South', 'West'];
+// in-conference: 2026 East-West and North-South; 2027 East-South and North-West; 2028 East-North and South-West
+const INTRA = [[['East', 'West'], ['North', 'South']], [['East', 'South'], ['North', 'West']], [['East', 'North'], ['South', 'West']]];
+// cross-conference, AFC East, North, South, West against these NFC divisions, shifting one place a year
+const INTER = ['North', 'South', 'East', 'West'];
+function divRank(season) {
+  // where each team finished in its division last season: record, then division record, then point difference
+  const rank = {};
+  const by = {};
+  for (const t of teamList()) (by[G.teams[t].div] = by[G.teams[t].div] || []).push(t);
+  for (const d in by) {
+    const key = t => { const r = record(t, season); const n = r.w + r.l; return [n ? r.w / n : .5, r.dw - r.dl, r.pf - r.pa, -hashStr(t)]; };
+    by[d].sort((a, b) => { const x = key(a), y = key(b); for (let k = 0; k < 4; k++) if (x[k] !== y[k]) return y[k] - x[k]; return 0; }).forEach((t, i) => { rank[t] = i; });
+  }
+  return {rank, by};
+}
+function nflMatchups(season) {
+  const y = season - 2026, {rank, by} = divRank(season - 1), games = [];
+  const div = (c, d) => by[`${c} ${d}`] || [];
+  const at = (c, d, r) => div(c, d).find(t => rank[t] === r);
+  const add = (a, h) => games.push([a, h]);
+  // division: home and away against each rival
+  for (const d in by) { const L = by[d]; for (let i = 0; i < L.length; i++) for (let j = 0; j < L.length; j++) if (i !== j) add(L[i], L[j]); }
+  // a full division in the conference: each team two at home, two away
+  const pairs = INTRA[((y % 3) + 3) % 3];
+  for (const c of ['AFC', 'NFC']) for (const [d1, d2] of pairs) {
+    const A = div(c, d1), B = div(c, d2);
+    A.forEach((a, i) => B.forEach((b, j) => ((i + j + y) % 2 ? add(a, b) : add(b, a))));
+  }
+  // a full division in the other conference
+  DIVS.forEach((d, i) => {
+    const A = div('AFC', d), B = div('NFC', INTER[(i + y) % 4]);
+    A.forEach((a, k) => B.forEach((b, m) => ((k + m + y + i) % 2 ? add(a, b) : add(b, a))));
+  });
+  // same-place games in the conference: the two divisions not on the rotation, one home and one away
+  for (const c of ['AFC', 'NFC']) {
+    const [[p1, p2], [q1, q2]] = pairs;
+    const ring = y % 2 ? [p1, q1, p2, q2] : [p1, q2, p2, q1];   // each division meets both divisions of the other pair
+    for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) {
+      const home = at(c, ring[k], r), away = at(c, ring[(k + 1) % 4], r);
+      if (home && away) add(away, home);
+    }
+  }
+  // the 17th game: a same-place team from the other conference, from the division two turns down the rotation
+  DIVS.forEach((d, i) => {
+    for (let r = 0; r < 4; r++) {
+      const a = at('AFC', d, r), n = at('NFC', INTER[(i + y + 2) % 4], r);
+      if (a && n) (season % 2 ? add(n, a) : add(a, n));
+    }
+  });
+  return games;
+}
+// Put the 272 games into 18 weeks: a bye for everyone in Weeks 5-14, every team plays every other week,
+// and Week 18 is all division games, as in the NFL.
+function nflSchedule(season) {
+  const rng = makeRng(hashStr('nfl' + season + G.user)), M = nflMatchups(season), teams = teamList();
+  const BYES = [[5, 2], [6, 4], [7, 4], [8, 4], [9, 2], [10, 4], [11, 6], [13, 4], [14, 2]];
+  const shuffled = a => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const bye = {}, order = shuffled(teams); let k = 0;
+    for (const [w, n] of BYES) for (let x = 0; x < n; x++) bye[order[k++]] = w;
+    let left = M.map((g, i) => ({a: g[0], h: g[1], i})), out = [], ok = true;
+    // the late weeks are the tight ones, so fill them first
+    for (const w of [18, 17, 16, 15, 1, 2, 3, 4, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5]) {
+      const avail = teams.filter(t => bye[t] !== w);
+      const pool = w === 18 ? left.filter(g => G.teams[g.a].div === G.teams[g.h].div) : left;
+      const pick = matchWeek(avail, pool, rng, w, out);
+      if (!pick) { ok = false; break; }
+      const used = new Set(pick.map(g => g.i));
+      left = left.filter(g => !used.has(g.i));
+      for (const g of pick) out.push([w, g.a, g.h]);
+    }
+    if (ok && !left.length) return out.sort((x, y) => x[0] - y[0]);
+  }
+  return legacySchedule(season);   // should not happen; never leave a season without games
+}
+// One week: every available team gets exactly one game. The team with the fewest options goes first.
+function matchWeek(avail, pool, rng, w, done) {
+  const by = {};
+  for (const t of avail) by[t] = [];
+  for (const g of pool) if (by[g.a] && by[g.h]) { by[g.a].push(g); by[g.h].push(g); }
+  // the same two teams in back-to-back weeks is avoided when possible
+  const last = new Set(done.filter(x => Math.abs(x[0] - w) === 1).map(x => [x[1], x[2]].sort().join()));
+  const taken = new Set(), pick = []; let steps = 0;
+  const go = () => {
+    if (taken.size === avail.length) return true;
+    if (++steps > 4000) return false;
+    let best = null, opts = null;
+    for (const t of avail) {
+      if (taken.has(t)) continue;
+      const o = by[t].filter(g => !taken.has(g.a) && !taken.has(g.h));
+      if (!best || o.length < opts.length) { best = t; opts = o; if (!o.length) return false; }
+    }
+    const seen = new Set();
+    const L = opts.map(g => ({g, r: rng() + (last.has([g.a, g.h].sort().join()) ? 1 : 0)})).sort((x, y) => x.r - y.r).map(x => x.g);
+    for (const g of L) {
+      const key = g.a + g.h; if (seen.has(key)) continue; seen.add(key);
+      taken.add(g.a); taken.add(g.h); pick.push(g);
+      if (go()) return true;
+      taken.delete(g.a); taken.delete(g.h); pick.pop();
+    }
+    return false;
+  };
+  return go() ? pick : null;
 }
 function record(t, season) {
   const r = {w: 0, l: 0, pf: 0, pa: 0, dw: 0, dl: 0, cw: 0, cl: 0};
@@ -3652,7 +3768,7 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return markOffers(); }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, lineupSpot, talkBar, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, lineupSpot, talkBar, seasonGames, nflMatchups, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
