@@ -110,12 +110,19 @@ function assetGroupX(ids, mk) {
   if (!ids.length) return '<span class="small muted">Nothing</span>';
   return ids.map(id => { const a = mk(id); return a ? `<div class="xitem">${assetMini(id)}<button class="xs" ${a} aria-label="Take ${esc(E.assetName(id))} out">×</button></div>` : assetMini(id); }).join('');
 }
+// Where the coach put a new arrival: straight into the lineup, or his place on the bench
+function spotLine(ids) {
+  const L = ids.map(id => ({id, s: E.lineupSpot(id)})).filter(x => x.s && G.players[x.id]);
+  if (!L.length) return '';
+  return `<div class="coachline"><span class="kicker">Coach</span><span>${L.slice(0, 3).map(({id, s}) => { const p = G.players[id];
+    return s.hurt ? `${esc(lastName(p.n))} is hurt; he slots in when healthy.` : s.starter ? `${esc(lastName(p.n))} starts at ${s.pos}${s.over ? `, ${esc(lastName(s.over.n))} goes to the bench` : ''}.` : `${esc(lastName(p.n))} is ${s.pos}${s.i + 1} on the depth chart.`; }).join(' ')}</span></div>`;
+}
 function tradePopup(partner, give, get, how) {
-  popup(how || 'Trade complete', `Deal with the ${esc(G.teams[partner].nick)}`, `<div class="offerb tradedone"><div><div class="lbl">You got</div>${assetGroup(get)}</div><div><div class="lbl">You sent</div>${assetGroup(give)}</div></div>`, 'win');
+  popup(how || 'Trade complete', `Deal with the ${esc(G.teams[partner].nick)}`, `<div class="offerb tradedone"><div><div class="lbl">You got</div>${assetGroup(get)}</div><div><div class="lbl">You sent</div>${assetGroup(give)}</div></div>${spotLine(get.filter(id => G.players[id]))}`, 'win');
 }
 function signPopup(id, apy, yrs) {
   const p = G.players[id];
-  popup('Signed with you', `${esc(p.n)} joins the ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p, 'xl')}<div><div class="kicker">${p.pos} · ${Math.floor(p.age)} · ${p.ovr} OVR</div><b class="num">${money(apy)} × ${yrs} yr</b><div class="small muted">${money(apy * yrs)} total</div></div></div>`, 'win');
+  popup('Signed with you', `${esc(p.n)} joins the ${esc(G.teams[G.user].nick)}`, `<div class="signhero">${face(p, 'xl')}<div><div class="kicker">${p.pos} · ${Math.floor(p.age)} · ${p.ovr} OVR</div><b class="num">${money(apy)} × ${yrs} yr</b><div class="small muted">${money(apy * yrs)} total</div></div></div>${spotLine([id])}`, 'win');
 }
 function wavePopup(r, wave) {
   const line = (x, mine) => { const p = G.players[x.id]; return `<div class="prow resrow">${face(p, 'sm')}<div class="pmain"><div class="pn">${esc(p.n)} <span class="muted small">${p.pos} ${ovrNum(p)}</span></div><div class="psub">${mine ? 'Signed with you' : `Signed with the ${esc(G.teams[x.t].nick)}`}: ${money(x.apy)} × ${x.yrs} yr${!mine && x.offered === false ? ' · you met with him' : ''}</div></div>${mine ? '<span class="tag good">Yours</span>' : x.t ? badge(x.t, 1) : ''}</div>`; };

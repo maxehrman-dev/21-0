@@ -246,9 +246,18 @@ function depth(t) {
   if (o) for (const pos of POS_ORDER) {
     const L = o[pos];
     if (!L || !L.length) continue;
-    if ((G.depthBy || {})[pos] === 'coach' && d[pos].some(p => !L.includes(p.id))) continue;
-    const r = p => { const i = L.indexOf(p.id); return i < 0 ? 1000 - p.ovr : i; };
-    d[pos].sort((a, b) => r(a) - r(b));
+    // the set order first; anyone new here (a trade, a signing, a pick, back from injury) goes straight in
+    // above everyone he is better than, so a new player never waits on the bench for the order to catch up
+    const val = p => p.ovr - flexPen(p, pos);
+    const out = L.map(id => d[pos].find(p => p.id === id)).filter(Boolean);
+    const n = STARTERS[pos];
+    for (const p of d[pos].filter(p => !L.includes(p.id)).sort((a, b) => val(b) - val(a))) {
+      const w = out.slice(0, n).reduce((m, q) => !m || val(q) < val(m) ? q : m, null);
+      if (out.length < n) out.splice(out.length, 0, p);
+      else if (val(p) > val(w)) { out.splice(out.indexOf(w), 1, p); out.splice(n, 0, w); }   // he takes the weakest starter's job
+      else { const k = out.slice(n).findIndex(q => val(q) < val(p)); out.splice(k < 0 ? out.length : n + k, 0, p); }
+    }
+    d[pos] = out;
   }
   if (t === G.user && G.plans) for (const id of Object.keys(G.plans)) {
     const pl = G.plans[id];
@@ -3196,6 +3205,12 @@ function coachDepth(w) {
   mail('Coach', `Lineup change for Week ${w}: ${lines.join('; ')}.${news.some(m => m.manual) ? ' If you disagree, set it back on the depth chart and turn off Coach handles the depth chart.' : ''}`, {act: 'depthOpen', k: news[0].pos}, w);
   for (const m of news.slice(0, 3)) G.news.unshift(`Week ${w}: ${m.inn.n} takes over at ${m.pos} from ${m.out.n}.`);
 }
+function lineupSpot(id) {
+  const p = G.players[id]; if (!p || p.tm !== G.user) return null;
+  const d = depth(G.user);
+  for (const pos of POS_ORDER) { const i = d[pos].indexOf(p); if (i >= 0) return {pos, i, starter: i < STARTERS[pos], over: i < STARTERS[pos] ? d[pos][STARTERS[pos]] : null}; }
+  return p.inj ? {pos: p.pos, hurt: true} : null;
+}
 function setCoachDepth(on) { G.coachDepth = !!on; }
 
 // ---------- the week in a few lines ----------
@@ -3615,7 +3630,7 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return markOffers(); }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, lineupSpot, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
