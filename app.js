@@ -926,7 +926,7 @@ function chemSheet() {
 // Messages: what your coach wants you to know. Opening the inbox marks them read.
 function inboxSheet() {
   const L = (G.inbox || []).slice(0, 30);
-  const html = L.map(m => { const a = m.act || {}; const btn = a.act ? `<button class="btn sm" data-act="${a.act}" ${a.k ? `data-k="${esc(a.k)}"` : ''} ${a.id ? `data-id="${esc(a.id)}"` : ''}>${a.act === 'faSheet' ? 'Find a free agent' : a.act === 'coachPlan' ? 'Talk to coach' : a.act === 'tradeTab' ? 'Open trades' : 'Open'}</button>` : '';
+  const html = L.map(m => { const a = m.act || {}; const btn = a.act ? `<button class="btn sm" data-act="${a.act}" ${a.k ? `data-k="${esc(a.k)}"` : ''} ${a.id ? `data-id="${esc(a.id)}"` : ''}>${a.act === 'faSheet' ? 'Find a free agent' : a.act === 'coachPlan' ? 'Talk to coach' : a.act === 'depthOpen' ? 'Depth chart' : a.act === 'tradeTab' ? 'Open trades' : 'Open'}</button>` : '';
     return `<div class="mail ${m.read ? '' : 'new'}"><div class="mailh"><b>${esc(m.from)}</b><span class="small muted">${m.s}${m.w ? ` · Week ${m.w}` : ''}</span></div><p>${esc(m.t)}</p>${btn}</div>`; }).join('');
   for (const m of G.inbox || []) m.read = 1;
   persist();
@@ -1538,16 +1538,22 @@ function captSheet(side) {
     <div class="plist">${L.map(p => `<div class="trow ${c[side] === p.id ? 'sel' : ''}">${pRow(p, `${Math.floor(p.age) >= 28 ? 'Veteran' : 'Young leader'}`)}${c[side] === p.id ? '<span class="tag gold">Captain</span>' : `<button class="btn sm" data-act="captSet" data-k="${side}" data-id="${p.id}">Make captain</button>`}</div>`).join('')}</div>
     <div class="row end"><button class="btn go" data-act="closeModal">Done</button></div>`, true);
 }
+// Who sets the order at a spot: the coach, or you (and whether he may still change it)
+function depthCoachLine(pos) {
+  const manual = (G.depthBy || {})[pos] === 'you', on = G.coachDepth !== false;
+  return `<div class="coachdepth"><p class="small muted" style="margin:0">${manual ? (on ? 'Your order. The coach changes it only if a backup is clearly better, and tells you.' : 'Your order. It stands.') : on ? 'The coach sets this before every game: the better player starts, and a hot hand wins a close call. Move a player to set it yourself.' : 'Sorted by overall. Move a player to set it yourself.'}</p>
+    <label class="switch"><input type="checkbox" data-act="coachDepthToggle" ${on ? 'checked' : ''}><span>Coach handles the depth chart</span></label></div>`;
+}
 function depthModal(pos) {
   const L = E.depth(G.user)[pos];
   const n = E.STARTERS[pos];
   modal(`<div class="sheeth"><div><div class="kicker">Depth chart</div><h3>${pos}</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
-    <p class="small muted">The top ${n} start. Move a player up to start him over a higher-rated one.</p>
+    ${depthCoachLine(pos)}
     <div class="plist">${L.map((p, i) => `<div class="trow ${i < n ? 'sel' : ''}"><span class="num pickno">${i + 1}</span>${pRow(p, (i < n ? '<b>Starter</b>' : 'Backup') + (p.pos !== pos ? ` · <span class="warn">from ${p.pos}, plays ${p.ovr - E.flexPen(p, pos)}</span> <button class="linkbtn" data-act="flexMove" data-id="${p.id}" data-k="">Send back</button>` : ''))}
       <div class="row nowrap"><button class="btn icon sm" data-act="depthMove" data-pos="${pos}" data-id="${p.id}" data-d="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(p.n)} up">↑</button><button class="btn icon sm" data-act="depthMove" data-pos="${pos}" data-id="${p.id}" data-d="1" ${i === L.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(p.n)} down">↓</button></div></div>`).join('')}</div>
     ${(() => { const C = E.roster(G.user).filter(p => p.pos !== pos && !p.inj && E.canFlex(p, pos) && !L.includes(p)).sort((a, b) => (b.ovr - E.flexPen(b, pos)) - (a.ovr - E.flexPen(a, pos))).slice(0, 4);
       return C.length ? `<h4 class="sub">Can also play ${pos}</h4><div class="plist">${C.map(p => `<div class="trow">${pRow(p, `would play ${pos} at ${p.ovr - E.flexPen(p, pos)}`)}<button class="btn sm" data-act="flexMove" data-id="${p.id}" data-k="${pos}">Move here</button></div>`).join('')}</div>` : ''; })()}
-    <div class="row end"><button class="btn ghost" data-act="depthReset" data-pos="${pos}">Sort by OVR</button><button class="btn" data-act="needPos" data-pos="${pos}">Find an upgrade</button><button class="btn go" data-act="closeModal">Done</button></div>`, true);
+    <div class="row end">${(G.depthBy || {})[pos] === 'you' ? `<button class="btn ghost" data-act="depthReset" data-pos="${pos}">Let the coach set it</button>` : ''}<button class="btn" data-act="needPos" data-pos="${pos}">Find an upgrade</button><button class="btn go" data-act="closeModal">Done</button></div>`, true);
 }
 function statsView() {
   const ros = E.roster(G.user);
@@ -3009,6 +3015,8 @@ document.addEventListener('click', e => {
     case 'player': e.stopPropagation(); UI.found = null; openPlayer(id); return;
     case 'needPos': needModal(el.dataset.pos); return;
     case 'depthPos': depthModal(el.dataset.pos); return;
+    case 'depthOpen': closeModal(); setTimeout(() => depthModal(el.dataset.k), 60); return;
+    case 'coachDepthToggle': E.setCoachDepth(el.checked); persist(); { const m = $('#layer .modal .sheeth h3'); if (m) depthModal(m.textContent); } return;
     case 'depthMove': {
       const pos = el.dataset.pos, L = E.depth(G.user)[pos].map(p => p.id), i = L.indexOf(id), j = i + (+el.dataset.d);
       if (i < 0 || j < 0 || j >= L.length) return;

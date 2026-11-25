@@ -246,6 +246,7 @@ function depth(t) {
   if (o) for (const pos of POS_ORDER) {
     const L = o[pos];
     if (!L || !L.length) continue;
+    if ((G.depthBy || {})[pos] === 'coach' && d[pos].some(p => !L.includes(p.id))) continue;
     const r = p => { const i = L.indexOf(p.id); return i < 0 ? 1000 - p.ovr : i; };
     d[pos].sort((a, b) => r(a) - r(b));
   }
@@ -276,6 +277,7 @@ function setFlex(id, pos) {
 }
 function setDepth(pos, ids) {
   G.depthOrder = G.depthOrder || {}; G.depthOrder[pos] = ids.slice();
+  G.depthBy = G.depthBy || {}; if (ids.length) G.depthBy[pos] = 'you'; else delete G.depthBy[pos];
   // setting the order by hand replaces any coach plan at that position
   for (const id of Object.keys(G.plans || {})) if (G.players[id] && G.players[id].pos === pos) delete G.plans[id];
 }
@@ -1611,6 +1613,7 @@ function injuries(t, tr) {
 const simWeek = w => cached(simWeekRaw)(w);
 function simWeekRaw(w) {
   const out = [];
+  if (G.teams[G.user]) coachDepth(w);
   for (const [wk, a, h] of seasonGames(G.season)) {
     if (wk !== w) continue;
     const g = simGame(a, h, {wk: w});
@@ -3130,6 +3133,71 @@ function coachMail(w) {
   if (rec.w >= 5 && rec.l === 0 && say(`hot${s}`, `${rec.w}-0. Nobody gets comfortable. We keep stacking weeks.`)) return;
 }
 
+// ---------- the coach runs the depth chart ----------
+// Before every game the coach sets the lineup: the better player starts, a hot hand gets the nod in a close call,
+// and an order you set by hand stands until a backup is clearly better (unless you told him to leave your order alone).
+// When a starting job changes for football reasons he tells you, once.
+const coachScore = (p, pos) => p.ovr - flexPen(p, pos) + clamp(formOf(p), -3, 3) * .5;
+function coachDepth(w) {
+  const t = G.user, auto = G.coachDepth !== false, moves = [];
+  const fresh = () => { if (CACHE) { delete CACHE.d[t]; delete CACHE.tr[t]; } };
+  G.depthOrder = G.depthOrder || {};
+  if (!G.depthBy) { G.depthBy = {}; for (const k in G.depthOrder) if (G.depthOrder[k].length) G.depthBy[k] = 'you'; }   // older saves: an order there was yours
+  const was0 = G.lastStart || {};
+  for (const pos of POS_ORDER) {
+    if (pos === 'K' || pos === 'P') continue;
+    const n = STARTERS[pos], mine = G.depthBy[pos] === 'you' && G.depthOrder[pos] && G.depthOrder[pos].length;
+    if (mine) {
+      // your order stands until a backup is clearly better, and only if you let the coach step in
+      if (!auto) continue;
+      for (let k = 0; k < 2; k++) {
+        fresh();
+        const L = depth(t)[pos]; if (L.length <= n) break;
+        const planned = id => (G.plans || {})[id] && G.plans[id].plan === 'start';
+        const weak = L.slice(0, n).filter(p => !planned(p.id)).sort((a, b) => coachScore(a, pos) - coachScore(b, pos))[0];
+        const best = L.slice(n).sort((a, b) => coachScore(b, pos) - coachScore(a, pos))[0];
+        if (!weak || !best || coachScore(best, pos) - coachScore(weak, pos) < 3) break;
+        const order = L.map(p => p.id), i = order.indexOf(weak.id), j = order.indexOf(best.id);
+        order[i] = best.id; order[j] = weak.id;                 // a straight swap: he starts, the starter sits
+        G.depthOrder[pos] = order; G.depthBy[pos] = 'coach';
+        moves.push({pos, inn: best, out: weak, manual: true});
+      }
+      continue;
+    }
+    // the coach's own call: the best players start, last week's starter keeps the job in a close call
+    delete G.depthOrder[pos]; delete G.depthBy[pos]; fresh();
+    if (!auto) continue;                                   // coach off: straight by overall
+    const L = depth(t)[pos]; if (L.length <= n) continue;
+    const inc = new Set(was0[pos] || []), sc = p => coachScore(p, pos) + (inc.has(p.id) ? 1.5 : 0);
+    const st = L.slice().sort((a, b) => sc(b) - sc(a)).slice(0, n).sort((a, b) => b.ovr - a.ovr);
+    const order = [...st, ...L.filter(p => !st.includes(p))].map(p => p.id);
+    if (order.some((id, i) => id !== L[i].id)) { G.depthOrder[pos] = order; G.depthBy[pos] = 'coach'; }
+  }
+  fresh();
+  // who starts now, and who is new to the lineup for a football reason (not an injury or a trade)
+  G.startedWk = G.startedWk || {};
+  const d = depth(t), was = G.lastStart || {}, hurt = new Set(G.lastHurt || []), news = moves.slice();
+  for (const pos of POS_ORDER) {
+    const now = d[pos].slice(0, STARTERS[pos]);
+    for (const p of now) {
+      const back = G.startedWk[p.id] && G.startedWk[p.id].s === G.season && w - G.startedWk[p.id].w <= 8;
+      if (w > 1 && was[pos] && !was[pos].includes(p.id) && !back && !hurt.has(p.id) && !news.some(m => m.inn === p)) {
+        const gone = was[pos].map(id => G.players[id]).filter(q => q && q.tm === t && !q.inj && !now.includes(q))[0];
+        if (gone) news.push({pos, inn: p, out: gone});
+      }
+      G.startedWk[p.id] = {s: G.season, w};
+    }
+    was[pos] = now.map(p => p.id);
+  }
+  G.lastStart = was; G.lastHurt = roster(t).filter(p => p.inj).map(p => p.id);
+  if (!news.length) return;
+  const why = m => m.inn.ovr > m.out.ovr ? `${m.inn.ovr} to ${m.out.ovr}${m.inn.inGain > 0 ? `, and he has climbed ${m.inn.inGain} this year` : ''}` : `he is playing better right now`;
+  const lines = news.slice(0, 3).map(m => `${m.inn.n} starts at ${m.pos} over ${m.out.n} (${why(m)})${m.manual ? '. You had it the other way' : ''}`);
+  mail('Coach', `Lineup change for Week ${w}: ${lines.join('; ')}.${news.some(m => m.manual) ? ' If you disagree, set it back on the depth chart and turn off Coach handles the depth chart.' : ''}`, {act: 'depthOpen', k: news[0].pos}, w);
+  for (const m of news.slice(0, 3)) G.news.unshift(`Week ${w}: ${m.inn.n} takes over at ${m.pos} from ${m.out.n}.`);
+}
+function setCoachDepth(on) { G.coachDepth = !!on; }
+
 // ---------- the week in a few lines ----------
 function weekNews(w, games) {
   const g = games.find(x => x.h === G.user || x.a === G.user), r = record(G.user, G.season);
@@ -3250,7 +3318,7 @@ function inSeasonGrowth(w) {
       p.perfMove = {s: G.season, n: moved + dir};
     }
     // a breakout: young, playing far above his rating for weeks
-    if (!ol && est >= .75 && p.ovr < 82 && (p.inGain || 0) <= 4 && z >= 1.8 && w >= 5 && p.brk !== G.season && rand() < .06) {
+    if (!ol && est >= .75 && p.ovr < 82 && (p.inGain || 0) <= 4 && z >= 1.6 && w >= 5 && p.brk !== G.season && rand() < .08) {
       p.brk = G.season;
       const j = 3 + Math.floor(rand() * 3), old = p.ovr;
       bump(p, j);
@@ -3547,7 +3615,7 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return markOffers(); }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,

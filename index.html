@@ -1558,6 +1558,13 @@ button.capbox { display: block; padding: 0; }
 .morelink { display: block; margin: 8px auto 0; }
 .bpfoot { justify-content: space-between; align-items: center; margin-top: 6px; }
 @media (max-width: 420px) { .ttool { padding: 10px; min-height: 78px; } .ttool b { font-size: 13px; } .ttool .small { font-size: 11px; } }
+/* the coach runs the depth chart */
+.coachdepth { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border-left: 3px solid var(--gold); }
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; min-height: 32px; }
+.switch input { appearance: none; -webkit-appearance: none; width: 40px; height: 24px; border-radius: 12px; background: var(--line2); position: relative; cursor: pointer; margin: 0; flex: none; transition: background .15s; }
+.switch input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.switch input:checked { background: var(--gold); }
+.switch input:checked::after { transform: translateX(16px); }
 </style>
 </head>
 <body>
