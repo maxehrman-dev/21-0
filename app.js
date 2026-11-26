@@ -1061,7 +1061,10 @@ function injurySheet() {
 // ---------- home by phase ----------
 const homeFoot = () => `<div class="homefoot"><button class="btn ghost sm" data-act="guide">How to play</button><button class="btn ghost sm dangertxt" data-act="askReset">Start over</button></div>`;
 function renderHome() {
-  return renderHome0() + (G.phase === 'offseason' ? '' : homeFoot());
+  // recent activity on every home screen: the ones built around the season have it in their side column already
+  const own = (G.phase === 'preseason' || G.phase === 'season' || G.phase === 'deadline');
+  const act = own ? '' : activityCard();
+  return renderHome0() + (act ? `<div class="actwrap">${act}</div>` : '') + (G.phase === 'offseason' ? '' : homeFoot());
 }
 function renderHome0() {
   const p = G.phase;
@@ -1160,7 +1163,7 @@ function activityCard() {
   const N = G.news || []; if (!N.length) return '';
   // new = everything that happened since your last step forward (a game, a sim, a wave, a pick)
   const fresh = Math.max(0, N.length - (G.newsMark == null ? N.length : G.newsMark));
-  return `<div class="card activity o2"><div class="cardh"><h3>Recent activity</h3><span class="small muted">${fresh ? `${fresh} new` : 'Nothing new'}</span></div>
+  return `<div class="card activity o2"><div class="cardh"><h3>Recent activity</h3>${fresh ? `<span class="tag gold">${fresh} new</span>` : '<span class="small muted">Latest</span>'}</div>
     <ul class="news">${N.slice(0, 6).map((n, i) => `<li class="${i < fresh ? 'fresh' : ''}">${esc(n)}</li>`).join('')}</ul>
     ${N.length > 6 ? '<button class="linkbtn" data-act="wireSheet">All activity</button>' : ''}</div>`;
 }

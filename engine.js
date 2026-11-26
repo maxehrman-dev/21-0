@@ -454,6 +454,7 @@ function valueParts(p, forTeam) {
   v *= cf.m; steps.push({g: 'Contract', k: 'Status and cost', note: `${cf.status}. ${cf.note}`, m: cf.m, v});
   if (p.inj) { const im = p.injW === 99 || p.injW === undefined ? .7 : .9; v *= im; steps.push({g: 'Contract', k: 'Injury', note: p.injW === 99 || p.injW === undefined ? 'Out for the season' : `Out about ${p.injW} more weeks`, m: im, v}); }
   const vBase = v;
+  let post = 1;              // what everyone knows about his situation: applied on top of any one team's view
   if (forTeam && G.teams[forTeam]) {
     const gm = gmOf(forTeam), nick = G.teams[forTeam].nick;
     const own = p.tm === forTeam;
@@ -468,10 +469,10 @@ function valueParts(p, forTeam) {
     if (cf !== 1) { v *= cf; steps.push({k: 'Cap room', note: `${nick} have ${space < 12 ? 'little' : 'lots of'} cap space for a $${p.cap.toFixed(1)}M deal: ×${cf}`, m: cf, v}); }
     if (p.inj) { const ri = .85 + gm.risk * .3; v *= ri; steps.push({k: 'Risk', note: `${nick} ${gm.risk > .5 ? 'will gamble on' : 'shy away from'} injured players: ×${ri.toFixed(2)}`, m: ri, v}); }
     const req = forTeam !== G.user && p.tm === G.user && (G.requests || {})[p.id] && !G.requests[p.id].done;
-    if (req) { v *= .92; steps.push({k: 'Wants out', note: `He asked to be traded, and the ${G.teams[forTeam].nick} know it: ×0.92`, m: .92, v}); }
+    if (req) { post *= .92; steps.push({k: 'Wants out', note: `He asked to be traded, and the ${G.teams[forTeam].nick} know it: ×0.92`, m: .92, v}); }
     const pl = forTeam !== G.user && p.tm === G.user ? planForVet(p.id) : null;
-    if (pl && (pl.plan === 'start' || pl.plan === 'phase')) { v *= .9; steps.push({k: 'On his way out', note: `Everyone saw ${G.players[pl.young].n} take his snaps. Teams know you have to move him: ×0.90`, m: .9, v}); }
-    else if (pl && pl.plan === 'showcase' && pl.wk >= 2) { v *= 1.06; steps.push({k: 'Showcased', note: `Your coach has featured him for ${pl.wk} games and scouts noticed: ×1.06`, m: 1.06, v}); }
+    if (pl && (pl.plan === 'start' || pl.plan === 'phase')) { post *= .9; steps.push({k: 'On his way out', note: `Everyone saw ${G.players[pl.young].n} take his snaps. Teams know you have to move him: ×0.90`, m: .9, v}); }
+    else if (pl && pl.plan === 'showcase' && pl.wk >= 2) { post *= 1.06; steps.push({k: 'Showcased', note: `Your coach has featured him for ${pl.wk} games and scouts noticed: ×1.06`, m: 1.06, v}); }
     const sit = situation(forTeam);
     const contend = sit.status === 'Contender', sell = sit.status === 'Seller' || sit.status === 'Rebuilding';
     let tm = 1, why = '';
@@ -515,8 +516,9 @@ function valueParts(p, forTeam) {
     // no single team's view strays too far from the league
     // factors compound gently and stay within 0.65× to 1.45× of the league view
     const raw = v / Math.max(.01, vBase), soft = clamp(Math.pow(raw, .7), .8, 1.25);
-    if (Math.abs(soft - raw) > .01) { v = vBase * soft; steps.push({k: 'Overall', note: `All ${G.teams[forTeam].nick} factors together: ×${soft.toFixed(2)} on the league view (teams stay within 0.8× to 1.25×)`, v}); }
+    if (Math.abs(soft - raw) > .01) { v = vBase * soft * post; post = 1; steps.push({k: 'Overall', note: `All ${G.teams[forTeam].nick} factors together: ×${soft.toFixed(2)} on the league view (teams stay within 0.8× to 1.25×)`, v}); }
   }
+  v *= post;
   return {steps, total: Math.max(.3, v), market: mk, yrs};
 }
 // Value by season over the years of control, weighted by when a team wants to win, against a neutral team's weights
@@ -638,7 +640,7 @@ function stanceBoost(partner, id) {
   const st = stanceOf(); if (!st || !(G.phase === 'season' || G.phase === 'deadline')) return 1;
   const p = G.players[id];
   if (st === 'sell') return p && isVet(p) && !rebuilding(partner) ? 1.12 : 1;
-  if (st === 'buy') return rebuilding(partner) && (!p || ageAdj(p) <= 25) ? 1.08 : 1;
+  if (st === 'buy') return rebuilding(partner) && (!p || (ageAdj(p) <= 25 && ((p.pot || p.ovr) - p.ovr >= 4 || p.ovr >= 70))) ? 1.08 : 1;
   return 1;
 }
 // Pad a package with their smallest extra picks until it is a good deal for you, as far as they will go
@@ -1956,6 +1958,7 @@ function simPlayoffRound() {
         POSTSEASON = true; let g; try { g = simGame(lo, hi); } finally { POSTSEASON = false; } g.po = ROUND_NAMES[P.round]; g.conf = c;
         G.results[G.season].push(g); games.push(g);
         const win = g.hs > g.as ? hi : lo, lose = win === hi ? lo : hi;
+        if (hi === G.user || lo === G.user) { const me = hi === G.user, us = me ? g.hs : g.as, them = me ? g.as : g.hs, opp = me ? lo : hi; G.news.unshift(`${ROUND_NAMES[P.round]}: ${us > them ? 'beat' : 'lost to'} the ${G.teams[opp].nick}, ${Math.max(us, them)}-${Math.min(us, them)}.${us > them ? '' : ' Season over.'}`); }
         P.elim[lose] = P.round; next.push(win);
       }
       P.alive[c] = next;
@@ -1965,6 +1968,7 @@ function simPlayoffRound() {
     POSTSEASON = true; let g; try { g = simGame(a, n, {neutral: true}); } finally { POSTSEASON = false; } g.po = 'Super Bowl';
     G.results[G.season].push(g); games.push(g);
     P.champ = g.hs > g.as ? n : a;
+    { const L = P.champ === a ? n : a, w1 = Math.max(g.as, g.hs), w2 = Math.min(g.as, g.hs); G.news.unshift(P.champ === G.user ? `Super Bowl: you win it all, ${w1}-${w2} over the ${G.teams[L].nick}.` : L === G.user ? `Super Bowl: lost to the ${G.teams[P.champ].nick}, ${w1}-${w2}.` : `Super Bowl: the ${G.teams[P.champ].nick} win it all, ${w1}-${w2} over the ${G.teams[L].nick}.`); }
     P.elim[P.champ === a ? n : a] = 3;
     P.elim[P.champ] = 4;
   }
@@ -2118,7 +2122,9 @@ function beginOffseason() {
     if (p.tm === 'FA' && ra >= 30) rp = Math.max(rp, .5);
     if (rand() < Math.min(.9, rp)) p.retired = true;
   }
-  for (const p of Object.values(G.players)) if (p.retired) { if (p.tm === G.user) prog.push({id: p.id, n: p.n, pos: p.pos, old: p.ovr, now: 0, ret: true}); removePlayer(p.id); }
+  const notable = [];
+  for (const p of Object.values(G.players)) if (p.retired) { if (p.tm === G.user) prog.push({id: p.id, n: p.n, pos: p.pos, old: p.ovr, now: 0, ret: true}); if (p.tm === G.user || p.ovr >= 80) notable.push(p); removePlayer(p.id); }
+  for (const p of notable.sort((a, b) => b.ovr - a.ovr).slice(0, 6)) G.news.unshift(`Retired: ${p.n} (${p.pos}${G.teams[p.tm] ? ', ' + G.teams[p.tm].nick : ''}) hangs it up at ${Math.floor(p.age)}.`);
   G.prog = prog;
   compact(next);
   // expiring
@@ -2127,8 +2133,8 @@ function beginOffseason() {
   for (const p of exp) {
     if (p.tm === G.user) { G.resign[p.id] = {ask: resignPrice(p), yrs: yearsFor(p), done: null}; continue; }
     const keep = (p.ovr >= 82 ? .8 : p.ovr >= 72 ? .55 : p.ovr >= 62 ? .35 : .15) * (ageAdj(p) >= 32 ? .6 : 1);
-    if (rand() < keep) { p.cap = askFor(p); p.end = prev + yearsFor(p); }
-    else { p.fromTeam = p.tm; p.tm = 'FA'; p.cap = 0; }
+    if (rand() < keep) { p.cap = askFor(p); p.end = prev + yearsFor(p); if (p.ovr >= 83) G.news.unshift(`Re-signed: the ${G.teams[p.tm].nick} keep ${p.n} (${p.pos} ${p.ovr}), ${yearsFor(p)} yr at $${p.cap.toFixed(1)}M.`); }
+    else { if (p.ovr >= 83) G.news.unshift(`Free agent: ${p.n} (${p.pos} ${p.ovr}) leaves the ${G.teams[p.tm].nick} and hits the market.`); p.fromTeam = p.tm; p.tm = 'FA'; p.cap = 0; }
   }
   G.news.unshift(`${next} offseason is open. Contracts that ended after ${prev} are up for renewal.`);
 }
@@ -2678,6 +2684,8 @@ function makePick(prospect) {
   addPlayer({id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: Math.round((21 + (hashStr('age' + prospect.n) % 26) / 10) * 10) / 10, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
     proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: eggOf(prospect.n) ? eggOf(prospect.n).hype : Math.max(10, Math.round(70 - slot.no * .5)), egg: prospect.egg, hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]});
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
+  if (slot.owner === G.user) G.news.unshift(`Draft: you take ${prospect.n} (${prospect.pos}, ${prospect.sch}) at #${slot.no}.`);
+  else if (slot.no <= 3) G.news.unshift(`Draft: the ${G.teams[slot.owner].nick} take ${prospect.n} (${prospect.pos}, ${prospect.sch}) at #${slot.no}.`);
   D.pool = D.pool.filter(x => x !== prospect);
   if (slot.pickId) G.picks = G.picks.filter(x => x.id !== slot.pickId);
   D.at++;
@@ -2725,6 +2733,8 @@ function runCamp() {
     if (p.tm === G.user) changes.push({id: p.id, n: p.n, pos: p.pos, old, now: p.ovr, why: p.campWhy});
     delete p.campD; delete p.campWhy; delete p.campPrior;
   }
+  const up = changes.filter(x => x.now - x.old >= 3).sort((a, b) => (b.now - b.old) - (a.now - a.old)).slice(0, 2), down = changes.filter(x => x.old - x.now >= 3).sort((a, b) => (a.now - a.old) - (b.now - b.old)).slice(0, 1);
+  for (const x of [...down, ...up].reverse()) G.news.unshift(`Training camp: ${x.n} (${x.pos}) ${x.now > x.old ? 'up' : 'down'} from ${x.old} to ${x.now}${x.why ? ', ' + x.why.toLowerCase() : ''}.`);
   G.camp = {season: G.season, changes: changes.sort((a, b) => (b.now - b.old) - (a.now - a.old)), rookies: (G.campReveal || []).slice(), retired: (G.prog || []).filter(x => x.ret)};
 }
 function toCutdown() { G.step = 'cutdown'; }
@@ -2781,6 +2791,7 @@ function aiCleanup() {
 // leaves the same dead money yours would.
 function aiRelease(t, p) {
   const c = cutCost(p);
+  if (p.ovr >= 80 && G.news) G.news.unshift(`Released: the ${G.teams[t].nick} let ${p.n} (${p.pos} ${p.ovr}) go${c.save >= 3 ? ` to clear $${c.save.toFixed(1)}M` : ''}.`);
   G.dead[t] = Math.round(((G.dead[t] || 0) + c.dead) * 10) / 10;
   p.fromTeam = t; p.tm = 'FA'; p.cap = 0; p.end = G.season - 1;
 }
@@ -3574,7 +3585,7 @@ function coachMail(w) {
   }
   for (const p of roster(G.user)) {
     const C = coachPlans(p.id);
-    if (C && C.opts.find(o => o.pick).plan === 'start' && !planOf(p.id) && say(`ready${s}${p.id}`, `I think ${p.n} is ready. He has earned a real shot at ${p.pos}.`, {act: 'coachPlan', id: p.id})) return;
+    if (C && C.opts.find(o => o.pick).plan === 'start' && C.v.ovr - p.ovr <= 4 && !planOf(p.id) && say(`ready${s}${p.id}`, `I think ${p.n} is ready. He has earned a real shot at ${p.pos}.`, {act: 'coachPlan', id: p.id})) return;
   }
   if (w >= 4 && w % 3 === 1) {
     const N = teamNeeds(G.user).filter(n => n.level === 'High')[0];
@@ -3810,7 +3821,13 @@ function planTarget(id) {
   const d = depthOf(activeRoster(G.user)), L = d[p.pos], n = STARTERS[p.pos];
   const i = L.indexOf(p);
   if (i < 0 || i < n) { const pl = (G.plans || {})[id]; return pl && G.players[pl.vet] && G.players[pl.vet].tm === G.user ? G.players[pl.vet] : null; }
-  return L[n - 1] || null;
+  // young does not beat good: the starter he would push out is a veteran older than him, never a good young starter,
+  // and the young player has to be close now or have the ceiling to be that good
+  const vets = L.slice(0, n).filter(s => ageAdj(s) >= ageAdj(p) + 3 && ageAdj(s) >= 26).sort((a, b) => a.ovr - b.ovr);
+  const v = vets[0];
+  if (!v) return null;
+  if (v.ovr - p.ovr > 4 && (p.pot || p.ovr) < v.ovr) return null;
+  return v;
 }
 const planOf = id => (G.plans || {})[id] || null;
 function planForVet(vetId) { for (const [young, pl] of Object.entries(G.plans || {})) if (pl.vet === vetId) return Object.assign({young}, pl); return null; }
@@ -3845,9 +3862,11 @@ function coachPlans(id) {
   const gap = v.ovr - p.ovr, upside = (p.pot || p.ovr) - p.ovr, vl = surname(v.n), pl = surname(p.n);
   const old = ageAdj(v) >= 30, cap = isCaptain(v.id);
   // the coach has his own read: how far apart they are, how much the kid can grow, and what this season is for
-  const pick = gap <= 2 || (rebuild && upside >= 5) ? 'start' : contend && gap >= 5 ? (old && tradeWindow() ? 'showcase' : 'spot') : upside >= 6 ? 'phase' : old && tradeWindow() ? 'showcase' : 'spot';
+  const willPass = (p.pot || p.ovr) >= v.ovr + 2;                                // can he become better than the man he replaces?
+  const pick = gap <= 2 || (rebuild && willPass && gap <= 8) ? 'start' : contend && gap >= 5 ? (old && tradeWindow() ? 'showcase' : 'spot') : willPass && upside >= 6 ? 'phase' : old && tradeWindow() ? 'showcase' : 'spot';
   const say = {
     start: pick === 'start' ? (gap < 0 ? `"He's already the better player. I was going to ask you."` : gap === 0 ? `"They're dead even, and only one of them is getting better. Do it."` : `"Do it. ${rebuild ? 'This year is about finding out what he is.' : 'He is close enough, and he only gets better by playing.'}"`)
+      : !willPass ? `"I don't see it. ${pl} is ${gap} points behind ${vl} and I don't think he gets past him. Being younger doesn't make him better."`
       : contend ? `"I'd push back on that. We're contending and he's ${gap} points behind ${vl}. If you want it, it will cost us games."`
       : `"I think it's early, but I'll start him if you want."${cap ? ` ${vl} is a captain, the room will notice.` : ''}`,
     phase: pick === 'phase' || pick === 'start' ? `"Smart. We ease him in, ${vl} keeps his dignity, and ${pl} gets real snaps."` : `"I can do that. He'll take a few drives a game and the job after ${PHASE_GAMES} games."`,
