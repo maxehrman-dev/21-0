@@ -306,46 +306,78 @@ function pickReel(from) {
 // Watch a game drive by drive: the scoreboard on top, each drive as it ends, quarter by quarter.
 // Faster speeds it up; Final score jumps to the end.
 function watchGame(g, title, done) {
-  if (!g || !g.dl || !g.dl.length || reducedMotion()) { done(); return; }
-  const dl = g.dl.filter(d => d.n > 0 || !/^End of/.test(d.r));     // drives that ran out the clock without a play add nothing
+  if (!g || reducedMotion() || (!(g.pl && g.pl.length) && !(g.dl && g.dl.length))) { done(); return; }
+  // every play when the game kept them; older saves fall back to drive by drive
+  const plays = g.pl && g.pl.length ? g.pl : g.dl.filter(d => d.n > 0 || !/^End of/.test(d.r)).map(d => [d.q, d.c.replace(/^Q\S+ /, ''), d.t, 0, 0, '', `${d.r} · ${d.n} play${d.n === 1 ? '' : 's'}, ${d.y} yds`, /TD|field goal|Safety/.test(d.r) && !/Missed/.test(d.r) ? 'td' : /intercepted|Fumble|downs/i.test(d.r) ? 'to' : '', d.s[0], d.s[1]]);
   const el = document.createElement('div');
-  el.className = 'cast'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Game cast');
-  const tn = t => esc(G.teams[t].nick);
+  el.className = 'cast'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Play by play');
+  const tn = t => esc(G.teams[t].nick), QN = q => q > 4 ? 'OT' : `Q${q}`, DN = ['', '1st', '2nd', '3rd', '4th'];
+  const SPEEDS = [['1x', 1700], ['2x', 800], ['4x', 300]];
   el.innerHTML = `<div class="cast-in"><div class="kicker">${G.season} ${esc(title || 'playoffs')}</div>
     <div class="cast-board"><div class="cteam">${badge(g.a)}<b>${tn(g.a)}</b><span class="cs num" id="cs-a">0</span></div><div class="cclock" id="cs-q">Kickoff</div><div class="cteam r"><span class="cs num" id="cs-h">0</span><b>${tn(g.h)}</b>${badge(g.h)}</div></div>
-    <div class="cast-feed" id="cs-feed"></div>
-    <div class="row cast-btns"><button class="btn ghost" data-cast="fast">Faster</button><button class="btn" data-cast="end">Final score</button></div></div>`;
+    <div class="cast-sit"><span id="cs-sit">Kickoff</span><div class="cfield" aria-hidden="true"><i id="cs-ball"></i></div></div>
+    <div class="cast-feed" id="cs-feed" aria-live="polite"></div>
+    <div class="cast-ctl" role="group" aria-label="Speed">
+      <button class="cbtn" data-cast="pause" aria-label="Pause">❚❚</button>
+      ${SPEEDS.map(([l], k) => `<button class="cbtn sp ${k === 1 ? 'on' : ''}" data-cast="speed" data-k="${k}">${l}</button>`).join('')}
+      <button class="cbtn wide" data-cast="score">Next score ›</button>
+      <button class="cbtn wide" data-cast="end">Final »</button>
+    </div></div>`;
   document.body.appendChild(el);
-  const feed = el.querySelector('#cs-feed'), qEl = el.querySelector('#cs-q'), sa = el.querySelector('#cs-a'), sh = el.querySelector('#cs-h');
-  let i = 0, speed = 1100, lastQ = 0, tm = null, finished = false;
-  const big = r => /TD|field goal|Safety|intercepted|Fumble|downs/i.test(r) && !/Missed/.test(r);
+  const $c = q => el.querySelector(q), feed = $c('#cs-feed');
+  let i = 0, speed = SPEEDS[1][1], paused = false, tm = null, finished = false, lastQ = 0, lastT = null, toScore = false;
   const add = quiet => {
-    const d = dl[i++];
-    if (d.q !== lastQ) { lastQ = d.q; const m = document.createElement('div'); m.className = 'cq'; m.textContent = d.q > 4 ? 'Overtime' : ['', '1st quarter', '2nd quarter', '3rd quarter', '4th quarter'][d.q]; feed.append(m); }
-    const row = document.createElement('div'); row.className = 'cdrive' + (big(d.r) ? ' big' : '') + (d.t === G.user ? ' me' : '');
-    row.innerHTML = `${badge(d.t, 1)}<div><b>${esc(d.r)}</b><span class="small muted">${esc(d.c.replace(/^Q\d /, ''))} · ${d.n} play${d.n === 1 ? '' : 's'}, ${d.y} yd${d.y === 1 ? '' : 's'}</span></div><span class="num cscore">${d.s[0]}-${d.s[1]}</span>`;
-    feed.append(row); feed.scrollTop = feed.scrollHeight;     // reads top to bottom, like the real thing
-    sa.textContent = d.s[0]; sh.textContent = d.s[1]; qEl.textContent = d.c;
+    const p = plays[i++]; if (!p) return;
+    const [q, clock, t, dn, tg, sp, x, kind, sa, sh] = p;
+    if (q !== lastQ) { lastQ = q; const m = document.createElement('div'); m.className = 'cq'; m.textContent = q > 4 ? 'Overtime' : ['', '1st quarter', '2nd quarter', '3rd quarter', '4th quarter'][q]; feed.append(m); lastT = null; }
+    if (t !== lastT) { lastT = t; const m = document.createElement('div'); m.className = 'cdhead' + (t === G.user ? ' me' : ''); m.innerHTML = `${badge(t, 1)}<b>${tn(t)} ball</b>${sp ? `<span class="small muted">from ${esc(sp)}</span>` : ''}`; feed.append(m); }
+    const row = document.createElement('div');
+    row.className = 'cplay ' + (kind || '');
+    row.innerHTML = `<span class="cpsit">${dn ? `${DN[dn]} & ${tg <= 0 ? 'goal' : tg} · ${esc(sp)}` : ''}<span class="cpclk">${QN(q)} ${esc(clock)}</span></span><span class="cptxt">${esc(x)}</span>${kind === 'td' || kind === 'fg' ? `<span class="num cpsc">${esc(g.a)} ${sa}, ${esc(g.h)} ${sh}</span>` : ''}`;
+    feed.append(row);
+    if (!quiet) feed.scrollTop = feed.scrollHeight;
+    $c('#cs-a').textContent = sa; $c('#cs-h').textContent = sh;
+    $c('#cs-q').textContent = `${QN(q)} ${clock}`;
+    $c('#cs-sit').textContent = dn ? `${G.teams[t].nick} ball · ${DN[dn]} & ${tg <= 0 ? 'goal' : tg} at ${sp}` : `${G.teams[t].nick}`;
+    // the ball on a field that runs from the away end zone to the home end zone
+    const m = /^(\S+) (\d+)$/.exec(sp || ''), yd = sp === 'midfield' ? 50 : m ? (m[1] === g.a ? +m[2] : 100 - +m[2]) : null;
+    if (yd != null) { const b = $c('#cs-ball'); b.style.left = yd + '%'; b.className = t === g.a ? 'a' : 'h'; }
     if (quiet) return;
-    if (/TD/.test(d.r) || /field goal/.test(d.r) && !/Missed/.test(d.r)) sfx(d.t === G.user ? 'win' : 'loss');
-    if (i >= dl.length) finish(); else tm = setTimeout(add, speed);
+    if (kind === 'td' || kind === 'fg') { sfx(t === G.user ? 'win' : 'loss'); if (toScore) { toScore = false; } }
+  };
+  const step = () => {
+    if (finished || paused) return;
+    if (i >= plays.length) { finish(); return; }
+    add(false);
+    const last = plays[i - 1], big = last && (last[7] === 'td' || last[7] === 'to' || last[7] === 'fg');
+    tm = setTimeout(step, toScore ? 60 : big ? speed * 1.6 : speed);
   };
   const finish = () => {
     if (finished) return; finished = true; clearTimeout(tm);
-    while (i < dl.length) add(true);      // the rest of the game lands in the feed
-    sa.textContent = g.as; sh.textContent = g.hs;
+    while (i < plays.length) add(true);
+    feed.scrollTop = feed.scrollHeight;
+    $c('#cs-a').textContent = g.as; $c('#cs-h').textContent = g.hs;
     const won = (g.h === G.user) === (g.hs > g.as);
-    qEl.textContent = g.ot ? 'Final · OT' : 'Final';
-    el.querySelector('.cast-btns').innerHTML = `<div class="cast-final ${won ? 'w' : 'l'}"><b>${won ? 'You win' : 'Season over'}</b><span class="small">${tn(g.a)} ${g.as}, ${tn(g.h)} ${g.hs}</span></div><button class="btn go" data-cast="close">Continue</button>`;
+    $c('#cs-q').textContent = g.ot ? 'Final · OT' : 'Final'; $c('#cs-sit').textContent = `${tn(g.a)} ${g.as}, ${tn(g.h)} ${g.hs}`;
+    $c('.cast-ctl').innerHTML = `<div class="cast-final ${won ? 'w' : 'l'}"><b>${won ? 'You win' : 'Season over'}</b><span class="small">${tn(g.a)} ${g.as}, ${tn(g.h)} ${g.hs}</span></div><button class="btn go" data-cast="close">Continue</button>`;
     sfx(won ? 'win' : 'loss'); if (won) buzz([30, 40, 30]);
   };
   el.addEventListener('click', e => {
     const b = e.target.closest('[data-cast]'); if (!b) return;
-    if (b.dataset.cast === 'fast') { speed = Math.max(150, speed / 3); b.textContent = speed <= 150 ? 'Fastest' : 'Faster'; }
-    else if (b.dataset.cast === 'end') finish();
-    else if (b.dataset.cast === 'close') { el.classList.add('out'); setTimeout(() => { el.remove(); done(); }, 220); }
+    const k = b.dataset.cast;
+    if (k === 'pause') { paused = !paused; b.textContent = paused ? '▶' : '❚❚'; b.setAttribute('aria-label', paused ? 'Play' : 'Pause'); b.classList.toggle('on', paused); if (!paused) { clearTimeout(tm); step(); } }
+    else if (k === 'speed') { speed = SPEEDS[+b.dataset.k][1]; el.querySelectorAll('.cbtn.sp').forEach(x => x.classList.toggle('on', x === b)); if (paused) { paused = false; const pb = $c('[data-cast=pause]'); pb.textContent = '❚❚'; pb.classList.remove('on'); } clearTimeout(tm); step(); }
+    else if (k === 'score') {
+      // play on quickly to the next score, then carry on at your speed
+      clearTimeout(tm); paused = false; const pb = $c('[data-cast=pause]'); if (pb) { pb.textContent = '❚❚'; pb.classList.remove('on'); }
+      while (i < plays.length) { const nx = plays[i]; add(true); if (nx[7] === 'td' || nx[7] === 'fg') break; }
+      feed.scrollTop = feed.scrollHeight;
+      if (i >= plays.length) finish(); else tm = setTimeout(step, speed * 1.6);
+    }
+    else if (k === 'end') finish();
+    else if (k === 'close') { el.classList.add('out'); setTimeout(() => { el.remove(); done(); }, 220); }
   });
-  tm = setTimeout(() => add(), 600);
+  tm = setTimeout(step, 600);
 }
 // Runs a sim, then plays the reel, then reports injuries and celebrations.
 function simWithReel(kicker, sim) {
@@ -2175,6 +2207,7 @@ function boxSheet(s, k, side) {
     <div class="boxhead"><div class="bt ${aw ? '' : 'l'}">${badge(g.a, 1)}<span>${esc(G.teams[g.a].nick)}</span><b class="num">${g.as}</b></div><span class="muted">at</span><div class="bt ${aw ? 'l' : ''}"><b class="num">${g.hs}</b><span>${esc(G.teams[g.h].nick)}</span>${badge(g.h, 1)}</div></div>
     ${star && gameScore(star.st) > 0 ? `<div class="potg">${face(G.players[star.id], 'sm')}<div><div class="kicker">Player of the game</div><b>${esc(G.players[star.id].n)}</b> <span class="small muted">${G.players[star.id].pos} · ${esc(G.teams[star.t].nick)}</span><div class="small">${perfLine(star.st)}</div></div></div>` : ''}
     ${team}${scoring}
+    ${g.pl && g.pl.length ? `<details class="fold" data-fold="pbp" ${foldOpen('pbp')}><summary>Play by play <span class="small muted">${g.pl.length} plays</span></summary><div class="pbplist">${(() => { let lq = 0, lt = null; const DN = ['', '1st', '2nd', '3rd', '4th']; return g.pl.map(([q, c, t, dn, tg, sp, x, k, sa, sh]) => `${q !== lq ? `<div class="cq">${q > 4 ? 'Overtime' : ['', '1st quarter', '2nd quarter', '3rd quarter', '4th quarter'][(lq = q)]}</div>` : ''}${t !== lt ? `<div class="cdhead">${badge((lt = t), 1)}<b>${esc(G.teams[t].nick)} ball</b></div>` : ''}<div class="cplay ${k}"><span class="cpsit">${dn ? `${DN[dn]} & ${tg <= 0 ? 'goal' : tg} · ${esc(sp)}` : ''}<span class="cpclk">${q > 4 ? 'OT' : 'Q' + q} ${esc(c)}</span></span><span class="cptxt">${esc(x)}</span>${k === 'td' || k === 'fg' ? `<span class="num cpsc">${esc(g.a)} ${sa}, ${esc(g.h)} ${sh}</span>` : ''}</div>`).join(''); })()}</div></details>` : ''}
     <div class="seg boxseg"><button class="${side === 'a' ? 'on' : ''}" data-act="boxSide" data-k="a">${esc(G.teams[g.a].nick)}</button><button class="${side === 'h' ? 'on' : ''}" data-act="boxSide" data-k="h">${esc(G.teams[g.h].nick)}</button></div>
     ${players}`, true);
 }

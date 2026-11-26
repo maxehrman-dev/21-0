@@ -1708,18 +1708,25 @@ function simGame(a, h, opts = {}) {
   let q = 1, clock = 900, poss = rand() < .5 ? a : h, firstRecv = poss, yl = 30, down = 1, togo = 10, ot = false, otPoss = 0, otDone = false;
   const opp = t => t === a ? h : a;
   const fmt = () => `Q${q > 4 ? 'OT' : q} ${Math.floor(clock / 60)}:${String(Math.floor(clock % 60)).padStart(2, '0')}`;
-  const keepLog = a === G.user || h === G.user, dlog = [];
+  const keepLog = a === G.user || h === G.user, dlog = [], plog = [];
+  let pre = null;
+  const spot = (t, y0) => { const y = Math.round(y0); return y === 50 ? 'midfield' : y < 50 ? `${t} ${y}` : `${opp(t)} ${100 - y}`; };
+  const gn = g => { g = Math.round(g); return g > 0 ? `${g}` : g === 0 ? 'no gain' : `a loss of ${-g}`; };
+  // [quarter, clock, offense, down, to go, spot, what happened, kind, away score, home score]
+  const pl = (x, k) => { if (keepLog && pre) plog.push([pre.q, pre.c, pre.t, pre.dn, pre.tg, pre.sp, x, k || '', score[a], score[h]]); };
+  const side3 = () => ['left', 'middle', 'right'][Math.floor(rand() * 3)];
   let dcur = {t: poss, q: 1, c: 'Q1 15:00', n: 0, y: 0}, dres = '', tov = '';
   const endDrive = res => { if (keepLog && dcur) dlog.push({t: dcur.t, q: dcur.q, c: dcur.c, n: dcur.n, y: Math.round(dcur.y), r: res || dres || 'Drive ends', s: [score[a], score[h]]}); dcur = null; dres = ''; };
   const newDrive = (t, at) => { endDrive(); poss = t; yl = at; down = 1; togo = 10; if (ot) otPoss++; rotate(); dcur = {t, q: Math.min(q, 5), c: fmt(), n: 0, y: 0}; };
   const scoreTD = (t, how) => { dres = how; score[t] += 6; mo[t] = Math.min(1, mo[t] + .3); mo[opp(t)] = Math.max(-1, mo[opp(t)] - .2);
     const k = S[t].k, xpOk = rand() < (.94 + (A(k, 'Accuracy') - 75) * .002 + wx.kick * .2);
     if (xpOk) { score[t] += 1; put(t, k, 'xp', 1); }
+    if (keepLog && plog.length) { const last = plog[plog.length - 1]; last[6] += xpOk ? ' (kick good)' : ' (kick missed)'; last[8] = score[a]; last[9] = score[h]; }
     sc.push([fmt(), t, how]); newDrive(opp(t), 35); };
   const kickFG = (t, dist) => { const k = S[t].k; const pr = clamp(1 / (1 + Math.exp((dist - (50 + (A(k, 'Power') - 75) * .3 + wx.kick * 25)) / 5.2)) + (A(k, 'Accuracy') - 75) * .004, .05, .99);
     put(t, k, 'fga', 1); clock -= 5;
-    if (rand() < pr) { score[t] += 3; put(t, k, 'fg', 1); sc.push([fmt(), t, `${lastNameE(k)} ${Math.round(dist)}-yd field goal`]); dres = `${lastNameE(k)} ${Math.round(dist)}-yd field goal`; newDrive(opp(t), 35); return true; }
-    dres = `Missed ${Math.round(dist)}-yd field goal`; newDrive(opp(t), Math.max(20, 100 - (yl + 8))); return false; };
+    if (rand() < pr) { score[t] += 3; put(t, k, 'fg', 1); sc.push([fmt(), t, `${lastNameE(k)} ${Math.round(dist)}-yd field goal`]); dres = `${lastNameE(k)} ${Math.round(dist)}-yd field goal`; pl(`${lastNameE(k)} ${Math.round(dist)}-yard field goal is good`, 'fg'); newDrive(opp(t), 35); return true; }
+    dres = `Missed ${Math.round(dist)}-yd field goal`; pl(`${lastNameE(k)} ${Math.round(dist)}-yard field goal is no good`, 'miss'); newDrive(opp(t), Math.max(20, 100 - (yl + 8))); return false; };
   const lastNameE = p => p ? surname(p.n) : 'Kicker';
   // play-calling: the coach's lean, then down and distance, the score and the clock
   const callPass = t => {
@@ -1744,6 +1751,7 @@ function simGame(a, h, opts = {}) {
   while (plays++ < 400) {
     if (q > 4 && !ot) break;
     const off = S[poss], def = S[opp(poss)], t = poss, e = edge(t) - edge(opp(t)) * .5;
+    pre = keepLog ? {q: Math.min(q, 5), c: fmt().replace(/^Q\S+ /, ''), t, dn: down, tg: Math.round(Math.min(togo, 100 - yl)), sp: spot(t, yl)} : null;
     // fourth down: kick, punt or go
     if (down === 4) {
       const dist = 100 - yl + 17, diff = score[t] - score[opp(t)], left = (4 - Math.min(4, q)) * 900 + clock, desperate = q >= 4 && diff < 0 && left < 300;
@@ -1754,10 +1762,11 @@ function simGame(a, h, opts = {}) {
         // punt
         const net = clamp(41 + (A(off.pn, 'Distance') - 75) * .25 + randn() * 6 + wx.kick * 20, 25, 60);
         put(t, off.pn, 'punts', 1);
-        const land = yl + net; dres = 'Punt'; newDrive(opp(t), land >= 100 ? 20 : Math.max(1, 100 - land)); if (tick(8) === 'end') break; continue;
+        pl(`${lastNameE(off.pn)} punts ${Math.round(net)} yards${yl + net >= 100 ? ', touchback' : ''}`, 'punt');
+        const land = yl + net; dres = 'Punt'; newDrive(opp(t), land >= 100 ? 20 : Math.max(1, Math.round(100 - land))); if (tick(8) === 'end') break; continue;
       }
     }
-    let gain = 0, clockUse = 36, turnover = false, td = false, tdTxt = '';
+    let gain = 0, clockUse = 36, turnover = false, td = false, tdTxt = '', pend = null;
     const hurry = (q === 2 || q >= 4) && clock < 120;
     if (callPass(t)) {
       // the quarterback drops back
@@ -1765,10 +1774,12 @@ function simGame(a, h, opts = {}) {
       const scramble = clamp(.035 + (off.mob - 75) * .0025, .01, .12);
       tot[t].att += 0;
       if (rand() < sackP) {
-        gain = -Math.round(5 + rand() * 5); put(t, off.qb, 'sacked', 1); tot[t].sk++; put(opp(t), pickW(def.rushers), 'sk', 1); clockUse = 32;
+        gain = -Math.round(5 + rand() * 5); put(t, off.qb, 'sacked', 1); tot[t].sk++; const skr = pickW(def.rushers); put(opp(t), skr, 'sk', 1); clockUse = 32;
         if (rand() < .1 + wx.fum) { turnover = true; }
+        pend = [`${lastNameE(off.qb)} sacked by ${lastNameE(skr)} for a loss of ${-gain}${turnover ? '. Fumble, recovered by ' + opp(t) : ''}`, turnover ? 'to' : 'sack'];
       } else if (rand() < scramble) {
         gain = Math.round(clamp(3 + (off.mob - 75) * .12 + randn() * 4, -2, 30)); put(t, off.qb, 'car', 1); put(t, off.qb, 'ry', gain); tot[t].car++; tot[t].ry += gain; tackleBy(t);
+        pend = [`${lastNameE(off.qb)} scrambles ${side3()} for ${gn(gain)}`, 'run'];
       } else {
         const rec = pickW(off.targets.map(([p, w]) => [p, w * Math.pow(Math.max(.3, A(p, 'Route running')) / 75, .9) * (.6 + rand() * .8)]));
         put(t, off.qb, 'att', 1); put(t, rec, 'tgt', 1); tot[t].att++;
@@ -1776,7 +1787,9 @@ function simGame(a, h, opts = {}) {
         const depth = rand() < deepP ? 'deep' : rand() < .36 ? 'mid' : 'short';
         const intP = clamp(T.int + (depth === 'deep' ? .018 : depth === 'mid' ? .006 : -.004) - (off.dec - 75) * .0007 + (def.cover - 75) * .0005 + (def.hawk - 75) * .0003, .004, .07);
         if (rand() < intP) {
-          turnover = true; tov = `${lastNameE(off.qb)} intercepted`; put(t, off.qb, 'int', 1); tot[t].ints++; put(opp(t), pickW(def.dbs.map(([p, w]) => [p, w * Math.pow(A(p, 'Ball skills') / 75, 3)])), 'dint', 1); clockUse = 10;
+          const pick = pickW(def.dbs.map(([p, w]) => [p, w * Math.pow(A(p, 'Ball skills') / 75, 3)]));
+          turnover = true; tov = `${lastNameE(off.qb)} intercepted`; put(t, off.qb, 'int', 1); tot[t].ints++; put(opp(t), pick, 'dint', 1); clockUse = 10;
+          pend = [`${lastNameE(off.qb)} pass ${depth} ${side3()} intended for ${lastNameE(rec)}, INTERCEPTED by ${lastNameE(pick)}`, 'to'];
           gain = depth === 'deep' ? 25 : depth === 'mid' ? 12 : 4;
         } else {
           const base = depth === 'deep' ? .37 : depth === 'mid' ? .58 : .75;
@@ -1792,9 +1805,11 @@ function simGame(a, h, opts = {}) {
             if (td) { put(t, off.qb, 'ptd', 1); put(t, rec, 'rectd', 1); tot[t].ptd++; tdTxt = `${lastNameE(rec)} ${Math.round(gain)}-yd TD catch from ${lastNameE(off.qb)}`; } else tackleBy(t);
             clockUse = hurry ? 14 : rand() < .25 ? 9 : 39;
             if (!td && rand() < .005 + wx.fum) turnover = true;
+            pend = [`${lastNameE(off.qb)} pass ${depth} ${side3()} to ${lastNameE(rec)} for ${gn(gain)}${td ? ', TOUCHDOWN' : ''}${turnover ? '. Fumble, recovered by ' + opp(t) : ''}`, td ? 'td' : turnover ? 'to' : gain >= 20 ? 'big' : 'pass'];
           } else {
             clockUse = 6;
-            if (rand() < .36) put(opp(t), pickW(def.dbs), 'pd', 1);
+            const brk = rand() < .36 ? pickW(def.dbs) : null; if (brk) put(opp(t), brk, 'pd', 1);
+            pend = [`${lastNameE(off.qb)} pass ${depth} ${side3()} incomplete, intended for ${lastNameE(rec)}${brk ? ' (broken up by ' + lastNameE(brk) + ')' : ''}`, 'inc'];
           }
         }
       }
@@ -1809,14 +1824,17 @@ function simGame(a, h, opts = {}) {
       if (td) { put(t, rb, 'rtd', 1); tot[t].rtd++; tdTxt = `${lastNameE(rb)} ${Math.round(gain)}-yd TD run`; } else tackleBy(t, true);
       clockUse = hurry ? 20 : 41;
       if (!td && rand() < clamp(.006 - (A(rb, 'Ball security') - 75) * .0002 + wx.fum, .001, .02)) turnover = true;
+      pend = [`${lastNameE(rb)} runs ${['up the middle', 'left end', 'right end', 'off left tackle', 'off right tackle'][Math.floor(rand() * 5)]} for ${gn(gain)}${td ? ', TOUCHDOWN' : ''}${turnover ? '. Fumble, recovered by ' + opp(t) : ''}`, td ? 'td' : turnover ? 'to' : gain >= 15 ? 'big' : 'run'];
     }
     if (hurry) clockUse = Math.min(clockUse, 18);
     if (dcur) { dcur.n++; dcur.y += gain; }
+    if (pend && td) pl(pend[0], pend[1]);
+    else if (pend) { const fd = !turnover && yl + gain > 0 && gain >= togo && down <= 4; pl(pend[0] + (fd ? ', first down' : ''), pend[1]); }
     if (td) { scoreTD(t, tdTxt || 'Touchdown'); if (tick(clockUse) === 'end') break; continue; }
     if (turnover) { dres = tov || 'Fumble, lost'; tov = ''; mo[t] = Math.max(-1, mo[t] - .25); mo[opp(t)] = Math.min(1, mo[opp(t)] + .25); newDrive(opp(t), clamp(100 - (yl + gain), 1, 99)); if (tick(clockUse) === 'end') break; continue; }
-    yl += gain; if (yl <= 0) { score[opp(t)] += 2; sc.push([fmt(), opp(t), 'Safety']); dres = 'Safety'; newDrive(t, 30); if (tick(clockUse) === 'end') break; continue; }
+    yl += gain; if (yl <= 0) { score[opp(t)] += 2; sc.push([fmt(), opp(t), 'Safety']); if (keepLog && plog.length) { const L0 = plog[plog.length - 1]; L0[6] += ', SAFETY'; L0[7] = 'td'; L0[8] = score[a]; L0[9] = score[h]; } dres = 'Safety'; newDrive(t, 30); if (tick(clockUse) === 'end') break; continue; }
     if (gain >= togo) { down = 1; togo = Math.min(10, 100 - yl); } else { down++; togo -= gain; }
-    if (down > 4) { mo[t] = Math.max(-1, mo[t] - .15); dres = 'Turnover on downs'; newDrive(opp(t), 100 - yl); }
+    if (down > 4) { mo[t] = Math.max(-1, mo[t] - .15); dres = 'Turnover on downs'; if (keepLog && plog.length) plog[plog.length - 1][6] += '. Turnover on downs'; newDrive(opp(t), 100 - yl); }
     const tk = tick(clockUse);
     if (tk === 'end') {
       // overtime: both teams get a chance, then the next score wins
@@ -1826,11 +1844,11 @@ function simGame(a, h, opts = {}) {
     if (ot && score[a] !== score[h] && otPoss >= 2) break;
   }
   endDrive(dres || 'End of the game');
-  if (score[a] === score[h]) { const w = rand() < .5 ? a : h; score[w] += 3; sc.push(['OT', w, 'Walk-off field goal']); ot = true; if (keepLog) dlog.push({t: w, q: 5, c: 'OT', n: 0, y: 0, r: 'Walk-off field goal', s: [score[a], score[h]]}); }
+  if (score[a] === score[h]) { const w = rand() < .5 ? a : h; score[w] += 3; sc.push(['OT', w, 'Walk-off field goal']); ot = true; if (keepLog) { dlog.push({t: w, q: 5, c: 'OT', n: 0, y: 0, r: 'Walk-off field goal', s: [score[a], score[h]]}); plog.push([5, '0:00', w, 4, 0, '', `${lastNameE(S[w].k)} walk-off field goal is good`, 'fg', score[a], score[h]]); } }
   const ta = teamRating(a), th = teamRating(h);
   const ba = boxFrom(a, S[a].d, L[a], tot[a]), bh = boxFrom(h, S[h].d, L[h], tot[h]);
   const hurt = [...injuries(a, ta), ...injuries(h, th)];
-  return {a, h, as: score[a], hs: score[h], ot, ba, bh, hurt, wx: wx.k === 'clear' || wx.k === 'dome' ? undefined : wx.k, sc: sc.slice(0, 14), dl: keepLog ? dlog : undefined};
+  return {a, h, as: score[a], hs: score[h], ot, ba, bh, hurt, wx: wx.k === 'clear' || wx.k === 'dome' ? undefined : wx.k, sc: sc.slice(0, 14), dl: keepLog ? dlog : undefined, pl: keepLog ? plog : undefined};
 }
 // The game's stat lines into season totals and the compact box kept on the game
 function boxFrom(t, d, Lt, tt) {
@@ -1872,6 +1890,8 @@ function simWeekRaw(w) {
     if (wk !== w) continue;
     const g = simGame(a, h, {wk: w});
     g.wk = w;
+    // every play is kept for your latest game; older regular-season games keep their drives and box scores
+    if (g.pl) for (const x of G.results[G.season]) if (x.pl && !x.po) delete x.pl;
     G.results[G.season].push(g);
     chemGame(g);
     out.push(g);
@@ -2011,7 +2031,7 @@ function compact(next) {
     if (yr >= next - 1) { for (const g of G.results[yr]) if (yr < next && g.h !== G.user && g.a !== G.user) delete g.dl; continue; }
     for (const g of G.results[yr]) {
       const mine = g.h === G.user || g.a === G.user;
-      delete g.dl; delete g.sc; delete g.hurt; delete g.wx;
+      delete g.dl; delete g.pl; delete g.sc; delete g.hurt; delete g.wx;
       if (!mine) { delete g.ba; delete g.bh; }
     }
   }
