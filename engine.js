@@ -631,9 +631,70 @@ function standingOffer(partner, give, get) {
   if (!partner || partner === G.user) return null;
   return (G.offers || []).find(o => o.from === partner && o.give.length && o.give.every(id => give.includes(id)) && get.every(id => o.get.includes(id))) || null;
 }
+// Your deadline stance moves the market. Selling: contenders pay a premium for your veterans. Buying: teams that are
+// selling take a little less for theirs when you pay in picks and young players. Only before the deadline.
+const isVet = p => p && (ageAdj(p) >= 28 || p.end === G.season);
+function stanceBoost(partner, id) {
+  const st = stanceOf(); if (!st || !(G.phase === 'season' || G.phase === 'deadline')) return 1;
+  const p = G.players[id];
+  if (st === 'sell') return p && isVet(p) && !rebuilding(partner) ? 1.12 : 1;
+  if (st === 'buy') return rebuilding(partner) && (!p || ageAdj(p) <= 25) ? 1.08 : 1;
+  return 1;
+}
+// Pad a package with their smallest extra picks until it is a good deal for you, as far as they will go
+function padPackage(t, give, pkg, target) {
+  let ev = evalTrade(t, give, pkg);
+  const extra = G.picks.filter(k => k.owner === t && !pkg.includes(k.id) && livePick(k.id)).map(k => ({id: k.id, v: assetValue(k.id)})).sort((a, b) => a.v - b.v);
+  for (const x of extra) {
+    if (ev.fair >= target || pkg.length >= 4) break;
+    const p2 = [...pkg, x.id], e2 = evalTrade(t, give, p2);
+    if (e2.fleece || e2.ratio < 1 || e2.issues.length) continue;
+    pkg = p2; ev = e2;
+  }
+  return pkg;
+}
+// The phone rings the way your stance says it should
+function stanceOffers(st, n) {
+  const offers = [], used = new Set();
+  if (st === 'sell') {
+    // contenders, the most desperate first, for your veterans; they pay in picks and young players
+    const vets = roster(G.user).filter(p => p.pos !== 'K' && p.pos !== 'P' && !p.inj && p.ovr >= 68 && isVet(p) && !(p.pos === 'QB' && ageAdj(p) <= 30)).sort((a, b) => playerValue(b) - playerValue(a)).slice(0, 8);
+    const buyers = shuffle(teamList().filter(t => t !== G.user && !rebuilding(t)));
+    for (const p of vets) {
+      let per = 0;
+      for (const t of buyers) {
+        if (offers.length >= n || per >= 2) break;
+        if (needBoost(t, p) < .95 || !offerFresh(t, [p.id])) continue;
+        let pkg = buildPackage(t, p.id, false, 'picks') || buildPackage(t, p.id, true, 'picks') || buildPackage(t, p.id, true);
+        if (!pkg || pkg.some(id => G.players[id] && ageAdj(G.players[id]) > 25)) continue;   // no veterans back: you are selling
+        pkg = padPackage(t, [p.id], pkg, 1.06);
+        const ev = evalTrade(t, [p.id], pkg);
+        if (!ev.ok || ev.fair < .97) continue;
+        offers.push({id: 'o' + G.week + 's' + t + p.id, from: t, kind: 'want', give: [p.id], get: pkg, msg: `The ${G.teams[t].nick} are making a playoff push and want ${p.n}.`});
+        per++;
+      }
+      if (offers.length >= n) break;
+    }
+  }
+  if (st === 'buy') {
+    // teams that are selling call with veterans who would start for you, asking for picks first
+    for (const t of shuffle(teamList().filter(x => x !== G.user && (rebuilding(x) || (situations()[x] || {}).status === 'Seller')))) {
+      if (offers.length >= n) break;
+      const vet = roster(t).filter(p => !used.has(p.id) && ageAdj(p) >= 26 && p.ovr >= 74 && !p.inj && p.pos !== 'K' && p.pos !== 'P' && needBoost(G.user, p) > 1 && offerFresh(t, [p.id])).sort((a, b) => b.ovr - a.ovr)[0];
+      if (!vet) continue;
+      const ask = fillSide(t, [], [vet.id], userPool('picks')) || fillSide(t, [], [vet.id], userPool('all'));
+      if (!ask || ask.length > 3) continue;
+      const ev = evalTrade(t, ask, [vet.id]);
+      if (!ev.ok || ev.fair < .95 || ev.fair > 1.3) continue;
+      used.add(vet.id);
+      offers.push({id: 'o' + G.week + 'b' + t + vet.id, from: t, kind: 'sell', give: ask, get: [vet.id], msg: `The ${G.teams[t].nick} are selling and will move ${vet.n}.`});
+    }
+  }
+  return offers;
+}
 function evalTrade(partner, give, get) {
   // give = assets the user sends, get = assets the user receives. Scored from the partner's side.
-  const vIn = stacked(give.map(id => assetValue(id, partner)));
+  const vIn = stacked(give.map(id => assetValue(id, partner) * stanceBoost(partner, id)));
   const vOut = get.reduce((s, id) => s + assetValue(id, partner), 0);
   const capOf = ids => ids.reduce((s, id) => s + (G.players[id] ? G.players[id].cap : 0), 0);
   const capGive = capOf(give), capGet = capOf(get);
@@ -1048,8 +1109,11 @@ function playerFresh(id) { const t = (G.offerAbout || {})[id]; return t == null 
 function noteDecline(o) { G.offerSeen = G.offerSeen || {}; G.offerSeen[offerKey(o.from, o.kind === 'sell' ? o.get : o.give)] = {at: G.offerTick || 0, no: 1}; }
 function genOffers(n, minimum) {
   n = n || 3; minimum = minimum == null ? 1 : minimum;
-  const offers = [];
-  const used = new Set();
+  const st0 = stanceOf() && (G.phase === 'season' || G.phase === 'deadline') ? stanceOf() : null;
+  const offers = st0 === 'sell' || st0 === 'buy' ? stanceOffers(st0, 5) : [];
+  if (offers.length >= 3) return offers;                 // the market you asked for, not the usual mix
+  n = Math.max(n, offers.length + 1);
+  const used = new Set(offers.flatMap(o => [...o.give, ...o.get]));
   const mine = roster(G.user).filter(p => p.ovr >= 70 && !p.inj && p.pos !== 'K' && p.pos !== 'P');
   for (const t of shuffle(teamList().filter(x => x !== G.user))) {
     if (offers.length >= n) break;
@@ -1234,9 +1298,10 @@ function shopPlayer(pid, kind, pos) {
   const p = G.players[pid]; if (!p) return [];
   const want = assetValue(pid), out = [];
   // ask the teams that need him most first; a team with a mild need still picks up the phone
-  const teams = teamList().filter(x => x !== G.user).map(t => ({t, nb: needBoost(t, p)})).filter(x => x.nb >= .95).sort((a, b) => b.nb - a.nb);
+  const selling = stanceOf() === 'sell' && isVet(p) && (G.phase === 'season' || G.phase === 'deadline');
+  const teams = teamList().filter(x => x !== G.user && !(selling && rebuilding(x))).map(t => ({t, nb: needBoost(t, p)})).filter(x => x.nb >= .95).sort((a, b) => b.nb - a.nb);
   for (const {t} of teams) {
-    let pkg = buildPackage(t, pid, false, kind, pos) || buildPackage(t, pid, true, kind, pos);
+    let pkg = (selling && kind !== 'players' && (buildPackage(t, pid, false, 'picks') || buildPackage(t, pid, true, 'picks'))) || buildPackage(t, pid, false, kind, pos) || buildPackage(t, pid, true, kind, pos);
     // role players move for a single pick, often a late one: the most common trade in the league
     if (!pkg && kind !== 'players') {
       const pk = G.picks.filter(k => k.owner === t).map(k => ({id: k.id, v: assetValue(k.id)})).filter(x => x.v >= want * .6 && x.v <= want * 1.5).sort((a, b) => a.v - b.v)[0];
@@ -1247,6 +1312,7 @@ function shopPlayer(pid, kind, pos) {
     let ev = evalTrade(t, [pid], pkg);
     while (ev.ratio < 1 && pkg.length > 1) { const sm = pkg.slice().sort((x, y) => assetValue(x, t) - assetValue(y, t))[0]; pkg = pkg.filter(x => x !== sm); ev = evalTrade(t, [pid], pkg); }
     if (ev.ratio < 1 || ev.fleece) continue;
+    if (selling) { pkg = padPackage(t, [pid], pkg, 1.06); ev = evalTrade(t, [pid], pkg); }
     out.push({partner: t, give: [pid], get: pkg, ev});
     if (out.length >= 8) break;
   }

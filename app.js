@@ -1875,7 +1875,7 @@ function deadlinePlan() {
     : '';
   return `<div class="card deadplan"><div class="cardh"><h3>Deadline plan</h3><div class="seg" role="group" aria-label="Deadline plan">${opt('buy', 'Buyer')}${opt('hold', 'Hold')}${opt('sell', 'Seller')}</div></div>
     <div class="coachline"><span class="kicker">Coach</span><span>${esc(a.line)}</span></div>
-    ${st ? `<p class="small muted" style="margin:8px 0 0">${st === 'buy' ? 'Teams that are selling call you with veterans, and nobody asks about your starters.' : st === 'sell' ? 'Contenders call about your veterans and pay in picks.' : 'You hear from everyone and change nothing on purpose.'}</p>` : ''}
+    ${st ? `<p class="small muted" style="margin:8px 0 0">${st === 'buy' ? 'Teams that are selling call with veterans who would start for you, take a little less when you pay in picks and young players, and nobody asks about your starters.' : st === 'sell' ? 'Contenders call about your veterans and pay a deadline premium, mostly in picks and young players. Your trade block gets the same treatment.' : 'You hear from everyone and change nothing on purpose.'}</p>` : ''}
     ${after}</div>`;
 }
 function renderTrade() {
