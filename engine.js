@@ -515,8 +515,8 @@ function valueParts(p, forTeam) {
   if (forTeam && G.teams[forTeam]) {
     // no single team's view strays too far from the league
     // factors compound gently and stay within 0.65× to 1.45× of the league view
-    const raw = v / Math.max(.01, vBase), soft = clamp(Math.pow(raw, .7), .8, 1.25);
-    if (Math.abs(soft - raw) > .01) { v = vBase * soft * post; post = 1; steps.push({k: 'Overall', note: `All ${G.teams[forTeam].nick} factors together: ×${soft.toFixed(2)} on the league view (teams stay within 0.8× to 1.25×)`, v}); }
+    const raw = v / Math.max(.01, vBase), soft = clamp(Math.pow(raw, .7), .88, 1.15);
+    if (Math.abs(soft - raw) > .01) { v = vBase * soft * post; post = 1; steps.push({k: 'Overall', note: `All ${G.teams[forTeam].nick} factors together: ×${soft.toFixed(2)} on the league view (teams stay within 0.88× to 1.15×)`, v}); }
   }
   v *= post;
   return {steps, total: Math.max(.3, v), market: mk, yrs};
@@ -725,7 +725,7 @@ function evalTrade(partner, give, get) {
   // they remember how the last deals with you went
   const trust = (G.trust || {})[partner] || 0;
   // teams want a little extra to say yes; the premium scales with the deal, so a late-pick swap is not priced like a blockbuster
-  const need = (vOut * (rival ? 1.15 : 1.05) + Math.min(1.5, .1 + vOut * .12) + spotCost) * (1 + Math.max(0, -trust) * .06 - Math.max(0, trust) * .02);
+  const need = (vOut * (rival ? 1.12 : 1.04) + Math.min(1, .05 + vOut * .08) + spotCost) * (1 + Math.max(0, -trust) * .06 - Math.max(0, trust) * .02);
   const ratio0 = need > 0 ? vIn / need : 1;
   // what a neutral observer thinks: is this fair to you?
   const fair = get.reduce((s, id) => s + assetValue(id), 0) / Math.max(1, give.reduce((s, id) => s + assetValue(id), 0));
@@ -769,8 +769,22 @@ function syncDraftSlot(pickId, owner) { if (G.draft) for (const s of G.draft.ord
 
 // Fill one side from a pool so the other team says yes, overpaying as little as possible.
 function fillSide(partner, give, get, pool) {
-  const g = give.slice();
+  let g = give.slice();
   let ev = evalTrade(partner, g, get);
+  // the cheapest way to get there: every set of one to three of your pieces, scored on value first, and the one
+  // that lands closest to what they need wins (fewer pieces on a near tie). Only those few go through the full check.
+  if (ev.ratio < 1) {
+    const val = id => assetValue(id, partner) * stanceBoost(partner, id);
+    const base = g.map(val), need = ev.need;
+    const C = pool.filter(id => !g.includes(id) && !get.includes(id)).map(id => ({id, v: val(id), r: assetValue(id)})).filter(x => x.v > .05).sort((a, b) => b.v - a.v).slice(0, 28);
+    const combos = [];
+    // the measure is what it costs you in real value, not how they score it
+    const add = L => { const sv = stacked([...base, ...L.map(x => x.v)]); if (sv >= need * .995) combos.push({ids: L.map(x => x.id), k: L.reduce((a, x) => a + x.r, 0) * (1 + .03 * (L.length - 1))}); };
+    for (let i = 0; i < C.length; i++) { add([C[i]]); for (let j = i + 1; j < C.length; j++) { add([C[i], C[j]]); for (let k = j + 1; k < C.length; k++) add([C[i], C[j], C[k]]); } }
+    combos.sort((a, b) => a.k - b.k);
+    for (const c of combos.slice(0, 40)) { const e = evalTrade(partner, [...g, ...c.ids], get); if (e.ratio >= 1 && !e.fleece) { g = [...g, ...c.ids]; ev = e; break; } }
+    if (ev.ratio < 1) return null;                         // no sensible deal: better none than a giveaway
+  }
   for (let step = 0; step < 5 && ev.ratio < 1; step++) {
     const cands = pool.filter(id => !g.includes(id)).map(id => ({id, v: assetValue(id, partner)})).sort((a, b) => a.v - b.v);
     if (!cands.length) break;
@@ -1054,7 +1068,10 @@ function findPackages(pid) {
     seen.add(key);
     out.push({label, partner: p.tm, give: g, get: [pid], ev: evalTrade(p.tm, g, [pid])});
   }
-  return out;
+  // never pass off a giveaway as a deal: a package that pays far more than they asked for is dropped,
+  // unless it is the only way to get him at all
+  const sane = out.filter(x => x.ev.ratio <= 1.35 || x.ev.fair >= .8);
+  return sane.length ? sane : out.sort((a, b) => a.ev.ratio - b.ev.ratio).slice(0, 1);
 }
 // A team builds an offer for one of your players from its own assets
 // want: 'picks', 'players' or 'any'; pos narrows the players you will take
