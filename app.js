@@ -188,6 +188,13 @@ function modal(html, wide) {
   const back = '<button class="sback" data-act="sheetBack" aria-label="Back">‹ Back</button>';
   if ((UI.sheetStack || []).length) html = html.includes('<div class="sheeth">') ? html.replace('<div class="sheeth">', '<div class="sheeth">' + back) : `<div class="sbackbar">${back}</div>` + html;
   modal0(html, wide);
+  // an answer (yes, no, can't) that would sit under the pinned buttons is scrolled into view, so a tap never looks ignored
+  requestAnimationFrame(() => {
+    const sh = $('#layer .sheet'), v = sh && sh.querySelector('.vban'); if (!v) return;
+    const foot = sh.querySelector(':scope > .row.end:last-child, .callfoot'), fr = foot && foot.getBoundingClientRect();
+    const limit = (fr && getComputedStyle(foot).position === 'sticky' ? fr.top : sh.getBoundingClientRect().bottom) - 8, r = v.getBoundingClientRect();
+    if (r.bottom > limit) sh.scrollTop += r.bottom - limit + 12;
+  });
 }
 function modal0(html, wide) { navMark(); clearTimeout(UI.closeT); const had = !!$('#layer .modal:not(.closing)'); const old = $('#layer .sheet'), oldKey = old && (old.querySelector('h3') || {}).textContent, oldTop = old ? old.scrollTop : 0, oldIn = old ? saveScroll(old) : {}; $('#layer').innerHTML = `<div class="modal" data-act="closeModal"><div class="sheet${wide ? ' wide' : ''}" data-stop="1" role="dialog" aria-modal="true">${html}</div></div>`; if (had) { const m = $('#layer .modal'); if (m) m.classList.add('still'); const sh = $('#layer .sheet'); if (sh && oldKey && (sh.querySelector('h3') || {}).textContent === oldKey) { sh.scrollTop = oldTop; restoreScroll(sh, oldIn); } } }
 // Phones: every sheet can always be closed. A close button that stays in view, a swipe down on the sheet, the
@@ -2996,6 +3003,7 @@ document.addEventListener('click', e => {
   if (fromSheet && SHEET_NAV.has(a)) UI.pushSheet = {html: fromSheet.innerHTML, wide: fromSheet.classList.contains('wide')};
   else if (a !== 'sheetBack') UI.pushSheet = null;
   if (BIG[a] && !el.dataset.force) { const c = BIG[a](el); if (c) { askFirst(c, el); return; } }
+  if (BIG[a] && el.dataset.force && el.closest('#layer')) closeModal();     // you said yes: the question goes away before it runs
   if (TIME_ACTS.has(a) && G) G.newsMark = (G.news || []).length;
   switch (a) {
     case 'sheetBack': { const prev = (UI.sheetStack || []).pop(); if (!prev) { closeModal(); return; } UI.backing = true; UI.pushSheet = null; modal(prev.html.replace(/<div class="sbackbar">[\s\S]*?<\/div>/, '').replace(/<button class="sback"[^>]*>‹ Back<\/button>/, ''), prev.wide); return; }
@@ -3115,9 +3123,10 @@ document.addEventListener('click', e => {
     }
     case 'depthReset': E.setDepth(el.dataset.pos, []); persist(); depthModal(el.dataset.pos); render(); return;
     case 'playWeek': playWeek(); return;
-    case 'toDeadline': UI.tview = null; simWithReel(`${G.season} · Weeks ${G.week + 1}-${E.DEADLINE_WEEK}`, () => { E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; }); return;
-    case 'simRest': UI.give = []; UI.get = []; G.offers = []; simWithReel(`${G.season} · Weeks ${G.week + 1}-18`, () => { finishRegular(); UI.tab = 'home'; }); return;
+    case 'toDeadline': if (G.phase !== 'season' || G.week >= E.DEADLINE_WEEK) return; UI.tview = null; simWithReel(`${G.season} · Weeks ${G.week + 1}-${E.DEADLINE_WEEK}`, () => { E.simTo(E.DEADLINE_WEEK); G.phase = 'deadline'; E.updateConfidence('deadline'); E.refreshOffers(); UI.proj = null; }); return;
+    case 'simRest': if (G.phase !== 'season' && G.phase !== 'deadline') return; UI.give = []; UI.get = []; G.offers = []; simWithReel(`${G.season} · Weeks ${G.week + 1}-18`, () => { finishRegular(); UI.tab = 'home'; }); return;
     case 'poNext': {
+      if ($('.cast')) return;                                   // one game on screen at a time
       // your playoff game plays out drive by drive; when you are out, the round just sims
       const P = G.playoffs[G.season], alive = P && !Object.prototype.hasOwnProperty.call(P.elim, G.user), mark = (G.injLog || []).length, rn = E.ROUND_NAMES[P.round];
       if (!alive) { simWithReel(`${G.season} playoffs`, () => { E.simPlayoffRound(); endSeasonIfDone(); }); return; }
@@ -3207,7 +3216,7 @@ document.addEventListener('click', e => {
       if (!(v > 0)) { toast('Enter a yearly salary.'); return; }
       UI.faApy[id] = v;
       const r = E.negOffer(id, 're', v, yrs); persist(); render();
-      if (r.ok) { const q = G.players[id]; signPopup(id, q.cap, Math.max(1, q.end - G.season + 1)); } else negModal(id, r.msg, r.walked ? 'no' : /cap space|no longer|already/.test(r.msg) ? 'warn' : 'counter');
+      if (r.ok) { const q = G.players[id]; signPopup(id, q.cap, Math.max(1, q.end - G.season + 1)); } else negModal(id, r.msg, r.walked ? 'no' : /cap space|over the cap|of room|no longer|already/.test(r.msg) ? 'warn' : 'counter');
       return;
     }
     case 'ddToggle': UI.ddOpen = UI.ddOpen === el.dataset.dd ? null : el.dataset.dd; render(); return;
@@ -3374,11 +3383,12 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable);
-  if (!typing && G && !$('#layer .modal:not(.closing)') && !$('.reel') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+  if (!typing && G && !$('#layer .modal:not(.closing)') && !$('.reel') && !$('.cast') && !e.metaKey && !e.ctrlKey && !e.altKey) {
     if (e.key === 'n' || e.key === 'N') { const b = document.querySelector('#bnav .bnext'); if (b) { e.preventDefault(); b.click(); } return; }
     const tabs = {1: 'home', 2: 'roster', 3: 'trade', 4: 'league', 5: 'resume'};
     if (tabs[e.key]) { e.preventDefault(); go(tabs[e.key]); return; }
   }
+  if (e.key === 'Escape' && $('.cast')) { const b = $('.cast [data-cast=end]') || $('.cast [data-cast=close]'); if (b) b.click(); return; }
   if (e.key === 'Escape' && UI.ddOpen) { UI.ddOpen = null; render(); return; }
   if (e.key === 'Escape' && $('#layer').innerHTML) { closeModal(); UI.found = null; }
   if (e.key === 'Enter' && e.target.id === 'tq') { UI.tq = e.target.value; render(); const i = $('#tq'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }

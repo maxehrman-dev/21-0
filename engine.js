@@ -1954,6 +1954,12 @@ function compact(next) {
   delete G.perfZ;
   if (G.news && G.news.length > 120) G.news.length = 120;
 }
+// Why a contract does not fit, in plain words, with what to do about it
+function capRoomMsg(apy) {
+  const room = capSpace(G.user);
+  return room < 0 ? `You are $${(-room).toFixed(1)}M over the cap, so you cannot add $${apy.toFixed(1)}M. Restructure a contract or release someone first.`
+    : `That is $${apy.toFixed(1)}M a year and you have $${room.toFixed(1)}M of room. Restructure a contract, release someone, or offer less.`;
+}
 function beginOffseason() {
   const prev = G.season, next = prev + 1;
   G.history[prev] = G.history[prev] || {finish: userFinish(prev), champ: G.playoffs[prev].champ, ovr: teamRating(G.user).ovr};
@@ -2128,7 +2134,7 @@ function contenderBonus(t) { const o = teamRating(t).ovr; return clamp((o - 74) 
 function offerFA(id, apy, yrs) {
   const p = G.players[id];
   if (!p || p.tm !== 'FA') return {ok: false, msg: 'Already signed elsewhere.'};
-  if (apy > capSpace(G.user) + .001) return {ok: false, msg: `You only have $${capSpace(G.user).toFixed(1)}M in cap space.`};
+  if (apy > capSpace(G.user) + .001) return {ok: false, msg: capRoomMsg(apy)};
   if (roster(G.user).length >= 90) return {ok: false, msg: 'Your offseason roster is full (90). Release someone first.'};
   const price = faPrice(p, yrs);
   if (apy + .001 >= price) {
@@ -2162,7 +2168,7 @@ function negOffer(id, kind, apy, yrs) {
   if (!p || !n) return {ok: false, msg: 'He is no longer available.'};
   if (n.walked) return {ok: false, msg: `${p.n} is done talking to you.`};
   if (kind === 'fa' && p.tm !== 'FA') return {ok: false, msg: `${p.n} already signed with the ${G.teams[p.tm] ? G.teams[p.tm].nick : 'another team'}.`};
-  if (apy > capSpace(G.user) + .001) return {ok: false, msg: `You only have $${capSpace(G.user).toFixed(1)}M in cap space.`};
+  if (apy > capSpace(G.user) + .001) return {ok: false, msg: capRoomMsg(apy)};
   apy = Math.round(apy * 10) / 10;
   const it = interest(p, G.user);
   if (apy + .001 >= n.floor) {
