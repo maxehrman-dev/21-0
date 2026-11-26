@@ -1531,7 +1531,8 @@ function homeCutdown() {
   const d = E.depth(G.user);
   const starters = new Set(E.POS_ORDER.flatMap(pos => d[pos].slice(0, E.STARTERS[pos]).map(p => p.id)));
   const others = ros.filter(p => !UI.cutSel.includes(p.id)).sort((a, b) => (starters.has(a.id) - starters.has(b.id)) || E.playerValue(a) - E.playerValue(b));
-  const row = (p, on) => { const c = E.cutCost(p); return `<label class="trow cut ${on ? 'sel' : ''}"><input type="checkbox" data-cut="${p.id}" ${on ? 'checked' : ''}>${pRow(p, `${starters.has(p.id) ? '<b>Starter</b> · ' : ''}saves ${money(c.save)}${c.dead ? ` · ${money(c.dead)} dead` : ''}`)}</label>`; };
+  const row = (p, on) => { const c = E.cutCost(p), why = on ? E.cutReason(p.id) : ''; return `<label class="trow cut ${on ? 'sel' : ''}"><input type="checkbox" data-cut="${p.id}" ${on ? 'checked' : ''}>${pRow(p, `${why ? `<span class="cutwhy">${esc(why)}</span> · ` : ''}${starters.has(p.id) && !why ? '<b>Starter</b> · ' : ''}saves ${money(c.save)}${c.dead ? ` · ${money(c.dead)} dead` : ''}`)}</label>`; };
+  const restr = E.cutRestr();
   return `${stepper(4)}<section class="hero"><div><h2>Final roster${helpBtn('cutdown')}</h2>
     <p class="lead">Get to ${E.ROSTER_MAX} players and under the cap. Suggested cuts are ready.</p></div>
     ${issues.length ? '<button class="btn go lg" data-act="fixRoster">Fix it for me</button>' : `<button class="btn go lg" data-act="startS2">Start the ${G.season} season</button>`}</section>
@@ -1541,7 +1542,7 @@ function homeCutdown() {
     ${dead ? `<div><b class="num">${money(dead)}</b><span>New dead money</span></div>` : ''}</div>
     <div class="row end">${ros.length < 53 ? `<button class="btn" data-act="fillRoster">Fill ${53 - ros.length} open spot${53 - ros.length > 1 ? 's' : ''} at the minimum</button>` : ''}${sel.length || ros.length > 53 ? `<button class="btn ghost" data-act="cutAuto">Suggest again</button><button class="btn go" data-act="cutApply" ${sel.length ? '' : 'disabled'}>Release ${sel.length} player${sel.length === 1 ? '' : 's'}</button>` : ''}</div>
     ${issues.length ? `<div class="small bad">${issues.map(esc).join(' ')}</div>` : (E.roster(G.user).length < E.ROSTER_MAX ? `<div class="small muted">Open spots fill with minimum-salary players when the season starts.</div>` : '<div class="small good">Roster is set at 53. You can start the season.</div>')}</div>
-  ${ros.length > 53 || sel.length || UI.cutOpen ? `<div class="grid g2"><div class="card"><h3>Release list</h3><div class="plist">${sel.map(p => row(p, true)).join('') || '<p class="muted">Nobody selected.</p>'}</div></div>
+  ${ros.length > 53 || sel.length || UI.cutOpen ? `<div class="grid g2"><div class="card"><h3>Release list</h3>${restr.length ? `<p class="small muted" style="margin-top:0">First, restructure ${restr.map(r => `${esc(G.players[r.id].n)} (+${money(r.save)})`).join(', ')}: nobody has to leave for that money.</p>` : ''}<div class="plist">${sel.map(p => row(p, true)).join('') || '<p class="muted">Nobody selected.</p>'}</div></div>
   <div class="card"><h3>Everyone else</h3><div class="plist scroll">${others.map(p => row(p, false)).join('')}</div></div></div>` : `<button class="btn ghost sm" data-act="cutOpen">Release someone anyway</button>`}`;
 }
 
@@ -1849,6 +1850,23 @@ const posChips = (key, cur) => { const shop = SHOP_KEYS.has(key), NS = shop ? ne
   return `<div class="poschips" role="group" aria-label="Filter by position">${(shop && NS.size ? [['NEEDS', 'My needs'], ...POS_GROUPS] : POS_GROUPS).map(([k, l]) => `<button class="pchip ${(cur || 'ALL') === k || (cur && cur !== k && k !== 'ALL' && k !== 'NEEDS' && cur !== 'NEEDS' && POS_GROUPS.every(([g]) => g !== cur) && inGroup(cur, k)) ? 'on' : ''} ${k === 'NEEDS' ? 'needchip' : ''}" data-act="posFilter" data-k="${key}" data-v="${k}">${l}${shop && k !== 'ALL' && k !== 'NEEDS' && hasNeed(k) ? '<i class="ndot" aria-label="a need"></i>' : ''}</button>`).join('')}</div>`; };
 // One side of the deal, each item with an x to take it out
 const dockSide = (ids, side) => ids.length ? ids.map(id => `<div class="dockitem">${assetMini(id)}<button class="xs" data-act="toggle" data-side="${side}" data-id="${id}" aria-label="Take ${esc(E.assetName(id))} out of the deal">×</button></div>`).join('') : '<span class="small muted">Nothing yet</span>';
+// Buyer, hold or seller: from Week 4 to the deadline. The coach gives his read; the choice shapes who calls.
+function deadlinePlan() {
+  const open = (G.phase === 'season' && G.week >= 4 && G.week < E.DEADLINE_WEEK) || G.phase === 'deadline';
+  if (!open) return '';
+  const key = G.season + '-' + G.week;
+  if (!UI.adv || UI.adv.key !== key) UI.adv = {key, v: E.stanceAdvice()};
+  const a = UI.adv.v, st = E.stanceOf();
+  const opt = (k, l) => `<button class="${st === k ? 'on' : ''}" data-act="stance" data-k="${k}" aria-pressed="${st === k}">${l}${a.pick === k ? ' <i class="advdot" title="The coach\'s pick"></i>' : ''}</button>`;
+  const vets = st === 'sell' ? E.sellCandidates().filter(p => !E.blockOf().ids.includes(p.id)) : [];
+  const after = st === 'buy' ? `<div class="row"><button class="btn sm" data-act="leagueBlockSheet">Teams selling now</button><button class="btn sm" data-act="scrollUpgrade">Upgrade a position</button></div>`
+    : st === 'sell' ? (vets.length ? `<div class="row"><button class="btn sm go" data-act="shopVets">Shop your veterans (${vets.length})</button><span class="small muted">${vets.slice(0, 3).map(p => esc(lastName(p.n))).join(', ')}${vets.length > 3 ? '…' : ''}</span></div>` : '<p class="small muted" style="margin:0">Your veterans are on the block. Contenders make offers under each one.</p>')
+    : '';
+  return `<div class="card deadplan"><div class="cardh"><h3>Deadline plan</h3><div class="seg" role="group" aria-label="Deadline plan">${opt('buy', 'Buyer')}${opt('hold', 'Hold')}${opt('sell', 'Seller')}</div></div>
+    <div class="coachline"><span class="kicker">Coach</span><span>${esc(a.line)}</span></div>
+    ${st ? `<p class="small muted" style="margin:8px 0 0">${st === 'buy' ? 'Teams that are selling call you with veterans, and nobody asks about your starters.' : st === 'sell' ? 'Contenders call about your veterans and pay in picks.' : 'You hear from everyone and change nothing on purpose.'}</p>` : ''}
+    ${after}</div>`;
+}
 function renderTrade() {
   if (!tradeOpen()) {
     const why = G.phase === 'playoffs' ? 'No trades during the playoffs.' : G.phase === 'final' ? 'The run is over.' : G.phase === 'seasondone' ? 'The season is over.' : `The trade deadline passed after Week ${E.DEADLINE_WEEK}, the same as in the NFL.`;
@@ -1869,9 +1887,11 @@ function renderTrade() {
   const all = [...(G.offers || []).filter(o => o.kind !== 'block').map(o => offerCard(o)), ...draftOffers.map(o => offerCard(o, true))];
   const shown = UI.offersAll ? all : all.slice(0, 2);
   const shopping = E.cached(() => others.reduce((n, t) => n + E.onBlock(t, 2).length, 0))();
+  const plan = deadlinePlan();
   const tool = (act, ico, t, sub) => `<button class="ttool" data-act="${act}"><span class="tticon"><svg viewBox="0 0 24 24" aria-hidden="true">${ico}</svg></span><b>${t}</b><span class="small muted">${sub}</span></button>`;
   return head + `
     <div class="tradeflow">
+    ${plan}
     <div class="ttools">${tool('tradeTeams', ICO.phone, 'Call a team', 'Make your own deal')}${tool('finderSheet', ICO.search, 'Find a player', 'Anyone in the league')}${tool('leagueBlockSheet', ICO.list, 'Other teams\' blocks', shopping ? `${shopping} being shopped` : 'Who is available')}</div>
     <section id="offersfor"><div class="cardh"><h3>Offers${all.length ? ` <span class="small muted">${all.length}</span>` : ''}</h3><button class="btn sm go" data-act="moreOffers">Ask for offers</button></div>
       ${all.length ? `<div class="offers">${shown.join('')}</div>${all.length > 2 ? `<button class="linkbtn morelink" data-act="offersAll">${UI.offersAll ? 'Show fewer' : `See all ${all.length} offers`}</button>` : ''}` : `<div class="card empty"><p class="muted" style="margin:0">No offers right now. Ask for offers, or put a player on your trade block and teams will call.</p></div>`}</section>
@@ -3046,6 +3066,17 @@ document.addEventListener('click', e => {
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockAddSheet': blockAddSheet(); return;
+    case 'stance': {
+      const v = E.stanceOf() === el.dataset.k ? null : el.dataset.k; E.setStance(v);
+      if (v) { const before = (G.offers || []).map(o => o.id); E.refreshOffers(); const n = (G.offers || []).filter(o => !before.includes(o.id) && o.kind !== 'block').length; toast(v === 'buy' ? `You are buying. ${n ? `${n} new offer${n > 1 ? 's' : ''}.` : 'Sellers will call.'}` : v === 'sell' ? `You are selling. ${n ? `${n} new offer${n > 1 ? 's' : ''}.` : 'Contenders will call.'}` : 'Standing pat.'); }
+      persist(); break; }
+    case 'shopVets': {
+      const B = E.blockOf(), L = E.sellCandidates().filter(p => !B.ids.includes(p.id));
+      for (const p of L) E.toggleBlock(p.id);
+      B.want = 'picks'; persist(); render();
+      setTimeout(() => { const s = [...document.querySelectorAll('.tradeflow section')].find(x => /Your trade block/.test(x.textContent)); if (s) s.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 80);
+      toast(`${L.length} veteran${L.length > 1 ? 's' : ''} on the block, asking for picks. Offers show under each one.`); return; }
+    case 'scrollUpgrade': { const s = [...document.querySelectorAll('.tradeflow section')].find(x => /Upgrade a position/.test(x.textContent)); if (s) s.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
     case 'finderSheet': finderSheet(); return;
     case 'leagueBlockSheet': leagueBlockSheet(); return;
     case 'offersAll': UI.offersAll = !UI.offersAll; break;
@@ -3212,7 +3243,7 @@ document.addEventListener('click', e => {
     case 'fixRoster': { const r = E.fixRoster(); UI.cutSel = []; persist(); render();
       popup('Final roster', r.ok ? 'Roster is set' : 'Almost there', `${vban(r.ok ? 'yes' : 'warn', r.ok ? 'Under the cap and at 53 or fewer' : 'Still not ready', [r.restr.length ? `Restructured ${r.restr.join(', ')}` : '', r.cuts.length ? `Released ${r.cuts.join(', ')}` : ''].filter(Boolean).join('. ') || 'Nothing needed changing.')}${r.ok ? '' : `<p class="small bad">${esc(E.userReady().join(' '))}</p>`}`, r.ok ? 'win' : '');
       return; }
-    case 'cutApply': { const n = UI.cutSel.length; for (const cid of UI.cutSel) E.cutPlayer(cid); UI.cutSel = []; toast(`Released ${n} player${n === 1 ? '' : 's'}.`); break; }
+    case 'cutApply': { const r = E.applyCuts(UI.cutSel); UI.cutSel = []; persist(); toast(`Released ${r.cuts.length} player${r.cuts.length === 1 ? '' : 's'}${r.restr.length ? `, restructured ${r.restr.join(', ')}` : ''}.`); break; }
     case 'startS2': { E.startSeason2(); E.refreshOffers(); UI.tview = null; UI.tab = 'home'; UI.proj = null; persist(); render(); if (G.autoFilled && G.autoFilled.length) fillPopup(G.autoFilled, 'Before kickoff'); return; }
     case 'fillRoster': { const r = E.fillRoster(G.user); persist(); render(); if (r.length) fillPopup(r, 'Roster filled'); else toast('No affordable free agents left. Clear cap space first.'); return; }
     case 'toggle': { const L = UI[el.dataset.side]; const i = L.indexOf(id); i >= 0 ? L.splice(i, 1) : L.push(id); if (document.querySelector('#layer .dealsheet')) { render(); const ds = document.querySelector('[data-act=dealSheet]'); if (ds) ds.click(); return; }

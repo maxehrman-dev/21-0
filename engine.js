@@ -1029,7 +1029,7 @@ function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.fl
 // Teams do not call to take a starter for picks unless you are selling, or unless they really pay.
 function offerSense(give, get, fair) {
   if (fair < .95) return {ok: false};
-  if (fair >= 1.15 || rebuilding(G.user)) return {ok: true};
+  if (fair >= 1.15 || rebuilding(G.user) || stanceOf() === 'sell') return {ok: true};   // a seller wants exactly these calls
   // a starter is the usual target: check what losing him costs you before you ever see the offer
   const gone = give.some(id => G.players[id] && depth(G.user)[G.players[id].pos].slice(0, STARTERS[G.players[id].pos]).some(p => p.id === id));
   return {ok: !gone || winsDelta(G.user, get, give) >= -.25};
@@ -1052,8 +1052,9 @@ function genOffers(n, minimum) {
   const mine = roster(G.user).filter(p => p.ovr >= 70 && !p.inj && p.pos !== 'K' && p.pos !== 'P');
   for (const t of shuffle(teamList().filter(x => x !== G.user))) {
     if (offers.length >= n) break;
-    const rb = rebuilding(t);
-    if (rb && rand() < .5) {
+    const rb = rebuilding(t), st = stanceOf();
+    if (st === 'sell' && rb) continue;                       // a seller hears from contenders, not other sellers
+    if (rb && st !== 'sell' && rand() < (st === 'buy' ? 1 : .5)) {
       // a rebuilding team shops a veteran you could use
       const vet = roster(t).filter(p => ageAdj(p) >= 27 && p.ovr >= 76 && !p.inj && p.pos !== 'K' && p.pos !== 'P' && needBoost(G.user, p) > 1).sort((a, b) => b.ovr - a.ovr)[0];
       if (vet) {
@@ -1071,10 +1072,13 @@ function genOffers(n, minimum) {
         }
       }
     }
-    const targets = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && playerFresh(p.id) && needBoost(t, p) > 1 && (!rb || ageAdj(p) <= 26)).sort((a, b) => assetValue(b.id, t) - assetValue(a.id, t));
-    const tgt = targets[Math.min(targets.length - 1, rint(0, 2))];
+    const d0 = st ? depth(G.user) : null, startsForYou = p => d0 && d0[p.pos].slice(0, STARTERS[p.pos]).includes(p);
+    const targets = mine.filter(p => !used.has(p.id) && offerFresh(t, [p.id]) && playerFresh(p.id) && needBoost(t, p) > 1 && (!rb || ageAdj(p) <= 26)
+      && !(st === 'buy' && startsForYou(p)))                // a buyer is not selling his starters
+      .sort((a, b) => st === 'sell' ? ((ageAdj(b) >= 28 || b.end === G.season) - (ageAdj(a) >= 28 || a.end === G.season)) || assetValue(b.id, t) - assetValue(a.id, t) : assetValue(b.id, t) - assetValue(a.id, t));
+    const tgt = targets[Math.min(targets.length - 1, st === 'sell' ? rint(0, 1) : rint(0, 2))];
     if (!tgt) continue;
-    const pkg = buildPackage(t, tgt.id);
+    const pkg = (st === 'sell' && (buildPackage(t, tgt.id, false, 'picks') || buildPackage(t, tgt.id, true, 'picks'))) || buildPackage(t, tgt.id);
     if (!pkg || !offerSense([tgt.id], pkg, evalTrade(t, [tgt.id], pkg).fair).ok) continue;
     used.add(tgt.id);
     offers.push({id: 'o' + G.week + t + tgt.id, from: t, kind: 'want', give: [tgt.id], get: pkg, msg: `The ${G.teams[t].nick} want ${tgt.n} to fill their ${tgt.pos} spot.`});
@@ -1103,7 +1107,7 @@ function genOffers(n, minimum) {
   }
   // at most one offer that makes you worse this season: a seller hears from buyers, but not all day
   let costly = 0;
-  const keep = offers.filter(o => o.kind !== 'want' || winsDelta(G.user, o.get, o.give) >= -.25 || ++costly <= 1);
+  const keep = offers.filter(o => o.kind !== 'want' || stanceOf() === 'sell' || winsDelta(G.user, o.get, o.give) >= -.25 || ++costly <= 1);
   // best for you first
   return keep.sort((a, b) => evalTrade(b.from, b.give, b.get).fair - evalTrade(a.from, a.give, a.get).fair);
 }
@@ -2762,33 +2766,106 @@ function cutCost(p) {
   return {dead, save: Math.round((p.cap - dead) * 10) / 10};
 }
 // Who to release to reach 53 players and get under the cap, cheapest loss first
+// Final cuts, the way a front office does them: keep the starters, the first backup at every spot and the young
+// players with a future; release the extras at positions you are already deep at; and when the cap is the problem,
+// release the backups whose salary buys the least. Each suggestion comes with a plain reason.
+const IDEAL = {QB: 2, RB: 3, WR: 6, TE: 3, OT: 4, IOL: 5, EDGE: 4, DT: 4, LB: 4, CB: 5, S: 4, K: 1, P: 1};
+let CUTWHY = {}, CUTRESTR = [];
 function cutPlan() {
-  const d = depth(G.user);
-  const starters = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
-  const counts = {}; for (const p of roster(G.user)) counts[p.pos] = (counts[p.pos] || 0) + 1;
-  let n = roster(G.user).length, pay = payroll(G.user);
-  const cap = G.cap[G.season], plan = [];
-  // rookies are judged like everyone else (their upside is in their value), except this year's first two rounds:
-  // nobody cuts a fresh first- or second-round pick at his first camp
+  const cap = G.cap[G.season], plan = [], why = {};
   const freshPick = p => p.draft && p.end === G.season + 3;
-  const cands = roster(G.user).filter(p => !starters.has(p.id) && !(freshPick(p) && p.draft <= 64))
-    .sort((a, b) => playerValue(a) / Math.max(1, a.cap) - playerValue(b) / Math.max(1, b.cap));
-  // open spots get filled at the minimum before kickoff, so that money has to fit too
-  const over = () => pay + Math.max(0, ROSTER_MAX - n) * .9 > cap;
-  for (const p of cands) {
-    if (n <= ROSTER_MAX && !over()) break;
-    if (counts[p.pos] <= MIN_DEPTH[p.pos]) continue;
-    const c = cutCost(p);
-    if (n <= ROSTER_MAX && c.save <= .9) continue;      // releasing him only helps if he costs more than his replacement
-    plan.push(p.id); counts[p.pos]--; n--; pay -= c.save;
+  let pool = roster(G.user).slice(), pay = payroll(G.user);
+  const over = () => pay + Math.max(0, ROSTER_MAX - pool.length) * .9 > cap;
+  // over the cap: restructures come first, because nobody has to leave
+  const restr = [];
+  for (const q of pool.filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
+    if (!over()) break;
+    const r = restructureInfo(q); restr.push({id: q.id, save: r.save}); pay -= r.save;
+  }
+  const ord = n => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+  const byPos = () => { const m = {}; for (const p of pool) (m[p.pos] = m[p.pos] || []).push(p); for (const k in m) m[k].sort((a, b) => b.ovr - a.ovr); return m; };
+  const keepScore = (p, i, tight, len) => {
+    const n = STARTERS[p.pos] || 1, ideal = IDEAL[p.pos] || n + 1;
+    const role = i < n ? 3 : i < n + 1 ? 1.4 : i < ideal ? .8 : i === ideal ? .3 : .08;   // starter, first backup, depth, one extra, surplus
+    const a = ageAdj(p), room = Math.max(0, (p.pot || p.ovr) - p.ovr);
+    const upside = a <= 23 ? room * .9 : a <= 25 ? room * .5 : 0;               // a young player with room to grow
+    const pick = p.draft ? (p.draft <= 96 ? 4 : p.draft <= 160 ? 2 : 1) * (freshPick(p) ? 1 : .4) : 0;
+    const c = cutCost(p), frees = Math.max(0, c.save - .9);                      // what he costs over a minimum player
+    const thin = len <= ideal ? 6 : 0;                                          // a position you are not deep at keeps its bodies
+    const crowd = i > ideal ? -4 * (i - ideal) : 0;                              // a fourth QB or a ninth DT is a roster spot wasted
+    return (p.ovr - 50) * role + upside * (i < ideal ? 1 : .5) + pick + thin + crowd - frees * (tight ? 1.6 : .35) + (c.dead > c.save ? 4 : 0);
+  };
+  for (let guard = 0; guard < 60 && (pool.length > ROSTER_MAX || over()); guard++) {
+    const m = byPos(), tight = over() && pool.length <= ROSTER_MAX, cands = [];
+    for (const pos in m) {
+      const L = m[pos], n = STARTERS[pos] || 1;
+      L.forEach((p, i) => {
+        if (L.length <= (MIN_DEPTH[pos] || 1)) return;                           // the minimum depth stays
+        if (i < n && (!tight || (pos === 'QB' && i === 0) || pos === 'K' || pos === 'P')) return;   // starters only go for money; never QB1, K or P
+        if (freshPick(p) && p.draft <= 64) return;                               // nobody cuts a fresh first- or second-round pick
+        if (pool.length <= ROSTER_MAX && cutCost(p).save <= .9) return;           // releasing him only helps if he costs more than his replacement
+        const k = keepScore(p, i, tight, L.length);
+        // short on money: the least value lost for each dollar freed
+        cands.push({p, i, k: tight ? k / Math.max(.5, cutCost(p).save - .9) : k});
+      });
+    }
+    if (!cands.length) break;
+    const x = cands.sort((a, b) => a.k - b.k)[0], p = x.p, c = cutCost(p), ideal = IDEAL[p.pos] || 2;
+    why[p.id] = tight && x.i < (STARTERS[p.pos] || 1) ? `Starter, but his ${c.save.toFixed(1)}M is the cheapest way under the cap` : tight && c.save >= 2 ? `Frees ${c.save.toFixed(1)}M${c.dead ? ` (${c.dead.toFixed(1)}M dead)` : ''}, more than a backup ${p.pos} is worth`
+      : x.i >= ideal ? `${ord(x.i + 1)} ${p.pos}: more than you need there` : `Backup ${p.pos} (${ord(x.i + 1)} on the depth chart)`;
+    plan.push(p.id); pool = pool.filter(q => q !== p); pay -= c.save;
   }
   // still over the cap with every backup gone: the starters who give the least for their money
-  if (over()) for (const p of roster(G.user).filter(x => starters.has(x.id) && x.pos !== 'QB' && !plan.includes(x.id)).sort((a, b) => playerValue(a) / Math.max(1, cutCost(a).save) - playerValue(b) / Math.max(1, cutCost(b).save))) {
+  if (over()) for (const p of pool.filter(x => x.pos !== 'QB' && x.pos !== 'K' && x.pos !== 'P' && !plan.includes(x.id)).sort((a, b) => playerValue(a) / Math.max(1, cutCost(a).save) - playerValue(b) / Math.max(1, cutCost(b).save))) {
     if (!over()) break;
     const c = cutCost(p); if (c.save <= 1.5) continue;
-    plan.push(p.id); pay -= c.save; n--;
+    plan.push(p.id); why[p.id] = `Starter, but ${c.save.toFixed(1)}M is what gets you under the cap`; pool = pool.filter(q => q !== p); pay -= c.save;
   }
+  CUTWHY = why; CUTRESTR = restr;
   return plan;
+}
+function cutReason(id) { return CUTWHY[id] || ''; }
+function cutRestr() { return CUTRESTR.filter(r => G.players[r.id] && restructureInfo(G.players[r.id])); }
+// Release the players you picked, then restructure only if you still need the room
+function applyCuts(ids) {
+  const done = {cuts: [], restr: []};
+  for (const id of ids) { const q = G.players[id]; if (q && q.tm === G.user) { cutPlayer(id); done.cuts.push(q.n); } }
+  const fill = () => Math.max(0, ROSTER_MAX - roster(G.user).length) * .9;
+  for (const q of roster(G.user).filter(x => restructureInfo(x)).sort((a, b) => restructureInfo(b).save - restructureInfo(a).save)) {
+    if (payroll(G.user) + fill() <= G.cap[G.season]) break;
+    if (restructure(q.id)) done.restr.push(q.n);
+  }
+  return done;
+}
+
+// ---------- the deadline: buyer, seller or hold ----------
+// Say which way you are going at the deadline and the market answers: buyers hear from teams selling veterans,
+// sellers hear from contenders who want theirs and pay in picks. The coach has a read on it.
+function stanceOf() { return G.stance && G.stance.s === G.season ? G.stance.v : null; }
+function setStance(v) {
+  const was = stanceOf();
+  G.stance = v ? {s: G.season, v, w: G.week} : null;
+  if (v && v !== was) {
+    const r = record(G.user, G.season);
+    // the room notices a team with a winning record that sells
+    if (v === 'sell' && r.w > r.l) chemShift(-3, 'Selling at the deadline with a winning record');
+    G.news.unshift(v === 'buy' ? `${G.teams[G.user].nick} are buyers at the deadline.` : v === 'sell' ? `${G.teams[G.user].nick} are open for business: veterans are available.` : `${G.teams[G.user].nick} are standing pat at the deadline.`);
+  }
+  return stanceOf();
+}
+function stanceAdvice() {
+  const pr = project(G.season, 300)[G.user] || {po: .5}, r = record(G.user, G.season), po = pr.po;
+  const pick = po >= .55 ? 'buy' : po <= .2 ? 'sell' : 'hold';
+  const pct = Math.round(po * 100);
+  const line = pick === 'buy' ? `We are ${r.w}-${r.l} with a ${pct}% shot at the playoffs. Go get me help.`
+    : pick === 'sell' ? `${r.w}-${r.l} and ${pct}% playoff odds. Let's get picks for the veterans while they are worth something.`
+    : `${r.w}-${r.l}, ${pct}% playoff odds. I would not mortgage the future, and I would not tear it down either.`;
+  return {pick, po, line};
+}
+// your veterans worth shopping: older starters and anyone on an expiring deal
+function sellCandidates() {
+  return roster(G.user).filter(p => p.pos !== 'K' && p.pos !== 'P' && !p.inj && p.ovr >= 70 && (ageAdj(p) >= 28 || p.end === G.season) && !(p.pos === 'QB' && ageAdj(p) <= 30))
+    .sort((a, b) => playerValue(b) - playerValue(a)).slice(0, 6);
 }
 // Restructure the biggest contracts until you are under the cap. Nobody leaves; the money moves into later years.
 function fixCap() {
@@ -3331,6 +3408,7 @@ function coachMail(w) {
   const s = G.season, rec = record(G.user, s);
   const hurt = roster(G.user).filter(p => p.inj && p.injW >= 3 && p.injW !== 99 && depth(G.user)[p.pos] && p.ovr >= 75);
   if (hurt[0] && say(`hurt${s}${hurt[0].id}`, `We lost ${hurt[0].n} for about ${hurt[0].injW} weeks. I need a body at ${hurt[0].pos}. There is help on the street.`, {act: 'faSheet', k: hurt[0].pos})) return;
+  if (w === DEADLINE_WEEK - 3 && !stanceOf() && say(`stance${s}`, `${stanceAdvice().line} Tell me which way we are going: buyer, hold or seller is on the trade screen.`, {act: 'tradeTab'})) return;
   if (w >= DEADLINE_WEEK - 2 && w < DEADLINE_WEEK) {
     const N = teamNeeds(G.user).filter(n => n.level === 'High')[0];
     if (N && say(`dl${s}`, `The deadline is ${DEADLINE_WEEK - w} week${DEADLINE_WEEK - w > 1 ? 's' : ''} away. ${rec.w >= rec.l ? 'We can make a run.' : 'We need to decide who we are.'} If you can get me help at ${N.pos}, I will use it.`, {act: 'tradeTab'})) return;
@@ -3835,7 +3913,7 @@ const interestInC = cached(interestIn), onBlockC = cached(onBlock), marketBoardC
 function refreshOffersC() { G.offers = [...blockOffers(), ...genOffersC(3, 1)]; return markOffers(); }
 const api = {
   POS_ORDER, STARTERS, ROSTER_MAX, ROUND_NAMES, DEADLINE_WEEK,
-  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, lineupSpot, talkBar, seasonGames, nflMatchups, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
+  newGame, get G() { return G; }, awards, streak, draftVerdict, fillRoster, scoutProspect, faMeet, faOffer, faCancel, faEndWave, faDecide, faUtility, PITCHES, interest: cached(interest), priorities, negStart, negOffer, counterTrade: cached(counterTrade), formOf, formLabel, perfTrend, setCoachDepth, lineupSpot, talkBar, cutReason, cutRestr, applyCuts, stanceOf, setStance, stanceAdvice: cached(stanceAdvice), sellCandidates: cached(sellCandidates), seasonGames, nflMatchups, updateConfidence, confLabel, lenFactor, resignPrice, setDepth, faPrice, faSuitors, cutCost, cutPlan: cutPlanC, teamNeeds: teamNeedsC, upgradeTargets, project: projectC, setExpectations: setExpectationsC, goalMet, winProbR,
   interestIn: interestInC, onBlock: onBlockC, marketBoard: marketBoardC, situations: cached(situations), valueRange: valueRangeC, gmOf, cached, findPackages: findPackagesC, whyNoMarket, talkWhy: cached(talkWhy), temperament, unpackBox, setFlex, canFlex, flexPen, FLEX, faBid, faOdds, faFloor, midseasonPrice, signMidseason, blockOf, toggleBlock, setBlockWant, blockOffers: cached(blockOffers), blockOffersFor: cached(blockOffersFor), proposeTrade: cached(proposeTrade), talkWith, talkMove: cached(talkMove), talkAssets: cached(talkAssets), talkEval, TALK_MOVES, winsDelta: cached(winsDelta), shopPlayer: shopPlayerC, buildPackage, genOffers: genOffersC, refreshOffers: refreshOffersC, acceptOffer, acceptPlan: cached(acceptPlan), applyCond, applyProt, condLabel, hasNTC, restructureInfo, restructure, salaryBack: cached(salaryBack), tradeDead, aiTradeWindow: n => cached(aiTradeWindow)(n), biddingWar: cached(biddingWar), attr, attrList, timelineFactor, captains, captainCandidates, setCaptain, isCaptain, leadership, optionList, optionPrice, decideOption, offerSense, moveUpPrice: cached(moveUpPrice), moveDownOffers: cached(moveDownOffers), draftDeal, pickTag, chartValue, draftSlotOf, matchup: cached(matchup), whyNoDeal: cached(whyNoDeal), unitRating, chemOf, chemLabel, chemEdge, chemTrade, seasonGoals, goalStatus, draftOffers: draftOffersC, assetValue, assetName, pickSlot, rosterLimit, stacked, teamList, roster, payroll, capSpace, depth, teamRating, market, playerValue, valueParts, needBoost, pickValue, pickLabel, nextDraftYear,
   evalTrade, doTrade, balanceTrade: balanceTradeC, record, simWeek, simTo, divisions, seeds, startPlayoffs, simPlayoffRound, inPlayoffs, userFinish,
   beginOffseason, resignPlayer, finishResign, cutPlayer, faPool, offerFA, aiFAWave, finishFA, startDraft, makePick, aiPick, simDraftToUser, finishDraft,
