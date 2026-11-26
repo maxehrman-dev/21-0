@@ -3825,7 +3825,7 @@ function seasonGoals(season) {
   let h = hashStr(G.user + season);
   const pick = [];
   while (pick.length < 2 && pool.length) { pick.push(pool.splice(h % pool.length, 1)[0]); h = Math.floor(h / 7) + 13; }
-  G.goals[season] = [{k: 'wins', n: wins, t: `Win ${wins} games`}, ...pick];
+  G.goals[season] = [{k: 'wins', n: wins, t: `Win ${wins} regular-season games`}, ...pick];
   return G.goals[season];
 }
 // Live progress on each goal: done (locked in), failed (out of reach), or still open, with a short line

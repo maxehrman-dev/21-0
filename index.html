@@ -1611,6 +1611,10 @@ button.capbox { display: block; padding: 0; }
 .advdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); vertical-align: middle; margin-left: 4px; }
 .deadplan .row { margin-top: 10px; align-items: center; flex-wrap: wrap; gap: 8px; }
 .cutwhy { color: var(--chalk); }
+/* small round buttons keep their look but get a finger-sized touch area */
+.xs, .qhelp { position: relative; }
+.xs::after, .qhelp::after { content: ''; position: absolute; inset: -9px; border-radius: 50%; }
+.morebtn { display: block; width: 100%; margin-top: 10px; }
 </style>
 </head>
 <body>

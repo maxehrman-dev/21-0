@@ -951,7 +951,7 @@ function ownerSheet() {
 }
 // Season goals: three a season on top of the owner's, each with live progress
 function goalsList(season) {
-  return `<div class="goallist">${E.goalStatus(season).map(x => `<div class="goalrow ${x.done ? 'done' : x.fail ? 'fail' : ''}"><span class="gmark" aria-hidden="true">${x.done ? '✓' : x.fail ? '×' : ''}</span><b>${esc(x.t)}</b><span class="small muted">${x.done ? 'Done' : x.fail ? 'Missed' : esc(x.line)}</span></div>`).join('')}</div>`;
+  return `<div class="goallist">${E.goalStatus(season).map(x => `<div class="goalrow ${x.done ? 'done' : x.fail ? 'fail' : ''}"><span class="gmark" aria-hidden="true">${x.done ? '✓' : x.fail ? '×' : ''}</span><b>${esc(x.t)}</b><span class="small muted">${x.done ? 'Done' : x.fail ? `Missed${x.line ? ' · ' + esc(x.line) : ''}` : esc(x.line)}</span></div>`).join('')}</div>`;
 }
 function goalsSheet() {
   modal(`<div class="sheeth"><div><div class="kicker">${G.season} · on top of the owner's goal</div><h3>Season goals</h3></div><button class="x" data-act="closeModal" aria-label="Close">×</button></div>
@@ -1344,8 +1344,9 @@ function homeResign() {
     <div class="row">${pendingResign().starters.length ? '' : '<button class="btn ghost" data-act="capRoom">Make cap room</button>'}<button class="btn ${pendingResign().starters.length ? '' : 'go lg'}" data-act="toFA">Next: free agency</button></div></section>
   ${optionCard()}
   ${(() => { const R = pendingResign(); return R.starters.length ? `<div class="card resignwarn"><div><b>${R.starters.length} unsigned starter${R.starters.length > 1 ? 's' : ''}</b><span class="small muted">About ${R.wins.toFixed(1)} wins walk out the door if they leave</span></div>${R.fits.length ? `<button class="btn go" data-act="resignStarters">Keep ${R.fits.length < R.starters.length ? R.fits.length : 'my'} starters · ${money(R.fitCost)}</button>` : '<span class="small warn">Over your cap at their asking prices.</span>'}<button class="btn" data-act="capRoom">Make cap room</button></div>` : pending.length ? '' : '<div class="card resignwarn ok"><b>Your starters are signed.</b></div>'; })()}
-  <div class="card"><div class="plist">${list.slice().sort((a, b) => (starter(b.p) - starter(a.p)) || b.p.ovr - a.p.ovr).map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
-    ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><span class="chev deskonly-inline" aria-hidden="true">›</span><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div></div>`;
+  ${(() => { UI.rsShown = list.filter(x => UI.rsAll || starter(x.p) || x.p.ovr >= 70 || x.r.done).map(x => x.p.id); return ''; })()}
+  <div class="card"><div class="plist">${list.slice().sort((a, b) => (starter(b.p) - starter(a.p)) || b.p.ovr - a.p.ovr).filter(x => UI.rsShown.includes(x.p.id)).map(({p, r}) => `<div class="trow ${r.done === 'signed' ? 'sel' : ''}" ${r.done ? '' : `data-act="negOpen" data-id="${p.id}"`}>${pRow(p, `${starter(p) ? '<b>Starter</b> · ' : ''}${r.done ? money(r.ask) + ' × ' + r.yrs + ' yr' : 'wants ' + E.yearsFor(p) + ' yr'}`)}
+    ${r.done ? `<span class="tag ${r.done === 'signed' ? 'good' : 'bad'}">${r.done === 'signed' ? 'Re-signed' : 'Let go'}</span>` : `<div class="row nowrap"><span class="chev deskonly-inline" aria-hidden="true">›</span><button class="btn sm go" data-act="resign" data-id="${p.id}">Pay ${money(E.resignPrice(p, E.yearsFor(p)))} × ${E.yearsFor(p)}</button></div>`}</div>`).join('') || '<p class="muted">No expiring contracts.</p>'}</div>${list.length > UI.rsShown.length ? `<button class="btn ghost morebtn" data-act="rsAll">Show ${list.length - UI.rsShown.length} more expiring backups</button>` : ''}</div>`;
 }
 // Fifth-year options: your first-round picks entering the last year of their rookie deals
 function optionCard() {
@@ -1442,12 +1443,12 @@ function homeDraft() {
   const yourLine = k => (UI.dboardPos || 'ALL') !== 'ALL' || ahead == null || k !== ahead ? '' :
     `<div class="yourline"><span>${onClock ? 'You are on the clock' : `Your pick · #${next.no} · about ${ahead} player${ahead === 1 ? '' : 's'} go before it`}</span></div>`;
   if (tab === 'board') {
-    const pos = UI.dboardPos || 'ALL', L = D.pool.filter(p => inGroup(p.pos, pos)).slice(0, 80);
+    const pos = UI.dboardPos || 'ALL', all = D.pool.filter(p => inGroup(p.pos, pos)), L = all.slice(0, Math.min(80, UI.dShow || 30));
     body = `${posChips('dboardPos', pos)}<div class="card dboard">${L.map((p, k) => { const line = yourLine(k); const st = tr.d[p.pos] && tr.d[p.pos][Math.max(0, E.STARTERS[p.pos] - 1)]; const fits = !st || p.hi > st.ovr;
       return `${line}<div class="dkrow"><span class="num drank">${p.rank}</span><div class="pmain" data-act="prospect" data-rank="${p.rank}"><div class="pn">${esc(p.n)} ${k === 0 && pos === 'ALL' ? '<span class="tag gold">Best available</span>' : ''}</div><div class="psub">${p.pos} · ${esc(p.sch)} · <span class="${p.potGrade === 'High' ? 'good' : p.potGrade === 'Medium' ? 'gold' : ''}">${p.potGrade} potential</span></div></div>
         <span class="dproj"><span class="projr ${fits ? 'gold' : ''}">${p.lo}–${p.hi}</span><span class="small muted">${fits ? (st ? 'Upgrade' : 'Fills a need') : 'Depth'}</span></span>
         <span class="dstart small deskonly">${st ? `Your ${p.pos}: <span class="${inCamp(st) ? '' : oc(st.ovr)}">${ovrNum(st)}</span> ${esc(lastName(st.n))}` : `<span class="tag bad">No ${p.pos}</span>`}</span>
-        ${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`; }).join('') || '<p class="muted">Nobody left at that position.</p>'}</div>`;
+        ${onClock ? `<button class="btn sm go" data-act="draftP" data-rank="${p.rank}">Draft</button>` : ''}</div>`; }).join('') || '<p class="muted">Nobody left at that position.</p>'}${all.length > L.length && L.length < 80 ? `<button class="btn ghost morebtn" data-act="dMore">Show more prospects</button>` : ''}</div>`;
   } else if (tab === 'trades') {
     body = draftTradesTab(D, slot);
   } else if (tab === 'order') {
@@ -2759,7 +2760,8 @@ function homeFA() {
   if (q) pool = pool.filter(p => p.n.toLowerCase().includes(q) || p.pos.toLowerCase() === q);
   if (UI.faPos && UI.faPos !== 'ALL') pool = pool.filter(p => inGroup(p.pos, UI.faPos));
   if (UI.faAfford) pool = pool.filter(p => upOf(p) > 0 && E.faPrice(p) <= space);
-  pool = pool.slice(0, 40);
+  const faMore = pool.length > (UI.faShow || 15) ? pool.length - (UI.faShow || 15) : 0;
+  pool = pool.slice(0, Math.min(40, UI.faShow || 15));
   const mine = (G.signings || []).filter(x => G.players[x.id] && G.players[x.id].tm === G.user && G.players[x.id].end >= G.season && x.season === G.season).slice(-8).reverse();
   const talks = Object.entries(F.counter || {}).filter(([pid]) => G.players[pid] && G.players[pid].tm === 'FA');
   const legacy = (F.decisions || []).map(dc => { const p = G.players[dc.id]; return `<div class="outbid">${vban('counter', `The ${tname(dc.t)} outbid you`, `${p.n} has ${money(dc.apy)} × ${dc.yrs} yr from them against your ${money(dc.mine.apy)}. Beat it and he is yours.`)}
@@ -2781,7 +2783,7 @@ function homeFA() {
   <div class="toolbar fatool"><label class="search fasearch"><span class="sr">Search free agents</span><input id="faQ" type="search" placeholder="Search a name or position" value="${esc(UI.faQ || '')}" autocomplete="off"></label>
     <button class="chip ${UI.faAfford ? 'on' : ''}" data-act="faAfford">Upgrades I can afford</button></div>
   ${posChips('faPos', UI.faPos || 'ALL')}
-  <div class="grid fa-grid"><div class="card falist">${pool.map(row).join('') || (q ? `<p class="muted">Nobody matches "${esc(UI.faQ)}". He may have signed already.</p>` : UI.faAfford ? '<p class="muted">No upgrade fits your cap space. Turn off the filter to see everyone, or make cap room.</p>' : '<p class="muted">Nobody left at that position.</p>')}</div>
+  <div class="grid fa-grid"><div class="card falist">${pool.map(row).join('')}${faMore && pool.length < 40 ? `<button class="btn ghost morebtn" data-act="faMore">Show more free agents</button>` : ''}${'' || (q ? `<p class="muted">Nobody matches "${esc(UI.faQ)}". He may have signed already.</p>` : UI.faAfford ? '<p class="muted">No upgrade fits your cap space. Turn off the filter to see everyone, or make cap room.</p>' : '<p class="muted">Nobody left at that position.</p>')}</div>
   <div class="grid">
     ${talks.length ? `<div class="card"><h3>Waiting on you</h3>${talks.map(([pid, c]) => `<div class="trow">${pRow(G.players[pid], `will sign for ${money(c.apy)} × ${c.yrs}`)}<button class="btn sm go" data-act="faTake" data-id="${pid}" ${c.apy > space ? 'disabled title="Not enough cap space"' : ''}>Accept</button></div>`).join('')}</div>` : ''}
     ${oldOffers.length ? `<div class="card"><h3>Your offers</h3>${oldOffers.map(([pid, o]) => `<div class="trow">${pRow(G.players[pid], `${money(o.apy)} × ${o.yrs} yr`)}<button class="xs" data-act="faCancel" data-id="${pid}" aria-label="Withdraw offer">×</button></div>`).join('')}</div>` : ''}
@@ -3077,6 +3079,9 @@ document.addEventListener('click', e => {
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockAddSheet': blockAddSheet(); return;
+    case 'dMore': UI.dShow = (UI.dShow || 30) + 30; break;
+    case 'faMore': UI.faShow = (UI.faShow || 15) + 15; break;
+    case 'rsAll': UI.rsAll = true; break;
     case 'stance': {
       const v = E.stanceOf() === el.dataset.k ? null : el.dataset.k; E.setStance(v);
       if (v) { const before = (G.offers || []).map(o => o.id); E.refreshOffers(); const n = (G.offers || []).filter(o => !before.includes(o.id) && o.kind !== 'block').length; toast(v === 'buy' ? `You are buying. ${n ? `${n} new offer${n > 1 ? 's' : ''}.` : 'Sellers will call.'}` : v === 'sell' ? `You are selling. ${n ? `${n} new offer${n > 1 ? 's' : ''}.` : 'Contenders will call.'}` : 'Standing pat.'); }
