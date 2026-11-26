@@ -1998,17 +1998,17 @@ function beginOffseason() {
     const start = p.ovr - (p.inGain || 0), move = p.ovr - start, prior = p.prior || start;
     // how much of the season's move is the real player
     let keep = p.rook || a <= 23 ? .8 : a <= 25 ? .68 : a <= 28 ? .5 : .4;
-    if (start >= 86) keep = Math.min(keep, .4);                                // a star's off year does not define him
+    if (start >= 86 && move < 0) keep = Math.min(keep, .4);                    // a star's off year does not define him; a star's leap can
     if (move > 0 && prior >= p.ovr - 1) keep = .95;                            // he has been this good before
     if (move < 0 && prior <= p.ovr + 1) keep = .85;                            // he has been this player before
     if (gp < 6) keep = Math.min(keep, .6);                                     // a small sample proves little
     const back = Math.round(move * (keep - 1) * 10) / 10;                     // negative after a hot year, positive after a cold one
     const age = (a <= 22 ? 1.2 : a <= 24 ? .9 : a <= 26 ? .5 : a <= 28 ? .3 : a <= 30 ? 0 : a <= 32 ? -1.1 : a <= 34 ? -2.4 : -3.8 - Math.max(0, a - 35));
     const parts = {age, dev: 0, back, move};
-    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .16 : a <= 26 ? .1 : .03);
+    if (p.pot > p.ovr) parts.dev = (p.pot - p.ovr) * (a <= 24 ? .22 : a <= 26 ? .14 : .04);
     if (p.devShare && a <= 26) parts.dev = parts.dev * (1 + .7 * Math.min(1, p.devShare / 12)) + Math.min(1, p.devShare / 12);   // a coach plan put him on the field
     let d = parts.age + parts.dev + (p.rook ? .6 : 0);
-    if (d > 0 && p.ovr >= 86) d *= p.ovr >= 90 ? .35 : .6;                   // the top is hard to reach and harder to climb
+    if (d > 0 && p.ovr >= 88) d *= p.ovr >= 92 ? .5 : .75;                   // the top is hard to reach and harder to climb
     d += back;
     return {parts, d, prior, start};
   };
@@ -2027,7 +2027,7 @@ function beginOffseason() {
     p.inj = false; delete p.injW; delete p.injPre; p.rook = false; delete p.devShare; delete p.inGain;
     // retirement: rare before 30, likely by 36; fringe players go sooner, stars hang on; nobody signing you is a hint
     const ra = p.pos === 'K' || p.pos === 'P' ? p.age - 6 : ageAdj(p);
-    let rp = ra >= 36 ? .65 : ra >= 34 ? .35 : ra >= 32 ? .15 : ra >= 30 ? .05 : 0;
+    let rp = ra >= 36 ? .75 : ra >= 34 ? .45 : ra >= 32 ? .2 : ra >= 30 ? .06 : 0;
     if (p.ovr < 70) rp *= 1.6; else if (p.ovr >= 85) rp *= .5;
     if (p.tm === 'FA' && ra >= 30) rp = Math.max(rp, .5);
     if (rand() < Math.min(.9, rp)) p.retired = true;
@@ -2575,7 +2575,9 @@ function scoutProspect(pr) {
   const traits = [tl.splice(h % tl.length, 1)[0], tl.splice((h >>> 3) % tl.length, 1)[0]];
   const weak = tl[(h >>> 6) % tl.length];
   // prospects' ceilings follow the consensus big board: the higher he ranks, the more room scouts see
-  const pot = clamp(Math.round(ovr + 3 + (pr.rank <= 10 ? 8 : pr.rank <= 32 ? 6 : pr.rank <= 64 ? 4 : 2) + randn() * 1.5), ovr, 96);
+  // and every class has a few with star upside: most top picks are good players, some become great ones
+  const star = r(13) < (pr.rank <= 10 ? .45 : pr.rank <= 32 ? .25 : pr.rank <= 100 ? .1 : .03) ? 5 + Math.round(r(17) * 7) : 0;
+  const pot = clamp(Math.round(ovr + 3 + (pr.rank <= 10 ? 9 : pr.rank <= 32 ? 7 : pr.rank <= 64 ? 4 : 2) + star + randn() * 1.5), ovr, 98);
   return Object.assign(pr, {ovr, pot, lo: Math.round(est - width), hi: Math.round(est + width), est: Math.round(est), ht: `${Math.floor(ht / 12)}'${ht % 12}"`, wt, forty, traits, weak,
     potGrade: egg ? 'High' : pot - est >= 10 ? 'High' : pot - est >= 6 ? 'Medium' : 'Low', potWhy: egg ? egg.note : `big board #${pr.rank}, ${pr.sch}`, egg: egg ? egg.note : undefined, round: pr.rank <= 32 ? '1st round' : pr.rank <= 64 ? '2nd round' : pr.rank <= 100 ? '3rd round' : 'Day 3'});
 }
@@ -2587,7 +2589,7 @@ function makePick(prospect) {
   const id = (G.season === 2027 ? 'R27-' : `R${G.season % 100}-`) + prospect.rank;
   if (prospect.ovr == null) scoutProspect(prospect);
   const verdict = draftVerdict(prospect.ovr, prospect.lo, prospect.hi);
-  addPlayer({id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
+  addPlayer({id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: Math.round((21 + (hashStr('age' + prospect.n) % 26) / 10) * 10) / 10, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
     proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: eggOf(prospect.n) ? eggOf(prospect.n).hype : Math.max(10, Math.round(70 - slot.no * .5)), egg: prospect.egg, hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]});
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
   D.pool = D.pool.filter(x => x !== prospect);
