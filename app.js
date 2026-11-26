@@ -3103,7 +3103,7 @@ document.addEventListener('click', e => {
     case 'seg': UI[el.dataset.seg] = el.dataset.k; if (el.dataset.seg === 'league') UI.lgMore = false; if (el.dataset.go) { go(el.dataset.go); return; } render(); return;
     case 'rview': UI.rview = el.dataset.k; go('roster'); return;
     case 'rpos': UI.rosterPos = el.dataset.k; render(); return;
-    case 'player': e.stopPropagation(); UI.found = null; openPlayer(id); return;
+    case 'player': e.stopPropagation(); openPlayer(id); return;   // the sheet you came from keeps its deals for Back
     case 'needPos': needModal(el.dataset.pos); return;
     case 'depthPos': depthModal(el.dataset.pos); return;
     case 'depthOpen': closeModal(); setTimeout(() => depthModal(el.dataset.k), 60); return;
@@ -3270,8 +3270,8 @@ document.addEventListener('click', e => {
     case 'tabHome': go('home'); return;
     case 'openInbox': { UI.tview = null; go('trade'); setTimeout(() => { const o = document.getElementById('offersfor'); if (o) o.scrollIntoView({behavior: 'smooth', block: 'start'}); }, 60); return; }
     case 'openMake': UI.tview = 'make'; go('trade'); return;
-    case 'counterAccept': { const x = UI.counter.list[+el.dataset.i]; if (x.cond) E.applyCond(x.cond); if (x.prot) E.applyProt(x.prot); const r = E.doTrade(UI.counter.partner, x.give, x.get, x.cond || x.prot ? 'offer' : undefined); closeModal(); if (r.ok) { UI.give = []; UI.get = []; persist(); render(); tradePopup(UI.counter.partner, x.give, x.get); return; } popup('Trade', 'It fell apart', vban('no', 'No deal', r.issues[0] || 'Something changed.')); return; }
-    case 'counterEdit': { const x = UI.counter.list[+el.dataset.i]; UI.give = x.give.slice(); UI.get = x.get.slice(); closeModal(); break; }
+    case 'counterAccept': { const x = UI.counter && UI.counter.list[+el.dataset.i]; if (!x) { closeModal(); toast('That counter is gone. Call them again.'); return; } if (x.cond) E.applyCond(x.cond); if (x.prot) E.applyProt(x.prot); const r = E.doTrade(UI.counter.partner, x.give, x.get, x.cond || x.prot ? 'offer' : undefined); closeModal(); if (r.ok) { UI.give = []; UI.get = []; persist(); render(); tradePopup(UI.counter.partner, x.give, x.get); return; } popup('Trade', 'It fell apart', vban('no', 'No deal', r.issues[0] || 'Something changed.')); return; }
+    case 'counterEdit': { const x = UI.counter && UI.counter.list[+el.dataset.i]; if (!x) { closeModal(); toast('That counter is gone. Call them again.'); return; } UI.give = x.give.slice(); UI.get = x.get.slice(); closeModal(); break; }
     case 'pickPartner': UI.partner = el.dataset.t; UI.give = [id]; UI.get = []; UI.tq = ''; { const pkg = E.cached(() => E.buildPackage(UI.partner, id) || E.buildPackage(UI.partner, id, true))(); if (pkg) { UI.get = pkg; toast(`The ${tname(UI.partner)} would give this for ${G.players[id].n}.`); } } break;
     case 'askOffer': { const pid = UI.give[0]; const pkg = E.cached(() => E.buildPackage(UI.partner, pid) || E.buildPackage(UI.partner, pid, true))(); if (pkg) { UI.get = pkg; toast(`Their offer for ${G.players[pid].n}. Review it, then propose.`); } else toast(`The ${tname(UI.partner)} do not have a fit for ${G.players[pid].n}.`); break; }
     case 'balance': { closeModal(); if (!UI.partner || !G.teams[UI.partner]) return;
@@ -3335,8 +3335,8 @@ document.addEventListener('click', e => {
       return;
     }
     case 'findFor': { const list = E.findPackages(id).map(x => Object.assign(x, {label: x.label + ' · ' + G.teams[x.partner].nick})); openFound(id, list); return; }
-    case 'loadFound': { const x = UI.found.list[+el.dataset.i]; UI.partner = x.partner; UI.give = x.give.slice(); UI.get = x.get.slice(); UI.tview = 'make'; closeModal(); UI.found = null; go('trade'); return; }
-    case 'proposeFound': { const x = UI.found.list[+el.dataset.i]; const r = x.fix ? E.makeFixed(x.partner, x.give, x.fix.get) : E.doTrade(x.partner, x.give, x.get); closeModal(); UI.found = null; if (r.ok) { persist(); render(); tradePopup(x.partner, x.give, x.get); return; } popup('Trade', 'They said no', vban('no', 'No deal', r.issues[0] || 'They want more for it.')); return; }
+    case 'loadFound': { const x = UI.found && UI.found.list[+el.dataset.i]; if (!x) { closeModal(); toast('That deal is gone. Open the player again for fresh deals.'); return; } UI.partner = x.partner; UI.give = x.give.slice(); UI.get = x.get.slice(); UI.tview = 'make'; closeModal(); UI.found = null; go('trade'); return; }
+    case 'proposeFound': { const x = UI.found && UI.found.list[+el.dataset.i]; if (!x) { closeModal(); toast('That deal is gone. Open the player again for fresh deals.'); return; } const r = x.fix ? E.makeFixed(x.partner, x.give, x.fix.get) : E.doTrade(x.partner, x.give, x.get); closeModal(); UI.found = null; if (r.ok) { persist(); render(); tradePopup(x.partner, x.give, x.get); return; } popup('Trade', 'They said no', vban('no', 'No deal', r.issues[0] || 'They want more for it.')); return; }
     case 'saveName': {
       const v = ($('#gmName').value || '').trim().slice(0, 40);
       C.gmName = v; saveLocalCareer();
