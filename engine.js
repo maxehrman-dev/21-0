@@ -2399,7 +2399,7 @@ function faBid(id, apy, yrs) {
   if (!p || p.tm !== 'FA') return {ok: false, result: 'gone', msg: 'He already signed somewhere else.'};
   apy = Math.round(apy * 10) / 10; yrs = yrs || yearsFor(p);
   if (F.walked[id]) return {ok: false, result: 'walked', msg: `${p.n} is done talking until the next wave.`};
-  if (apy > capSpace(G.user) + .001) return {ok: false, result: 'cap', msg: `That is more than your $${capSpace(G.user).toFixed(1)}M of cap space.`};
+  if (apy > capSpace(G.user) + .001) return {ok: false, result: 'cap', msg: capRoomMsg(apy)};
   if (roster(G.user).length >= 90) return {ok: false, result: 'full', msg: 'Your offseason roster is full (90). Release someone first.'};
   const price = faPrice(p, yrs), floor = faFloor(p, yrs);
   if (apy + .001 >= floor) { delete F.counter[id]; delete F.offers[id]; signFA(p, G.user, apy, yrs); return {ok: true, result: 'signed', apy, yrs, msg: `${p.n} signed: ${yrs} yr at $${apy}M per year.`}; }
