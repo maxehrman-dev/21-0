@@ -4023,7 +4023,7 @@ function streak(t, season) {
 // ---------- rebuild report ----------
 const LETTERS = [[93, 'A+'], [88, 'A'], [84, 'A-'], [80, 'B+'], [75, 'B'], [70, 'B-'], [66, 'C+'], [60, 'C'], [55, 'C-'], [48, 'D'], [0, 'F']];
 const letter = s => LETTERS.find(([m]) => s >= m)[1];
-const STAGE_BONUS = {miss: 0, 0: 12, 1: 20, 2: 28, 3: 34, 4: 40};
+const STAGE_BONUS = {miss: 0, 0: 20, 1: 30, 2: 38, 3: 44, 4: 52};
 const PICK_W = {1: 3, 2: 2, 3: 1, 4: .5, 5: .25, 6: .15, 7: .1};
 
 // a season's finish: filed in the history, or just finished with a champion crowned
@@ -4033,7 +4033,7 @@ function seasonScore(season) {
   if (!f) return 0;
   const P = G.playoffs[season];
   const stage = P && P.elim[G.user] !== undefined ? P.elim[G.user] : 'miss';
-  return clamp(f.rw / 17 * 60 + STAGE_BONUS[stage], 0, 100);
+  return clamp(f.rw / 17 * 55 + STAGE_BONUS[stage], 0, 100);
 }
 function picksWeight(yr, t) { return G.picks.filter(x => x.yr === yr && x.owner === t).reduce((s, x) => s + PICK_W[x.rd], 0); }
 
@@ -4051,10 +4051,13 @@ function rebuildReport() {
   const core = ros.filter(p => p.age <= 26 && p.ovr >= 78);
 
   // results: 2027 counts more, since that is the team you built
-  const s26 = seasonScore(2026), s27 = seasonScore(2027);
-  const results = Math.round(s26 * .35 + s27 * .65);
+  // the two most recent finished seasons: 2026 and 2027 for the first card, then each season with the one before it
+  const Y2 = Math.max(2027, ...[G.season, G.season - 1].filter(y => finishOf(y))), Y1 = Y2 - 1;
+  const s26 = seasonScore(Y1), s27 = seasonScore(Y2);
+  // 2027 counts more, but a great season in either year carries most of its weight
+  const results = Math.round(Math.max(s26 * .35 + s27 * .65, Math.max(s26, s27) * .9));
   const delta = tr.ovr - S.ovr;
-  const rosterS = Math.round(clamp(.5 * clamp(50 + delta * 5, 0, 100) + .5 * clamp(100 - (rank - 1) * 3.2, 0, 100), 0, 100));
+  const rosterS = Math.round(clamp(.35 * clamp(55 + delta * 5, 0, 100) + .65 * clamp(100 - (rank - 1) * 3, 0, 100), 0, 100));
   const grades = tradeGrades();
   const avgR = grades.length ? grades.reduce((s, t) => s + t.vGet / Math.max(.5, t.vGive), 0) / grades.length : null;
   const tradeS = avgR == null ? null : Math.round(clamp(70 + (avgR - .95) * 120, 15, 100));
@@ -4064,15 +4067,21 @@ function rebuildReport() {
   const capS = Math.round(clamp(40 + (space < 0 ? space * 3 : Math.min(space, 30)) + (1 - commit28 / proj28) * 60 - dead * 2, 0, 100));
 
   const cats = [
-    {k: 'results', label: 'Results', w: .35, s: results, why: (() => { const a = finishOf(2026), b = finishOf(2027); return a && b ? `${a.w}-${a.l} then ${b.w}-${b.l}. 2027 counts for about two thirds.` : a ? `${a.w}-${a.l} in 2026. 2027 is still to come.` : 'No season finished yet.'; })()},
-    {k: 'roster', label: 'Roster upgrade', w: .25, s: rosterS, why: `Team OVR ${S.ovr} to ${tr.ovr} (${delta >= 0 ? '+' : ''}${delta}). Now #${rank} of 32.`},
-    {k: 'trades', label: 'Trades', w: .15, s: tradeS, why: grades.length ? `${grades.length} trade${grades.length > 1 ? 's' : ''}. You got back ${Math.round(avgR * 100)}% of the value you sent.` : 'No trades. This one is left out of your grade.'},
-    {k: 'future', label: 'Future', w: .15, s: future, why: `Starters average ${age} years old. ${core.length} young core player${core.length === 1 ? '' : 's'} (26 or under, 78+). ${pk28.length} 2028 pick${pk28.length === 1 ? '' : 's'}.`},
-    {k: 'cap', label: 'Cap health', w: .10, s: capS, why: `${space >= 0 ? '$' + space.toFixed(1) + 'M under' : '$' + (-space).toFixed(1) + 'M over'} the 2027 cap${space > 40 ? ', much of it unused' : ''}. $${commit28.toFixed(1)}M already owed for 2028.`},
+    {k: 'results', label: 'Results', w: .5, s: results, why: (() => { const a = finishOf(Y1), b = finishOf(Y2); return a && b ? `${a.w}-${a.l} in ${Y1}, then ${b.w}-${b.l} in ${Y2}. ${Y2} counts for about two thirds, and your best season carries most of its weight.` : a ? `${a.w}-${a.l} in ${Y1}. ${Y2} is still to come.` : 'No season finished yet.'; })()},
+    {k: 'roster', label: 'Roster upgrade', w: .2, s: rosterS, why: `Team OVR ${S.ovr} to ${tr.ovr} (${delta >= 0 ? '+' : ''}${delta}). Now #${rank} of 32.`},
+    {k: 'trades', label: 'Trades', w: .1, s: tradeS, why: grades.length ? `${grades.length} trade${grades.length > 1 ? 's' : ''}. You got back ${Math.round(avgR * 100)}% of the value you sent.` : 'No trades. This one is left out of your grade.'},
+    {k: 'future', label: 'Future', w: .12, s: future, why: `Starters average ${age} years old. ${core.length} young core player${core.length === 1 ? '' : 's'} (26 or under, 78+). ${pk28.length} 2028 pick${pk28.length === 1 ? '' : 's'}.`},
+    {k: 'cap', label: 'Cap health', w: .08, s: capS, why: `${space >= 0 ? '$' + space.toFixed(1) + 'M under' : '$' + (-space).toFixed(1) + 'M over'} the 2027 cap${space > 40 ? ', much of it unused' : ''}. $${commit28.toFixed(1)}M already owed for 2028.`},
   ];
   for (const c of cats) c.g = c.s == null ? '-' : letter(c.s);
   const used = cats.filter(c => c.s != null), wsum = used.reduce((s, c) => s + c.w, 0);
-  const score = Math.round(used.reduce((s, c) => s + c.s * c.w, 0) / wsum);
+  let score = Math.round(used.reduce((s, c) => s + c.s * c.w, 0) / wsum);
+  // what you won sets the floor: a ring is never graded like an average season
+  const F = [Y1, Y2].map(finishOf).filter(Boolean), won = F.filter(f => f.label === 'Won the Super Bowl').length;
+  const stage = f => f.label === 'Won the Super Bowl' ? 4 : f.label === 'Lost in the Super Bowl' ? 3 : f.label === 'Lost in the Conference Championship' ? 2 : f.label === 'Missed playoffs' ? -1 : 0;
+  const best = F.length ? Math.max(...F.map(stage)) : -1, poBoth = F.length === 2 && F.every(f => stage(f) >= 0);
+  const f27 = finishOf(Y2), floor = F.some(f => f.perfect) ? 95 : won >= 2 ? 90 : f27 && stage(f27) === 4 ? 88 : won ? 84 : best === 3 ? 80 : best === 2 ? 70 : poBoth ? 66 : best >= 0 ? 60 : F.length === 2 && F.every(f => f.rw > f.rl) ? 55 : 0;
+  if (score < floor) score = floor;
 
   // what kind of GM you were
   const changed = ros.filter(p => !S.ids.includes(p.id) && !String(p.id).startsWith('G-')).length;
