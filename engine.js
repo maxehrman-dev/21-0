@@ -214,11 +214,31 @@ const teamList = () => Object.keys(G.teams).sort();
 // Read-only work (rendering, trade searches) runs inside cached(): rosters, depth charts and ratings are computed once.
 let CACHE = null;
 function cached(fn) { return function () { if (CACHE) return fn.apply(this, arguments); CACHE = {r: null, d: {}, tr: {}, rb: {}}; try { return fn.apply(this, arguments); } finally { CACHE = null; } }; }
-function rosterRaw(t) { return Object.values(G.players).filter(p => p.tm === t); }
+// A roster index kept up to date as players move, so finding a team's players never scans the whole league.
+// Each player's team is a tracked property: setting p.tm moves him in the index. It still saves as plain "tm".
+let IDX = null;
+function trackPlayer(p) {
+  const d = Object.getOwnPropertyDescriptor(p, 'tm');
+  if (d && d.get) return;
+  let v = p.tm;
+  Object.defineProperty(p, 'tm', {enumerable: true, configurable: true, get() { return v; }, set(x) {
+    if (x === v) return;
+    if (IDX && IDX.of === G.players && G.players[p.id] === p) { idxDrop(v, p); (IDX.t[x] = IDX.t[x] || []).push(p); }
+    v = x;
+  }});
+}
+function idxDrop(t, p) { const L = IDX.t[t]; if (!L) return; const i = L.indexOf(p); if (i >= 0) L.splice(i, 1); }
+function idxBuild() {
+  IDX = {of: G.players, t: {}};
+  for (const p of Object.values(G.players)) { trackPlayer(p); (IDX.t[p.tm] = IDX.t[p.tm] || []).push(p); }
+}
+// every new player and every removal goes through these two
+function addPlayer(p) { G.players[p.id] = p; trackPlayer(p); if (IDX && IDX.of === G.players) (IDX.t[p.tm] = IDX.t[p.tm] || []).push(p); return p; }
+function removePlayer(id) { const p = G.players[id]; if (!p) return; if (IDX && IDX.of === G.players) idxDrop(p.tm, p); delete G.players[id]; }
+function rosterRaw(t) { if (!IDX || IDX.of !== G.players) idxBuild(); return (IDX.t[t] || []).slice(); }
 function roster(t) {
   if (!CACHE) return rosterRaw(t);
-  if (!CACHE.r) { CACHE.r = {}; for (const p of Object.values(G.players)) (CACHE.r[p.tm] = CACHE.r[p.tm] || []).push(p); }
-  return (CACHE.r[t] || []).slice();
+  return rosterRaw(t);
 }
 // Contracts that ended before this season do not count, so expiring players you are still deciding on cost nothing until you re-sign them
 const payroll = t => roster(t).reduce((s, p) => s + (p.end >= G.season ? p.cap : 0), 0) + (G.dead[t] || 0) - ((G.credit || {})[t] || 0);
@@ -1069,6 +1089,18 @@ function genOffers(n, minimum) {
     used.add(tgt.id);
     offers.push({id: 'o' + G.week + (G.step || '') + t + tgt.id, from: t, kind: 'want', give: [tgt.id], get: pkg, msg: `The ${G.teams[t].nick} called about ${tgt.n}.`});
   }
+  // still nobody: go through every team and your best players in turn, so you always hear from someone
+  if (offers.length < minimum) {
+    const best = mine.filter(p => !used.has(p.id) && playerFresh(p.id)).sort((a, b) => assetValue(b.id, G.user) - assetValue(a.id, G.user)).slice(0, 10);
+    outer: for (const t of shuffle(teamList().filter(x => x !== G.user && !offers.some(o => o.from === x)))) for (const tgt of best) {
+      if (used.has(tgt.id) || needBoost(t, tgt) < 1 || !offerFresh(t, [tgt.id])) continue;
+      const pkg = buildPackage(t, tgt.id, true);
+      if (!pkg || !offerSense([tgt.id], pkg, evalTrade(t, [tgt.id], pkg).fair).ok) continue;
+      used.add(tgt.id);
+      offers.push({id: 'o' + G.week + (G.step || '') + t + tgt.id, from: t, kind: 'want', give: [tgt.id], get: pkg, msg: `The ${G.teams[t].nick} called about ${tgt.n}.`});
+      if (offers.length >= minimum) break outer;
+    }
+  }
   // at most one offer that makes you worse this season: a seller hears from buyers, but not all day
   let costly = 0;
   const keep = offers.filter(o => o.kind !== 'want' || winsDelta(G.user, o.get, o.give) >= -.25 || ++costly <= 1);
@@ -1283,6 +1315,7 @@ function draftDeal(partner, give, get) { return doTrade(partner, give, get, 'off
 
 // ---------- season sim ----------
 function seasonGames(season) {
+  if (typeof season !== 'number' || !isFinite(season)) season = G.season;
   if (season === 2026) return G.games;
   G.sched = G.sched || {};
   if (G.sched[season]) return G.sched[season];
@@ -1884,6 +1917,39 @@ function draftOrder(season) {
 }
 
 // ---------- offseason ----------
+// Once a year, drop what the game no longer needs so the save stays small and the league stays quick:
+// free agents nobody will sign, old box scores and drive logs, past draft classes and scouting, long rating
+// histories, and tracking for players who are gone. Anyone named in your logs, offers or inbox is kept.
+function compact(next) {
+  const keep = new Set();
+  const walk = o => { if (!o) return; if (typeof o === 'string') { if (G.players[o]) keep.add(o); return; } if (typeof o !== 'object') return; for (const k in o) walk(o[k]); };
+  walk([G.trades, G.leagueTrades, G.signings, G.injLog, G.brkLog, G.inbox, G.requests, G.plans, G.offers, G.fa, G.resign, G.prog, G.camp, G.captains, G.campReveal, G.autoFilled, G.depthOrder]);
+  // the free-agent pool: young players with a future and real veterans stay; the rest leave the league
+  const fa = Object.values(G.players).filter(p => p.tm === 'FA' && !keep.has(p.id) && p.fromTeam !== G.user);
+  const stay = p => p.ovr >= 72 || (ageAdj(p) <= 27 && p.ovr >= 60) || ((p.pot || 0) >= 70 && ageAdj(p) <= 24);
+  const cut = fa.filter(p => !stay(p));
+  const rest = fa.filter(stay).sort((a, b) => (b.ovr + (b.pot || b.ovr) * .3) - (a.ovr + (a.pot || a.ovr) * .3));
+  for (const p of [...cut, ...rest.slice(450)]) removePlayer(p.id);
+  // rating histories: where he started and the last few changes
+  for (const p of Object.values(G.players)) if (p.hist && p.hist.length > 6) p.hist = [p.hist[0], ...p.hist.slice(-5)];
+  // results: last season keeps scores and your box scores; older seasons keep only the scores
+  for (const yr of Object.keys(G.results || {}).map(Number)) {
+    if (yr >= next - 1) { for (const g of G.results[yr]) if (yr < next && g.h !== G.user && g.a !== G.user) delete g.dl; continue; }
+    for (const g of G.results[yr]) {
+      const mine = g.h === G.user || g.a === G.user;
+      delete g.dl; delete g.sc; delete g.hurt; delete g.wx;
+      if (!mine) { delete g.ba; delete g.bh; }
+    }
+  }
+  // stats for players who are gone, from seasons before last
+  for (const yr of Object.keys(G.stats || {}).map(Number)) if (yr < next - 1) for (const id in G.stats[yr]) if (!G.players[id]) delete G.stats[yr][id];
+  // past drafts: the scouting reports and class lists are done with
+  for (const k of ['scouted', 'classes']) if (G[k]) for (const yr of Object.keys(G[k]).map(Number)) if (yr < next) delete G[k][yr];
+  // per-player tracking only for players still around
+  for (const k of ['form', 'streak', 'startedWk']) if (G[k]) for (const id in G[k]) if (!G.players[id]) delete G[k][id];
+  delete G.perfZ;
+  if (G.news && G.news.length > 120) G.news.length = 120;
+}
 function beginOffseason() {
   const prev = G.season, next = prev + 1;
   G.history[prev] = G.history[prev] || {finish: userFinish(prev), champ: G.playoffs[prev].champ, ovr: teamRating(G.user).ovr};
@@ -1951,8 +2017,9 @@ function beginOffseason() {
     if (p.tm === 'FA' && ra >= 30) rp = Math.max(rp, .5);
     if (rand() < Math.min(.9, rp)) p.retired = true;
   }
-  for (const p of Object.values(G.players)) if (p.retired) { if (p.tm === G.user) prog.push({id: p.id, n: p.n, pos: p.pos, old: p.ovr, now: 0, ret: true}); delete G.players[p.id]; }
+  for (const p of Object.values(G.players)) if (p.retired) { if (p.tm === G.user) prog.push({id: p.id, n: p.n, pos: p.pos, old: p.ovr, now: 0, ret: true}); removePlayer(p.id); }
   G.prog = prog;
+  compact(next);
   // expiring
   const exp = Object.values(G.players).filter(p => p.end <= prev && G.teams[p.tm]);
   G.resign = {};
@@ -2505,8 +2572,8 @@ function makePick(prospect) {
   const id = (G.season === 2027 ? 'R27-' : `R${G.season % 100}-`) + prospect.rank;
   if (prospect.ovr == null) scoutProspect(prospect);
   const verdict = draftVerdict(prospect.ovr, prospect.lo, prospect.hi);
-  G.players[id] = {id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
-    proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: eggOf(prospect.n) ? eggOf(prospect.n).hype : Math.max(10, Math.round(70 - slot.no * .5)), egg: prospect.egg, hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]};
+  addPlayer({id, n: prospect.n, pos: prospect.pos, tm: slot.owner, age: 21.5, ovr: prospect.ovr, pot: prospect.pot, potWhy: `drafted #${slot.no}, ${prospect.sch}`, prior: prospect.ovr, cap: rookieCap(slot.no), end: G.season + 3, st25: `${prospect.sch} (big board #${prospect.rank})`, st26: '', inj: false, rook: true, draft: slot.no, how: slot.owner === G.user ? 'Draft' : undefined,
+    proj: [prospect.lo, prospect.hi], camp: 1, verdict, r1: slot.no <= 32 ? [G.season, slot.no] : undefined, prod: -1, hype: eggOf(prospect.n) ? eggOf(prospect.n).hype : Math.max(10, Math.round(70 - slot.no * .5)), egg: prospect.egg, hist: [[G.season, prospect.ovr, `Drafted #${slot.no}, scouts said ${prospect.lo}-${prospect.hi}`]]});
   slot.sel = {id, n: prospect.n, pos: prospect.pos, sch: prospect.sch, rank: prospect.rank, ovr: prospect.ovr, lo: prospect.lo, hi: prospect.hi, verdict};
   D.pool = D.pool.filter(x => x !== prospect);
   if (slot.pickId) G.picks = G.picks.filter(x => x.id !== slot.pickId);
@@ -2567,7 +2634,7 @@ function addUndrafted() {
   left.forEach((x, i) => {
     const id = `U${G.season}-${i}`;
     if (G.players[id]) return;
-    G.players[id] = {id, n: x.n, pos: x.pos, tm: 'FA', age: 22 + Math.round(rng() * 10) / 10, ovr: x.ovr, pot: Math.min(80, x.ovr + 4 + Math.round(rng() * 8)), potWhy: `undrafted, ${x.sch}`, prior: x.ovr, cap: 0, end: G.season - 1, st25: '', st26: '', inj: false, rook: true, prod: -1, hype: 5, ask: 0.9, hist: [[G.season, x.ovr, 'Undrafted rookie']]};
+    addPlayer({id, n: x.n, pos: x.pos, tm: 'FA', age: 22 + Math.round(rng() * 10) / 10, ovr: x.ovr, pot: Math.min(80, x.ovr + 4 + Math.round(rng() * 8)), potWhy: `undrafted, ${x.sch}`, prior: x.ovr, cap: 0, end: G.season - 1, st25: '', st26: '', inj: false, rook: true, prod: -1, hype: 5, ask: 0.9, hist: [[G.season, x.ovr, 'Undrafted rookie']]});
   });
 }
 function aiCleanup() {
@@ -2579,7 +2646,7 @@ function aiCleanup() {
       while ((d[pos] = depth(t)[pos]).length < MIN_DEPTH[pos]) {
         const fa = faPool().find(p => p.pos === pos);
         if (fa) { fa.tm = t; fa.cap = Math.max(1.1, Math.round(askOf(fa) * .7 * 10) / 10); fa.end = G.season; }
-        else { const id = 'G-' + t + pos + rint(1, 1e6); G.players[id] = {id, n: 'Depth ' + pos, pos, tm: t, age: 25, ovr: 52, cap: 1.1, end: G.season, st25: '', st26: '', inj: false, rook: false}; }
+        else { const id = 'G-' + t + pos + rint(1, 1e6); addPlayer({id, n: 'Depth ' + pos, pos, tm: t, age: 25, ovr: 52, cap: 1.1, end: G.season, st25: '', st26: '', inj: false, rook: false}); }
       }
     }
     const keepScore = p => p.ovr + (p.rook ? 6 : 0) + (p.age <= 24 ? 4 : p.age <= 27 ? 2 : p.age <= 29 ? 0 : p.age <= 31 ? -3 : p.age <= 33 ? -6 : -9) - Math.max(0, p.cap - market(p)) * .5;
@@ -2662,7 +2729,7 @@ function startSeason2() {
   for (const pos of POS_ORDER) {
     while (depth(G.user)[pos].length < STARTERS[pos] || (depth(G.user)[pos].length < MIN_DEPTH[pos] && roster(G.user).length < ROSTER_MAX)) {
       const id = 'G-U' + pos + rint(1, 1e6);
-      G.players[id] = {id, n: 'Depth ' + pos, pos, tm: G.user, age: 25, ovr: 52, cap: .9, end: G.season, st25: '', st26: '', inj: false, rook: false};
+      addPlayer({id, n: 'Depth ' + pos, pos, tm: G.user, age: 25, ovr: 52, cap: .9, end: G.season, st25: '', st26: '', inj: false, rook: false});
     }
   }
   // the fill-ins never put you over the cap: restructure the biggest deals to make the room

@@ -68,6 +68,7 @@
 - **A draft you can follow.** The draft shows who is on the clock, a ticker of the picks around now, the big board, and the full order round by round.
 - **Calm by default.** A short welcome before you pick a team, then a four-step guide on your first game, both replayable; Start over is always one tap away. After that, Home shows four numbers and a short list of things that might need you: the owner, trade offers, season goals, the locker room, injuries, needs. Each one opens the full detail. On a wide screen the sections and the next step live in a sidebar; on a phone they live in the bottom bar.
 - **Built for phones.** A bottom tab bar with one big Next button, plus installable to your home screen.
+- **Saves that stay out of the way.** The game saves itself once you pause, compressed and in the background, and right away when you leave the page, so a tap never waits on a save. Each offseason the league drops what it no longer needs (free agents nobody will sign, old box scores and drive logs, past draft classes), so the save stays around 2 MB of game and a few hundred KB on disk, and late seasons play as fast as the first.
 
 ## Controls
 

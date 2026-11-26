@@ -15,7 +15,45 @@ const MODES = {standard: ['Standard', 'Any team.'], worst: ['Worst to first', 'O
 const modeTag = m => m && m !== 'standard' ? `<span class="tag warn">${MODES[m][0]}</span>` : '';
 const RANK_LETTER = r => r <= 4 ? 'A' : r <= 12 ? 'B' : r <= 20 ? 'C' : r <= 26 ? 'D' : 'F';
 
-function persist() { try { localStorage.setItem(SAVE_KEY, E.save()); localStorage.setItem(SAVE_KEY + '-ver', String(Date.now())); } catch (e) { /* storage unavailable */ } cloudSave(); }
+// Saving never happens on the tap. A change marks the game dirty; once you pause, the save is compressed and
+// written in the background. Leaving or hiding the page writes at once. Every write carries a number, so an
+// older save that finishes late never overwrites a newer one.
+const SAVE = {t: null, dirty: false, busy: false, seq: 0, wrote: 0, warned: false, gen: 0};
+function persist() { if (!G) return; SAVE.dirty = true; clearTimeout(SAVE.t); SAVE.t = setTimeout(flushSave, 600); }
+function writeLocal(str, seq) {
+  if (seq < SAVE.wrote) return true;
+  try { localStorage.setItem(SAVE_KEY, str); localStorage.setItem(SAVE_KEY + '-ver', String(Date.now())); SAVE.wrote = seq; return true; }
+  catch (e) {
+    if (!SAVE.warned) { SAVE.warned = true; toast('Could not save on this device: its storage is full. Free some space in your browser and keep playing; the game saves again on your next move.'); }
+    return false;
+  }
+}
+async function flushSave() {
+  clearTimeout(SAVE.t); SAVE.t = null;
+  if (!SAVE.dirty || !G) return;
+  if (SAVE.busy) { SAVE.t = setTimeout(flushSave, 250); return; }
+  SAVE.busy = true; SAVE.dirty = false;
+  const seq = ++SAVE.seq, gen = SAVE.gen;
+  try {
+    const raw = E.save();
+    let b64 = null;
+    if (typeof CompressionStream !== 'undefined') { try { b64 = await packSave(raw); } catch (e) { b64 = null; } }
+    if (gen !== SAVE.gen) return;                      // a new game started while this one was compressing
+    if (!writeLocal(b64 ? 'gz1:' + b64 : raw, seq) && b64 == null) return;
+    if (seq >= SAVE.wrote) { SAVE.warned = false; cloudSave(b64); }
+  } catch (e) { /* the next change saves again */ } finally { SAVE.busy = false; }
+}
+// leaving the page: write now, plain, so nothing is lost
+function saveNow() { if (!SAVE.dirty || !G) return; SAVE.dirty = false; clearTimeout(SAVE.t); try { writeLocal(E.save(), ++SAVE.seq); } catch (e) { /* storage unavailable */ } }
+function forgetSave() { SAVE.dirty = false; clearTimeout(SAVE.t); SAVE.gen++; }
+window.addEventListener('pagehide', saveNow);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveNow(); });
+// a stored save is either plain JSON or gzip-compressed
+function readSave() {
+  let str = null; try { str = localStorage.getItem(SAVE_KEY); } catch (e) { return Promise.resolve(null); }
+  if (!str) return Promise.resolve(null);
+  return str.startsWith('gz1:') ? unpackSave(str.slice(4)) : Promise.resolve(str);
+}
 function hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; } }
 function toast(m) { document.querySelectorAll('.toast').forEach(x => x.remove()); const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role', 'status'); d.textContent = m; document.body.appendChild(d); setTimeout(() => d.classList.add('out'), 3150); setTimeout(() => d.remove(), 3400); }
 
@@ -347,12 +385,12 @@ async function unpackSave(b64) {
   for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
   return new Response(new Blob([u]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 }
-function cloudSave() {
+function cloudSave(packed) {
   if (!C.db || !G || typeof CompressionStream === 'undefined') return;
   clearTimeout(CLOUD.t);
   CLOUD.t = setTimeout(async () => {
     try {
-      const b64 = await packSave(E.save()), n = Math.ceil(b64.length / PART), base = `data/users/${C.uid}/profile`, ver = Date.now();
+      const b64 = packed || await packSave(E.save()), n = Math.ceil(b64.length / PART), base = `data/users/${C.uid}/profile`, ver = Date.now();
       for (let i = 0; i < n; i++) cloudWrite(`${base}/save/${i}`, {ver, part: b64.slice(i * PART, (i + 1) * PART)});
       cloudWrite(`${base}/savemeta/latest`, {ver, parts: n, team: G.user, season: G.season, updatedAt: ver});
     } catch (e) { /* the device save still has it */ }
@@ -2948,7 +2986,11 @@ document.addEventListener('click', e => {
     }
     case 'confirmPick': { startGame(el.dataset.t); closeModal(); window.scrollTo(0, 0); let seen = false; try { seen = localStorage.getItem('21-0-guide') === '1'; localStorage.setItem('21-0-guide', '1'); } catch (e) { /* storage unavailable */ } persist(); render(); if (!seen) setTimeout(() => showGuide(0), 300); return; }
     case 'runback': { const t = G.user; startGame(t); toast(`Back to Week 1 with the ${DATA.teams[t].nick}.`); window.scrollTo(0, 0); break; }
-    case 'resume': try { G = E.load(localStorage.getItem(SAVE_KEY)); E.attachData(DATA); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; } UI.tab = 'home'; break;
+    case 'resume': readSave().then(str => {
+        if (!str) { toast('Could not load the save.'); return; }
+        try { G = E.load(str); E.attachData(DATA); if (!G.start) G.start = E.snapshotFromData(DATA, G.user); G.offers = G.offers || []; if (!G.startedAt) G.startedAt = Date.now(); if (G.playoffs[2026] && G.playoffs[2026].champ) recordRun(G.phase === 'final'); } catch (err) { toast('Could not load the save.'); return; }
+        UI.tab = 'home'; render(); window.scrollTo(0, 0);
+      }).catch(() => toast('Could not load the save.')); return;
     case 'closeModal': closeModal(); UI.found = null; return;
     case 'faSheet': faSheet(el.dataset.k); return;
     case 'flexMove': { const p = G.players[id], back = !el.dataset.k, from = back ? (G.flex || {})[id] : p.pos; E.setFlex(id, el.dataset.k || null); persist(); render(); depthModal(back ? from : el.dataset.k); toast(back ? `${p.n} is back at ${p.pos}.` : `${p.n} now plays ${el.dataset.k}.`); return; }
@@ -3285,7 +3327,7 @@ document.addEventListener('click', e => {
     case 'onbDone': ONB_SEEN = true; try { localStorage.setItem('21-0-onboard', '1'); } catch (err) { /* storage unavailable */ } UI.onbStep = null; render(); window.scrollTo(0, 0); return;
     case 'onbAgain': ONB_SEEN = false; UI.onbStep = 0; render(); window.scrollTo(0, 0); return;
     case 'askReset': modal(`<div class="sheeth"><h3>Start over?</h3><button class="x" data-act="closeModal" aria-label="Close">×</button></div><p class="muted">This erases your current game. Your résumé keeps every finished season.</p><div class="row end"><button class="btn" data-act="closeModal">Cancel</button><button class="btn danger" data-act="newgame">Start over</button></div>`); return;
-    case 'newgame': try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(SAVE_KEY + '-ver'); } catch (err) { /* storage unavailable */ } cloudClear(); G = null; closeModal(); UI.tab = 'home'; render(); window.scrollTo(0, 0); return;
+    case 'newgame': forgetSave(); try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem(SAVE_KEY + '-ver'); } catch (err) { /* storage unavailable */ } cloudClear(); G = null; closeModal(); UI.tab = 'home'; render(); window.scrollTo(0, 0); return;
   }
   if (G) persist();
   render();
