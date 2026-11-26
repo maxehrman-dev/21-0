@@ -699,6 +699,7 @@ function doTrade(partner, give, get, how) {
   G.news.unshift(`Trade with ${G.teams[partner].nick}: you get ${rec.got.join(', ')}.`);
   mail('Coach', `On the ${G.teams[partner].nick} trade: ${take.line}`);
   G.offers = (G.offers || []).filter(o => ![...o.give, ...o.get].some(id => give.includes(id) || get.includes(id)));
+  aiCapFix(partner);
   return {...ev, ok: true};
 }
 function syncDraftSlot(pickId, owner) { if (G.draft) for (const s of G.draft.order) if (s.pickId === pickId && !s.sel) s.owner = owner; }
@@ -1467,8 +1468,10 @@ function record(t, season) {
 }
 function winPct(t) { const r = record(t, G.season); return (r.w + r.l) ? r.w / (r.w + r.l) : .5; }
 
+// Playoff games keep their own stat lines, as the league does: season totals and leaders are the regular season.
+let POSTSEASON = false;
 function addStat(pid, k, v) {
-  const S = G.stats[G.season];
+  const S = POSTSEASON ? ((G.poStats = G.poStats || {})[G.season] = (G.poStats[G.season] || {})) : G.stats[G.season];
   S[pid] = S[pid] || {};
   S[pid][k] = (S[pid][k] || 0) + v;
 }
@@ -1610,6 +1613,7 @@ const avgA = (L, k) => { const v = L.filter(Boolean); return v.length ? v.reduce
 function sideOf(t, alt) {
   const d = alt || depth(t);
   const wrs = d.WR.slice(0, 4), tes = d.TE.slice(0, 2), rbs = d.RB.slice(0, 2), ol = [...d.OT.slice(0, 2), ...d.IOL.slice(0, 3)];
+  if (rbs.length === 1) { const sub = d.WR[3] || d.TE[1] || d.WR[2]; if (sub) rbs.push(sub); }   // one healthy back: someone else spells him
   const front = [...d.EDGE.slice(0, 2), ...d.DT.slice(0, 2)], secondary = [...d.CB.slice(0, 3), ...d.S.slice(0, 2)], lbs = d.LB.slice(0, 2);
   const qb = d.QB[0];
   return {t, d, qb, rbs, wrs, tes, k: d.K[0], pn: d.P && d.P[0], coach: coachOf(t),
@@ -1730,7 +1734,7 @@ function simGame(a, h, opts = {}) {
       }
     } else {
       // the run game
-      const rb = off.rbs[1] && rand() < clamp(.36 - (A(off.rbs[0], 'Vision') - A(off.rbs[1], 'Vision')) * .008, .24, .5) ? off.rbs[1] : off.rbs[0];
+      const rb = off.rbs[1] && rand() < clamp(.42 - (A(off.rbs[0], 'Vision') - A(off.rbs[1], 'Vision')) * .008, .3, .55) ? off.rbs[1] : off.rbs[0];   // most teams share the load
       const mean = T.ypc + (off.rblk - def.runD) * .045 + ((A(rb, 'Vision') + A(rb, 'Power')) / 2 - 75) * .022 + e * 20 + (wx.k === 'snow' ? -.4 : 0);
       const r = rand();
       gain = r < .11 ? -Math.round(rand() * 3) : r < .16 + (A(rb, 'Vision') - 75) * .0006 ? Math.round(10 + rand() * 26) : Math.round(mean + randn() * 2.6);
@@ -1863,7 +1867,7 @@ function simPlayoffRound() {
       const next = [];
       for (let i = 0; i < al.length / 2; i++) {
         const hi = al[i], lo = al[al.length - 1 - i];
-        const g = simGame(lo, hi); g.po = ROUND_NAMES[P.round]; g.conf = c;
+        POSTSEASON = true; let g; try { g = simGame(lo, hi); } finally { POSTSEASON = false; } g.po = ROUND_NAMES[P.round]; g.conf = c;
         G.results[G.season].push(g); games.push(g);
         const win = g.hs > g.as ? hi : lo, lose = win === hi ? lo : hi;
         P.elim[lose] = P.round; next.push(win);
@@ -1872,7 +1876,7 @@ function simPlayoffRound() {
     }
   } else {
     const a = P.alive.AFC[0], n = P.alive.NFC[0];
-    const g = simGame(a, n, {neutral: true}); g.po = 'Super Bowl';
+    POSTSEASON = true; let g; try { g = simGame(a, n, {neutral: true}); } finally { POSTSEASON = false; } g.po = 'Super Bowl';
     G.results[G.season].push(g); games.push(g);
     P.champ = g.hs > g.as ? n : a;
     P.elim[P.champ === a ? n : a] = 3;
@@ -1946,7 +1950,7 @@ function compact(next) {
     }
   }
   // stats for players who are gone, from seasons before last
-  for (const yr of Object.keys(G.stats || {}).map(Number)) if (yr < next - 1) for (const id in G.stats[yr]) if (!G.players[id]) delete G.stats[yr][id];
+  for (const k of ['stats', 'poStats']) for (const yr of Object.keys(G[k] || {}).map(Number)) if (yr < next - 1) for (const id in G[k][yr]) if (!G.players[id]) delete G[k][yr][id];
   // past drafts: the scouting reports and class lists are done with
   for (const k of ['scouted', 'classes']) if (G[k]) for (const yr of Object.keys(G[k]).map(Number)) if (yr < next) delete G[k][yr];
   // per-player tracking only for players still around
@@ -1965,6 +1969,7 @@ function beginOffseason() {
   G.history[prev] = G.history[prev] || {finish: userFinish(prev), champ: G.playoffs[prev].champ, ovr: teamRating(G.user).ovr};
   G.draftOrder = draftOrder(prev);
   rollCap(next);
+  if (G.credit) aiNewLeagueYear();
   G.phase = 'offseason'; G.step = 'resign'; G.season = next; G.week = 0; G.draftDone = false; G.draft = null;
   // a new season: a decision to start someone stands; rotations and showcases end
   for (const id of Object.keys(G.plans || {})) if (G.plans[id].plan !== 'start') delete G.plans[id];
@@ -2676,9 +2681,53 @@ function aiCleanup() {
     const counts = {}; for (const p of roster(t)) counts[p.pos] = (counts[p.pos] || 0) + 1;
     for (const p of ros) {
       if (roster(t).length <= ROSTER_MAX && payroll(t) <= G.cap[G.season]) break;
+      if (roster(t).length <= ROSTER_MAX && roster(t).length <= 46) break;      // money alone never strips a roster bare
       if (counts[p.pos] <= MIN_DEPTH[p.pos]) continue;
-      counts[p.pos]--; p.tm = 'FA'; p.cap = 0; p.end = G.season - 1;
+      counts[p.pos]--; aiRelease(t, p);
     }
+    aiCapFix(t);
+  }
+}
+// Every AI team plays by the same rules you do: at most 53 players and under the cap. Over the cap, they
+// restructure their biggest deals first, then release whoever gives the least for the money, and a release
+// leaves the same dead money yours would.
+function aiRelease(t, p) {
+  const c = cutCost(p);
+  G.dead[t] = Math.round(((G.dead[t] || 0) + c.dead) * 10) / 10;
+  p.fromTeam = t; p.tm = 'FA'; p.cap = 0; p.end = G.season - 1;
+}
+function aiCapFix(t, final) {
+  if (!t || t === G.user || !G.teams[t]) return;
+  const cap = G.cap[G.season], inSeason = final || G.phase === 'season' || G.phase === 'deadline';
+  const maxN = inSeason ? ROSTER_MAX : 90;                                  // camp rosters run long until final cuts
+  const short = () => Math.max(0, 46 - roster(t).length) * .9;            // room the minimum fills will need
+  const over = () => payroll(t) + short() > cap;
+  if (over()) for (const p of roster(t).filter(x => restrInfoAny(x)).sort((a, b) => restrInfoAny(b).save - restrInfoAny(a).save)) {
+    if (!over()) break;
+    const r = restrInfoAny(p); p.cap = Math.round((p.cap - r.save) * 10) / 10; p.restr = {amt: r.per, left: r.left};
+  }
+  for (let k = 0; k < 40 && (over() || roster(t).length > maxN); k++) {
+    const d = depth(t), tight = over();
+    const counts = {}; for (const p of roster(t)) counts[p.pos] = (counts[p.pos] || 0) + 1;
+    const starter = new Set(POS_ORDER.flatMap(pos => d[pos].slice(0, STARTERS[pos]).map(p => p.id)));
+    const keep = p => p.ovr + (starter.has(p.id) ? 12 : 0) + (ageAdj(p) <= 24 ? 4 : ageAdj(p) >= 31 ? -4 : 0);
+    if (tight && roster(t).length <= 46 && roster(t).length <= maxN) break;   // never strip a roster bare for money
+    const L = roster(t).filter(p => counts[p.pos] > (MIN_DEPTH[p.pos] || 1) && p.pos !== 'K' && p.pos !== 'P' && !(p.pos === 'QB' && d.QB[0] === p) && (!tight || cutCost(p).save > .9));
+    if (!L.length) break;
+    const x = L.sort((a, b) => (tight ? keep(a) / Math.max(.5, cutCost(a).save) - keep(b) / Math.max(.5, cutCost(b).save) : keep(a) - keep(b)))[0];
+    aiRelease(t, x);
+  }
+}
+function aiCapFixAll() { for (const t of teamList()) aiCapFix(t); }
+// The new league year: real teams clear their projected overage in March with restructures, releases and
+// extensions before free agency opens. AI teams make the moves the game models, and the rest of the gap is
+// taken as done, so the league starts free agency compliant. Your own books stay exactly as they are.
+function aiNewLeagueYear() {
+  for (const t of teamList()) {
+    if (t === G.user) continue;
+    aiCapFix(t);
+    const over = payroll(t) - G.cap[G.season];
+    if (over > 0) G.credit[t] = Math.round(((G.credit[t] || 0) + over + 1) * 10) / 10;
   }
 }
 function userReady() {
@@ -2718,12 +2767,16 @@ function lateMarket() {
     p.tm = t; p.cap = price; p.end = G.season - 1 + yearsFor(p);
   }
   for (const t of ts) {
+    aiCapFix(t, true);
     fillRoster(t);
+    // every team kicks off with 53: the last spots go to minimum-salary players
     while (roster(t).length < ROSTER_MAX) {
       const p = faPool().filter(q => q.ovr < 70).sort((a, b) => (b.age <= 24) - (a.age <= 24) || b.ovr - a.ovr)[0];
       if (!p) break;
       p.tm = t; p.cap = .9; p.end = G.season;
     }
+    const left = payroll(t) - G.cap[G.season];
+    if (left > 0 && G.credit) G.credit[t] = Math.round(((G.credit[t] || 0) + left + .1) * 10) / 10;   // a restructure the game does not model
   }
 }
 function startSeason2() {
@@ -2738,6 +2791,13 @@ function startSeason2() {
   // user fills any empty depth with replacement-level players automatically
   for (const pos of POS_ORDER) {
     while (depth(G.user)[pos].length < STARTERS[pos] || (depth(G.user)[pos].length < MIN_DEPTH[pos] && roster(G.user).length < ROSTER_MAX)) {
+      // a full roster makes room first: your least valuable backup at a deep spot goes
+      if (roster(G.user).length >= ROSTER_MAX) {
+        const cnt = {}; for (const q of roster(G.user)) cnt[q.pos] = (cnt[q.pos] || 0) + 1;
+        const dd = depth(G.user), st = new Set(POS_ORDER.flatMap(x => dd[x].slice(0, STARTERS[x]).map(q => q.id)));
+        const out = roster(G.user).filter(q => !st.has(q.id) && cnt[q.pos] > (MIN_DEPTH[q.pos] || 1) && q.pos !== pos).sort((a, b) => playerValue(a) - playerValue(b))[0];
+        if (out) { G.autoFilled.push({id: out.id, n: out.n, pos: out.pos, ovr: out.ovr, released: true}); cutPlayer(out.id); }
+      }
       const id = 'G-U' + pos + rint(1, 1e6);
       addPlayer({id, n: 'Depth ' + pos, pos, tm: G.user, age: 25, ovr: 52, cap: .9, end: G.season, st25: '', st26: '', inj: false, rook: false});
     }
@@ -3086,6 +3146,7 @@ function aiSwap(a, b, aGives, bGives) {
   G.news.unshift(`Trade: ${line}.`);
   // any offer that used these pieces is gone
   G.offers = (G.offers || []).filter(o => ![...o.give, ...o.get].some(id => aGives.includes(id) || bGives.includes(id)));
+  aiCapFix(a); aiCapFix(b);
 }
 // How busy the market is: a trickle in September, a rush at the deadline, a wave in the offseason
 function aiTradeWindow(n) { let done = 0; for (let i = 0; i < n * 3 && done < n; i++) if (aiTradeOnce()) done++; return done; }
@@ -3114,7 +3175,11 @@ function tradeDead(p) {
 }
 // Restructure: turn part of this year's salary into bonus spread over the years left. Room now, a bill later.
 function restructureInfo(p) {
-  if (!p || p.tm !== G.user || p.restr) return null;
+  if (!p || p.tm !== G.user) return null;
+  return restrInfoAny(p);
+}
+function restrInfoAny(p) {
+  if (!p || p.restr) return null;
   const left = p.end - G.season + 1;
   if (left < 2 || p.cap < 6) return null;
   const save = Math.round(p.cap * .4 * (1 - 1 / left) * 10) / 10;

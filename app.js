@@ -1383,7 +1383,10 @@ function prospectModal(rank) {
     <div class="row end"><button class="btn" data-act="closeModal">Close</button>${onClock ? `<button class="btn go" data-act="draftP" data-rank="${p.rank}">Draft ${esc(lastName(p.n))}</button>` : ''}</div>`, true);
 }
 function fillPopup(list, kicker) {
-  popup(kicker, `${list.length} minimum-salary signing${list.length > 1 ? 's' : ''}`, `<p class="small muted">Open roster spots went to the best leftover free agents on 1-year, $1.1M deals. Thin positions came first, then your biggest needs.</p>${list.map(x => { const p = G.players[x.id]; return `<div class="prow resrow">${face(p || {n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${p ? pname(p) : esc(x.n)}</div><div class="psub">${x.pos} · $1.1M × 1 yr</div></div>${ovrBadge(x, "sm")}</div>`; }).join('')}`);
+  const signed = list.filter(x => !x.released), out = list.filter(x => x.released);
+  const row = x => { const p = G.players[x.id]; return `<div class="prow resrow">${face(p || {n: x.n, id: x.id}, 'sm')}<div class="pmain"><div class="pn">${p ? pname(p) : esc(x.n)}</div><div class="psub">${x.pos} · ${x.released ? 'released to make room' : `${money(p ? p.cap : .9)} × 1 yr`}</div></div>${ovrBadge(x, "sm")}</div>`; };
+  popup(kicker, `${signed.length} minimum-salary signing${signed.length === 1 ? '' : 's'}${out.length ? `, ${out.length} release${out.length > 1 ? 's' : ''}` : ''}`,
+    `<p class="small muted">Open roster spots went to the best leftover free agents on 1-year minimum deals. Thin positions came first, then your biggest needs.${out.length ? ' A full roster made room by releasing the least valuable backup at a deep position.' : ''}</p>${signed.map(row).join('')}${out.map(row).join('')}`);
 }
 function revealPopup(sel, no) {
   const p = G.players[sel.id];

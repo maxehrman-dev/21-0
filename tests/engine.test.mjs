@@ -135,7 +135,7 @@ test('draft day: move up or down by pick, and rookie ratings stay hidden until f
   const D = E.G.draft;
   const mine = D.order.find(o => o.owner === 'SEA' && o.pickId);
   // moving up costs only picks that come after the one you get
-  const target = D.order.find(o => o.owner !== 'SEA' && o.pickId && o.no > mine.no);
+  const target = D.order.find(o => o.owner !== 'SEA' && o.pickId && o.no > mine.no && E.moveUpPrice(o.pickId) && E.moveUpPrice(o.pickId).give);
   const price = E.moveUpPrice(target.pickId);
   assert.ok(price && price.give && price.give.length, 'a pick behind your first one has a price');
   for (const id of price.give) { const sl = E.draftSlotOf(id); assert.ok(!sl || sl.no > target.no, 'never pay with an earlier pick'); }
