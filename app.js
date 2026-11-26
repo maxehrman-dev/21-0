@@ -116,6 +116,53 @@ function awardsCard(season) {
   return `<div class="card awards"><div class="cardh"><h3>${season} awards</h3><span class="small muted">From the simulated season</span></div>${L.map(a => { const p = G.players[a.id]; return `<div class="award ${a.tm === G.user ? 'mine' : ''}"><span class="atrophy" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 4M17 6h2.5a2.5 2.5 0 0 1-2.6 4M12 14v3M8.5 20h7"/></svg></span>${p ? face(p, 'sm') : ''}<div class="pmain"><div class="kicker">${esc(a.award)}</div><div class="pn">${p ? pname(p) : esc(a.n)} <span class="muted small">${a.pos}</span></div><div class="psub">${esc(a.line)}</div></div>${badge(a.tm, 1)}</div>`; }).join('')}</div>`;
 }
 // Celebration: a short burst of confetti in team colors (skipped for reduced motion)
+// 21-0: the whole screen, every win in order, the history, the numbers and the people who did it
+function perfectShow(season) {
+  const t = G.user, team = G.teams[t], R = (G.results[season] || []).filter(g => g.a === t || g.h === t);
+  const reg = R.filter(g => !g.po).sort((a, b) => a.wk - b.wk), po = R.filter(g => g.po);
+  const games = [...reg, ...po];
+  const mine = g => { const home = g.h === t; return {us: home ? g.hs : g.as, them: home ? g.as : g.hs, opp: home ? g.a : g.h, home}; };
+  const pf = games.reduce((a, g) => a + mine(g).us, 0), pa = games.reduce((a, g) => a + mine(g).them, 0);
+  const margins = games.map(g => { const m = mine(g); return {g, d: m.us - m.them, ...m}; });
+  const big = margins.slice().sort((a, b) => b.d - a.d)[0], close = margins.slice().sort((a, b) => a.d - b.d)[0];
+  const S = (G.stats || {})[season] || {}, P = id => G.players[id];
+  const lead = (k, pos) => Object.entries(S).filter(([id, st]) => P(id) && P(id).tm === t && (!pos || pos.includes(P(id).pos))).sort((a, b) => (b[1][k] || 0) - (a[1][k] || 0))[0];
+  const qb = lead('py', ['QB']), rb = lead('ry', ['RB']), wr = lead('recy', ['WR', 'TE', 'RB']), dl = lead('sk'), db = lead('dint');
+  const star = [qb && qb[1].py ? `${esc(P(qb[0]).n)}: ${Math.round(qb[1].py).toLocaleString()} yds, ${qb[1].ptd || 0} TD` : '', rb && rb[1].ry ? `${esc(P(rb[0]).n)}: ${Math.round(rb[1].ry).toLocaleString()} rushing yds` : '',
+    wr && wr[1].recy ? `${esc(P(wr[0]).n)}: ${Math.round(wr[1].recy).toLocaleString()} receiving yds` : '', dl && dl[1].sk ? `${esc(P(dl[0]).n)}: ${dl[1].sk} sacks` : '', db && db[1].dint ? `${esc(P(db[0]).n)}: ${db[1].dint} interceptions` : ''].filter(Boolean);
+  const short = r => /wild/i.test(r) ? 'WC' : /div/i.test(r) ? 'DIV' : /conf|champ/i.test(r) ? 'CONF' : 'SB';
+  const el = document.createElement('div');
+  el.className = 'pfshow'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Perfect season');
+  el.innerHTML = `<div class="pf-in">
+    <div class="kicker">${season} · ${esc(team.name)}</div>
+    <div class="pf-num"><span id="pf-w">0</span><i>-</i><span>0</span></div>
+    <div class="pf-stamp">Perfect season</div>
+    <div class="pf-grid">${games.map((g, i) => { const m = mine(g); return `<div class="pf-g ${g.po ? 'po' : ''}" style="--d:${i}"><b>${g.po ? short(g.po) : 'W' + g.wk}</b><span>${m.home ? 'vs' : '@'} ${esc(m.opp)}</span><em class="num">${m.us}-${m.them}</em></div>`; }).join('')}</div>
+    <p class="pf-hist">No team in NFL history has gone 21-0. The 1972 Dolphins went 17-0. The 2007 Patriots got to 18-0 and lost the Super Bowl. <b>The ${esc(team.nick)} never lost.</b></p>
+    <div class="pf-stats">
+      <div><b class="num">${pf}-${pa}</b><span>Points for and against</span></div>
+      <div><b class="num">+${((pf - pa) / games.length).toFixed(1)}</b><span>Average margin</span></div>
+      <div><b class="num">${big.us}-${big.them}</b><span>Biggest: ${big.home ? 'vs' : 'at'} ${esc(big.opp)}</span></div>
+      <div><b class="num">${close.us}-${close.them}</b><span>Closest call: ${close.home ? 'vs' : 'at'} ${esc(close.opp)}</span></div>
+    </div>
+    ${star.length ? `<div class="pf-stars"><div class="kicker">The season they had</div>${star.map(x => `<div>${x}</div>`).join('')}</div>` : ''}
+    <div class="pf-quotes"><p><span class="kicker">Owner</span>"I have owned this team a long time and I have never felt anything like this."</p><p><span class="kicker">Coach</span>"Twenty-one games and we never blinked."</p></div>
+    <div class="pf-btns"><button class="btn" data-pf="share">Share the perfect season</button><button class="btn go" data-pf="close">Soak it in</button></div>
+  </div>`;
+  document.body.appendChild(el);
+  sfx('champ'); buzz([60, 40, 60, 40, 60, 40, 200]);
+  // the count climbs one win at a time, then the stamp lands and the confetti keeps coming
+  const w = el.querySelector('#pf-w'), reduce = reducedMotion();
+  let k = 0;
+  const tick = () => { k++; w.textContent = k; el.querySelectorAll('.pf-g')[k - 1] && el.querySelectorAll('.pf-g')[k - 1].classList.add('on'); if (k < games.length) setTimeout(tick, reduce ? 0 : k > games.length - 5 ? 260 : 110); else { el.classList.add('done'); confetti(); setTimeout(confetti, 900); setTimeout(confetti, 1900); } };
+  if (reduce) { k = games.length - 1; el.querySelectorAll('.pf-g').forEach(x => x.classList.add('on')); }
+  setTimeout(tick, reduce ? 0 : 500);
+  el.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-pf]'); if (!b) return;
+    if (b.dataset.pf === 'share') { openShare('final'); return; }
+    el.classList.add('out'); setTimeout(() => el.remove(), 260);
+  });
+}
 function confetti() {
   sfx('champ');
   try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) { /* fine */ }
@@ -391,6 +438,7 @@ function simWithReel(kicker, sim) {
   simReel(games, kicker, start, () => {
     UI.reel = false;
     if (UI.celebrate) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 100); }
+    if (UI.perfect) { const s = UI.perfect; UI.perfect = null; setTimeout(() => perfectShow(s), 300); }
     injuryPopup(mark);
     // your own breakouts, the moment they happen
     const nb = (G.brkLog || []).slice(bmark).filter(x => G.players[x.id] && G.players[x.id].tm === G.user);
@@ -1262,6 +1310,7 @@ function homePlayoffs() {
     <h2>${alive && opp ? `${esc(rn)}: ${mine.h === G.user || mine.neutral ? 'vs' : 'at'} the ${esc(G.teams[opp].nick)}` : esc(f.label) + '.'}${helpBtn('playoffs')}</h2>
     <p class="lead">${alive ? `${4 - P.round} win${4 - P.round > 1 ? 's' : ''} from a title. Play one round at a time, or sim ahead.` : 'Your season is over. Finish the bracket to see who wins it.'}</p></div>
     <div class="row">${alive && P.round < 3 ? '<button class="btn" data-act="poRun">Sim to the Super Bowl</button>' : ''}<button class="btn ${alive ? 'ghost' : ''}" data-act="poSkip">${alive ? 'Sim to the end' : 'Finish the playoffs'}</button>${alive ? `<button class="btn go lg" data-act="poNext">Play the ${esc(rn)}</button>` : ''}</div></section>
+  ${alive && f.l === 0 && !P.champ ? `<div class="chasebar"><b>${f.w}-0</b><span>${21 - f.w} win${21 - f.w > 1 ? 's' : ''} from the first perfect season ever</span></div>` : ''}
   ${alive && opp ? previewCard(opp, mine.h === G.user, `Your ${rn} game`, `#${seed} vs #${mine.h === G.user ? mine.aSeed : mine.hSeed}`, mine.neutral) : ''}
   ${games.length ? `<div class="card"><div class="cardh"><h3>${esc(rn)}</h3><span class="small muted">${games.length} game${games.length > 1 ? 's' : ''}</span></div><div class="pomatch">${games.map(m => { const p = Math.round(E.homeWinP(m.a, m.h, m.neutral) * 100), me = m.a === G.user || m.h === G.user;
     return `<div class="porow ${me ? 'me' : ''}"><span class="small muted">${m.conf}</span><span class="poteam">${badge(m.a, 1)}<b>#${m.aSeed} ${esc(G.teams[m.a].nick)}</b></span><span class="small muted">${m.neutral ? 'vs' : 'at'}</span><span class="poteam">${badge(m.h, 1)}<b>#${m.hSeed} ${esc(G.teams[m.h].nick)}</b></span><span class="num small ${p >= 50 ? '' : 'muted'}">${p >= 50 ? esc(G.teams[m.h].abbr || m.h) : esc(G.teams[m.a].abbr || m.a)} ${Math.max(p, 100 - p)}%</span></div>`; }).join('')}</div></div>` : ''}
@@ -1274,6 +1323,7 @@ function homeSeasonDone() {
     <h2>${f.w}-${f.l}. ${esc(f.label)}.</h2>
     <p class="lead">${f.perfect ? 'You did it. 21-0.' : `${esc(G.teams[P.champ].nick)} won it all.`}${gm ? ` Goal <b class="${gm.met ? 'gold' : 'bad'}">${gm.met ? 'met' : 'missed'}</b>.` : ''}</p>${verdictLine(G.season)}</div>
     <button class="btn go lg" data-act="${needsReport() ? 'final' : G.fired ? 'newgame' : 'offseason'}">${needsReport() ? 'See your report card' : G.fired ? 'Pick a new team' : `Start the ${G.season + 1} offseason`}</button></section>
+  ${f.perfect ? `<div class="perfbanner"><b>21-0</b><span>The perfect season. Nobody has ever done it.</span><button class="btn go" data-act="relivePerfect">Relive it</button></div>` : ''}
   ${P.champ === G.user ? `<div class="champbanner"><span class="kicker">Super Bowl champions</span><b>${esc(G.teams[G.user].name)}</b><span class="small muted">${f.perfect ? 'And nobody beat them. 21-0.' : `${f.w}-${f.l}, ${G.season}`}</span></div>` : ''}
   ${resultsStrip(G.season)}${E.goalStatus(G.season).length ? `<div class="card"><div class="cardh"><h3>Season goals</h3><span class="small muted">${E.goalStatus(G.season).filter(x => x.done).length} of 3</span></div>${goalsList(G.season)}</div>` : ''}${awardsCard(G.season)}
   <details class="fold card" style="margin-top:14px" data-fold="bracket" ${foldOpen('bracket')}><summary>Playoff bracket</summary>${bracket()}</details>`;
@@ -2940,6 +2990,7 @@ function render() {
   if (UI.hdrVals && !reducedMotion()) $$('#hdr .hstats .num').forEach((x, i) => { if (UI.hdrVals[i] !== undefined && UI.hdrVals[i] !== hv[i]) x.classList.add('bump'); });
   UI.hdrVals = hv;
   if (UI.celebrate && !UI.reel) { UI.celebrate = false; setTimeout(() => { confetti(); buzz([40, 60, 40, 60, 120]); }, 150); }
+  if (UI.perfect && !UI.reel && !$('.cast')) { const s = UI.perfect; UI.perfect = null; setTimeout(() => perfectShow(s), 250); }
   // the latest game in view in the results strip
   $$('.rstrip').forEach(rs => { if (rs.scrollWidth > rs.clientWidth) rs.scrollLeft = rs.scrollWidth; });
   // keep the pick on the clock in view in the draft ticker
@@ -2973,7 +3024,7 @@ function endSeasonIfDone() {
     G.phase = 'seasondone';
     if (G.season >= 2027) G.history[G.season] = {finish: E.userFinish(G.season), champ: P.champ, ovr: E.teamRating(G.user).ovr};
     G.confDone = G.confDone || {};
-    if (!G.confDone[G.season]) { G.confDone[G.season] = 1; E.updateConfidence('season'); if (P.champ === G.user) UI.celebrate = true; }
+    if (!G.confDone[G.season]) { G.confDone[G.season] = 1; E.updateConfidence('season'); if (P.champ === G.user) { if (E.userFinish(G.season).perfect) UI.perfect = G.season; else UI.celebrate = true; } }
     G.awards = G.awards || {};
     if (!G.awards[G.season]) G.awards[G.season] = E.awards(G.season);
     recordRun(false);
@@ -3115,6 +3166,7 @@ document.addEventListener('click', e => {
     case 'cutNow': { const p = G.players[id]; if (!p) return; const dead = E.cutPlayer(id); toast(`Released ${p.n}. Cap space is now ${money(E.capSpace(G.user))}${dead ? ` (${money(dead)} dead money)` : ''}.`); persist(); render(); capRoomSheet(); return; }
     case 'blockWant': E.setBlockWant(el.dataset.k); persist(); break;
     case 'blockAddSheet': blockAddSheet(); return;
+    case 'relivePerfect': perfectShow(G.season); return;
     case 'dMore': UI.dShow = (UI.dShow || 30) + 30; break;
     case 'faMore': UI.faShow = (UI.faShow || 15) + 15; break;
     case 'rsAll': UI.rsAll = true; break;

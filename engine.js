@@ -1985,6 +1985,13 @@ function simPlayoffRound() {
     POSTSEASON = true; let g; try { g = simGame(a, n, {neutral: true}); } finally { POSTSEASON = false; } g.po = 'Super Bowl';
     G.results[G.season].push(g); games.push(g);
     P.champ = g.hs > g.as ? n : a;
+    if (P.champ === G.user && record(G.user, G.season).l === 0) {
+      const nick = G.teams[G.user].nick;
+      G.news.unshift(`HISTORY: the ${nick} finish 21-0, the first perfect season of the 17-game era. Nobody had ever won 21 straight in one season.`);
+      mail('Owner', `21-0. I have owned this team a long time and I have never felt anything like this. Whatever you need, you have it.`);
+      mail('Coach', `Twenty-one games and we never blinked. I'll be telling people about this group for the rest of my life. Thank you for building it.`);
+      (G.perfectSeasons = G.perfectSeasons || []).push(G.season);
+    }
     { const L = P.champ === a ? n : a, w1 = Math.max(g.as, g.hs), w2 = Math.min(g.as, g.hs); G.news.unshift(P.champ === G.user ? `Super Bowl: you win it all, ${w1}-${w2} over the ${G.teams[L].nick}.` : L === G.user ? `Super Bowl: lost to the ${G.teams[P.champ].nick}, ${w1}-${w2}.` : `Super Bowl: the ${G.teams[P.champ].nick} win it all, ${w1}-${w2} over the ${G.teams[L].nick}.`); }
     P.elim[P.champ === a ? n : a] = 3;
     P.elim[P.champ] = 4;
@@ -4019,8 +4026,10 @@ const letter = s => LETTERS.find(([m]) => s >= m)[1];
 const STAGE_BONUS = {miss: 0, 0: 12, 1: 20, 2: 28, 3: 34, 4: 40};
 const PICK_W = {1: 3, 2: 2, 3: 1, 4: .5, 5: .25, 6: .15, 7: .1};
 
+// a season's finish: filed in the history, or just finished with a champion crowned
+function finishOf(season) { return (G.history[season] && G.history[season].finish) || (G.playoffs[season] && G.playoffs[season].champ ? userFinish(season) : null); }
 function seasonScore(season) {
-  const f = G.history[season] && G.history[season].finish;
+  const f = finishOf(season);
   if (!f) return 0;
   const P = G.playoffs[season];
   const stage = P && P.elim[G.user] !== undefined ? P.elim[G.user] : 'miss';
@@ -4055,7 +4064,7 @@ function rebuildReport() {
   const capS = Math.round(clamp(40 + (space < 0 ? space * 3 : Math.min(space, 30)) + (1 - commit28 / proj28) * 60 - dead * 2, 0, 100));
 
   const cats = [
-    {k: 'results', label: 'Results', w: .35, s: results, why: `${G.history[2026].finish.w}-${G.history[2026].finish.l} then ${G.history[2027].finish.w}-${G.history[2027].finish.l}. 2027 counts for about two thirds.`},
+    {k: 'results', label: 'Results', w: .35, s: results, why: (() => { const a = finishOf(2026), b = finishOf(2027); return a && b ? `${a.w}-${a.l} then ${b.w}-${b.l}. 2027 counts for about two thirds.` : a ? `${a.w}-${a.l} in 2026. 2027 is still to come.` : 'No season finished yet.'; })()},
     {k: 'roster', label: 'Roster upgrade', w: .25, s: rosterS, why: `Team OVR ${S.ovr} to ${tr.ovr} (${delta >= 0 ? '+' : ''}${delta}). Now #${rank} of 32.`},
     {k: 'trades', label: 'Trades', w: .15, s: tradeS, why: grades.length ? `${grades.length} trade${grades.length > 1 ? 's' : ''}. You got back ${Math.round(avgR * 100)}% of the value you sent.` : 'No trades. This one is left out of your grade.'},
     {k: 'future', label: 'Future', w: .15, s: future, why: `Starters average ${age} years old. ${core.length} young core player${core.length === 1 ? '' : 's'} (26 or under, 78+). ${pk28.length} 2028 pick${pk28.length === 1 ? '' : 's'}.`},

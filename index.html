@@ -1642,6 +1642,35 @@ button.capbox { display: block; padding: 0; }
 .cplay .cpsc { white-space: nowrap; font-size: 12px; }
 @media (max-width: 420px) { .cast-board .cteam b { display: none; } }
 .actwrap { margin-top: 14px; }
+/* 21-0 */
+.pfshow { position: fixed; inset: 0; z-index: 70; overflow-y: auto; background: radial-gradient(120% 80% at 50% 0%, rgba(243,181,47,.28), transparent 60%), var(--ink, #070c16); display: flex; justify-content: center; animation: pfIn .4s ease both; }
+.pfshow.out { opacity: 0; transition: opacity .25s; }
+@keyframes pfIn { from { opacity: 0; } to { opacity: 1; } }
+.pf-in { width: min(620px, 100%); padding: calc(28px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom)); display: grid; gap: 16px; justify-items: center; text-align: center; }
+.pf-num { font-family: "Big Shoulders Display", Impact, sans-serif; font-weight: 900; font-size: clamp(110px, 32vw, 200px); line-height: .85; color: var(--gold); letter-spacing: -.02em; text-shadow: 0 0 40px rgba(243,181,47,.45); display: flex; align-items: baseline; }
+.pf-num i { font-style: normal; opacity: .7; padding: 0 .04em; }
+.pf-stamp { font-family: "Big Shoulders Display", Impact, sans-serif; font-size: clamp(26px, 8vw, 40px); font-weight: 900; text-transform: uppercase; letter-spacing: .08em; color: var(--ink, #070c16); background: var(--gold); padding: 6px 18px; border-radius: 8px; transform: scale(2.4) rotate(-8deg); opacity: 0; }
+.pfshow.done .pf-stamp { animation: stamp .45s cubic-bezier(.2,1.6,.4,1) forwards; }
+@keyframes stamp { to { transform: scale(1) rotate(-3deg); opacity: 1; } }
+.pf-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; width: 100%; }
+.pf-g { display: grid; gap: 1px; padding: 6px 2px; border-radius: 9px; border: 1px solid var(--line2); background: var(--panel); font-size: 10px; opacity: .18; transform: scale(.9); transition: opacity .2s, transform .2s, border-color .2s; }
+.pf-g.on { opacity: 1; transform: scale(1); border-color: rgba(63,192,127,.6); }
+.pf-g.po.on { border-color: var(--gold); background: rgba(243,181,47,.12); }
+.pf-g b { font-size: 11px; color: var(--green, #3fc07f); } .pf-g.po b { color: var(--gold); }
+.pf-g span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .pf-g em { font-style: normal; font-weight: 700; font-size: 11px; }
+.pf-hist { margin: 0; font-size: 15px; line-height: 1.5; color: var(--chalk); max-width: 48ch; }
+.pf-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.pf-stats > div { display: grid; gap: 2px; padding: 10px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); }
+.pf-stats b { font-size: 22px; color: var(--gold); } .pf-stats span { font-size: 12px; color: var(--muted); }
+.pf-stars { display: grid; gap: 4px; width: 100%; padding: 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); font-size: 14px; }
+.pf-quotes { display: grid; gap: 8px; width: 100%; text-align: left; } .pf-quotes p { margin: 0; padding: 10px 12px; border-left: 3px solid var(--gold); background: rgba(255,255,255,.03); border-radius: 8px; font-size: 14px; display: grid; gap: 2px; }
+.pf-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; } .pf-btns .btn { justify-content: center; min-height: 48px; }
+.perfbanner { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; margin: 0 0 14px; padding: 14px 16px; border-radius: 16px; background: linear-gradient(90deg, rgba(243,181,47,.22), rgba(243,181,47,.06)); border: 1px solid var(--gold); }
+.perfbanner b { font-family: "Big Shoulders Display", Impact, sans-serif; font-size: 44px; line-height: 1; color: var(--gold); }
+@media (max-width: 420px) { .perfbanner { grid-template-columns: auto 1fr; } .perfbanner .btn { grid-column: 1 / -1; justify-content: center; } }
+@media (min-width: 761px) { .pf-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.chasebar { display: flex; align-items: center; gap: 12px; margin: 8px 0 4px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--gold); background: linear-gradient(90deg, rgba(243,181,47,.2), rgba(243,181,47,.04)); }
+.chasebar b { font-family: "Big Shoulders Display", Impact, sans-serif; font-size: 30px; line-height: 1; color: var(--gold); } .chasebar span { font-weight: 600; }
 </style>
 </head>
 <body>
