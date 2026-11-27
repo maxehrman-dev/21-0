@@ -2192,7 +2192,8 @@ function renderResume() {
   ${leaderboardCard()}
   <div class="card" style="margin-top:14px"><h3>Run history</h3>${T.runs.length ? `<div class="tw"><table class="tbl"><thead><tr><th>Team</th><th>2026</th><th>2027</th><th>Later</th><th>OVR</th><th>Grade</th><th>Style</th></tr></thead><tbody>
     ${T.runs.map(r => { const a = (r.seasons || {})[2026], b = (r.seasons || {})[2027]; const cell = s => s ? `<b class="num">${s.w}-${s.l}</b> <span class="small muted">${esc(s.label)}</span>${s.champ ? ' <span class="tag good">Champs</span>' : ''}` : '<span class="muted">In progress</span>'; return `<tr><td><div class="row nowrap">${badge(r.team, 1)} ${esc(DATA.teams[r.team].nick)} ${modeTag(r.mode)}${r.fired ? ' <span class="tag bad">Fired</span>' : ''}${r.extended ? ' <span class="tag good">Extended</span>' : ''}</div></td><td>${cell(a)}</td><td>${cell(b)}</td><td class="small">${Object.entries(r.seasons || {}).filter(([y]) => +y > 2027).map(([y, x]) => `${y}: <b class="num">${x.w}-${x.l}</b>${x.champ ? ' <span class="tag good">Champs</span>' : ''}`).join('<br>') || '<span class="muted">–</span>'}</td><td class="num">${r.startOvr || ''}${r.endOvr ? ' → ' + r.endOvr : ''}</td><td>${r.grade ? `<span class="tag ${gclass(r.grade)}">${r.grade}</span>` : ''}</td><td class="small">${esc(r.style || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="muted">Finish a season and it shows up here.</p>'}</div>
-  ${G ? '<p style="margin-top:20px"><button class="btn danger" data-act="askReset">Start over with a new team</button></p>' : ''}`;
+  ${G ? '<p style="margin-top:20px"><button class="btn danger" data-act="askReset">Start over with a new team</button></p>' : ''}
+  <p class="egg" aria-hidden="true">max ehrman is my idol</p>`;
 }
 
 function scoreCard(g, label, season) {
